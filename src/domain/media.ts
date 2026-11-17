@@ -1,0 +1,574 @@
+import { and, asc, desc, eq } from "drizzle-orm";
+import sharp from "sharp";
+import {
+  aircraft,
+  aircraftMedia,
+  mediaAssociations,
+  mediaContentVersions,
+  processingProposals,
+  sourceEvidence,
+} from "../db/schema";
+import type { Db } from "../db/client";
+import { runAction, type Actor, type Tx } from "./action";
+import { parseAircraftCard } from "./card";
+import {
+  ALLOWED_IMAGE_MIME,
+  CLASSIFICATIONS,
+  MAX_UPLOAD_BYTES,
+  RIGHTS_STATUSES,
+  type AssociationStatus,
+  type Classification,
+  type RightsStatus,
+  displayLabel,
+} from "./constants";
+import { DomainError, conflict, invalid, notFound } from "./errors";
+import { sha256 } from "../lib/hash";
+import type { FileStore } from "../storage";
+
+type Q = Db | Tx;
+
+const FORMAT_TO_MIME: Record<string, string> = { jpeg: "image/jpeg", png: "image/png", webp: "image/webp" };
+export const CROP_EXTRACTION_VERSION = "manual-crop-1";
+
+// ---------------------------------------------------------------- upload
+
+export interface UploadInput {
+  filename: string;
+  bytes: Uint8Array;
+  cardText?: string | null;
+}
+
+/**
+ * Manual upload. Retains the original, registers it idempotently by content hash
+ * (same bytes uploaded again return the first result and create nothing),
+ * and leaves the photo unclassified/unresolved in needs_review. Upload success does
+ * not imply classification, association or approval.
+ */
+export async function ingestUpload(db: Db, store: FileStore, actor: Actor, input: UploadInput) {
+  if (input.bytes.byteLength === 0) throw invalid("The file is empty");
+  if (input.bytes.byteLength > MAX_UPLOAD_BYTES) throw invalid(`File is larger than ${MAX_UPLOAD_BYTES / 1024 / 1024} MB`);
+  let meta: Awaited<ReturnType<ReturnType<typeof sharp>["metadata"]>>;
+  try {
+    meta = await sharp(input.bytes).metadata();
+  } catch {
+    throw invalid("This file is not a readable image. PDFs are handled in a later release; upload JPEG, PNG or WebP.");
+  }
+  const mime = meta.format ? FORMAT_TO_MIME[meta.format] : undefined;
+  if (!mime || !(ALLOWED_IMAGE_MIME as readonly string[]).includes(mime)) throw invalid("Only JPEG, PNG or WebP images are supported");
+
+  const hash = sha256(input.bytes);
+  return runAction({
+    db,
+    actor,
+    name: "media.upload",
+    idempotencyKey: `sha256:${hash}`,
+    input: { hash },
+    fingerprintOf: { hash }, // identical bytes under another filename is a retry, not key reuse
+    handler: async (tx) => {
+      const ref = await store.put(input.bytes, input.filename);
+      const [ev] = await tx
+        .insert(sourceEvidence)
+        .values({
+          tenantId: actor.tenantId,
+          sourceKind: "manual",
+          originalFilename: input.filename,
+          senderId: actor.id,
+          originalText: input.cardText?.trim() || null,
+          contentHash: hash,
+          metadata: { mime, uploadedVia: "web" },
+        })
+        .returning({ id: sourceEvidence.id });
+      const [media] = await tx
+        .insert(aircraftMedia)
+        .values({ tenantId: actor.tenantId, reviewState: "needs_review", createdSourceEvidenceId: ev.id })
+        .returning({ id: aircraftMedia.id });
+      const [cv] = await tx
+        .insert(mediaContentVersions)
+        .values({
+          aircraftMediaId: media.id,
+          versionNumber: 1,
+          storageKind: store.kind,
+          storageRef: ref,
+          contentHash: hash,
+          mimeType: mime,
+          sizeBytes: input.bytes.byteLength,
+          width: meta.width ?? null,
+          height: meta.height ?? null,
+          isDerivative: false,
+          sourceEvidenceId: ev.id,
+          createdBy: actor.id,
+        })
+        .returning({ id: mediaContentVersions.id });
+      await tx.update(aircraftMedia).set({ currentContentVersionId: cv.id }).where(eq(aircraftMedia.id, media.id));
+
+      let proposalId: string | null = null;
+      if (input.cardText?.trim()) {
+        const parsed = parseAircraftCard(input.cardText);
+        const [p] = await tx
+          .insert(processingProposals)
+          .values({
+            tenantId: actor.tenantId,
+            sourceEvidenceId: ev.id,
+            aircraftMediaId: media.id,
+            proposalType: "details",
+            provider: "deterministic-card-parser",
+            model: "card-v1",
+            proposal: parsed as unknown as Record<string, unknown>,
+          })
+          .returning({ id: processingProposals.id });
+        proposalId = p.id;
+      }
+      return { mediaId: media.id, evidenceId: ev.id, contentVersionId: cv.id, proposalId };
+    },
+  });
+}
+
+// ---------------------------------------------------------------- metadata, association, review
+
+async function loadMedia(tx: Q, actor: Actor, mediaId: string) {
+  const [m] = await tx.select().from(aircraftMedia).where(and(eq(aircraftMedia.id, mediaId), eq(aircraftMedia.tenantId, actor.tenantId)));
+  if (!m) throw notFound("Media");
+  return m;
+}
+
+function checkVersion(m: { version: number }, expected: number) {
+  if (m.version !== expected) throw conflict("VERSION_MISMATCH", `This media changed (now version ${m.version}). Reload and retry.`, { currentVersion: m.version });
+}
+
+/** Any change to classification, association or content invalidates a previous approval. */
+function reviewAfterChange(state: string) {
+  return state === "approved" ? ("needs_review" as const) : undefined;
+}
+
+export interface MetadataInput {
+  mediaId: string;
+  expectedVersion: number;
+  classification?: Classification;
+  displayOrder?: number;
+  rightsStatus?: RightsStatus;
+}
+
+export function updateMediaMetadata(db: Db, actor: Actor, key: string, input: MetadataInput) {
+  return runAction({
+    db,
+    actor,
+    name: "media.updateMetadata",
+    idempotencyKey: key,
+    input,
+    handler: async (tx) => {
+      const m = await loadMedia(tx, actor, input.mediaId);
+      checkVersion(m, input.expectedVersion);
+      if (input.classification && !CLASSIFICATIONS.includes(input.classification)) throw invalid("Unknown classification");
+      if (input.rightsStatus && !RIGHTS_STATUSES.includes(input.rightsStatus)) throw invalid("Unknown rights status");
+      if (input.displayOrder != null && (!Number.isInteger(input.displayOrder) || input.displayOrder < 0)) throw invalid("Order must be a whole number, 0 or more");
+      const changesMeaning = input.classification && input.classification !== m.primaryClassification;
+      await tx
+        .update(aircraftMedia)
+        .set({
+          primaryClassification: input.classification ?? m.primaryClassification,
+          displayOrder: input.displayOrder ?? m.displayOrder,
+          rightsStatus: input.rightsStatus ?? m.rightsStatus,
+          reviewState: changesMeaning ? (reviewAfterChange(m.reviewState) ?? m.reviewState) : m.reviewState,
+          version: m.version + 1,
+          updatedAt: new Date(),
+        })
+        .where(eq(aircraftMedia.id, m.id));
+      return { mediaId: m.id, version: m.version + 1 };
+    },
+  });
+}
+
+export interface AssociationInput {
+  mediaId: string;
+  expectedVersion: number;
+  status: AssociationStatus;
+  aircraftId?: string | null;
+  aircraftTypeId?: string | null;
+  organisationId?: string | null;
+}
+
+/** Classification is not identity: association is a separate, explicitly reviewed fact. */
+export function setMediaAssociation(db: Db, actor: Actor, key: string, input: AssociationInput) {
+  return runAction({
+    db,
+    actor,
+    name: "media.setAssociation",
+    idempotencyKey: key,
+    input,
+    handler: async (tx) => {
+      const m = await loadMedia(tx, actor, input.mediaId);
+      checkVersion(m, input.expectedVersion);
+      let aircraftId: string | null = null;
+      let aircraftTypeId: string | null = null;
+      if (input.status === "actual_aircraft") {
+        if (!input.aircraftId) throw invalid("Choose the exact aircraft this photo shows");
+        const [ac] = await tx.select().from(aircraft).where(and(eq(aircraft.id, input.aircraftId), eq(aircraft.tenantId, actor.tenantId)));
+        if (!ac) throw notFound("Aircraft");
+        aircraftId = ac.id;
+        aircraftTypeId = ac.aircraftTypeId;
+      } else if (input.status === "representative_type") {
+        if (!input.aircraftTypeId) throw invalid("Choose the aircraft type this photo represents");
+        aircraftTypeId = input.aircraftTypeId;
+      }
+      await tx
+        .update(mediaAssociations)
+        .set({ active: false })
+        .where(and(eq(mediaAssociations.aircraftMediaId, m.id), eq(mediaAssociations.active, true)));
+      await tx.insert(mediaAssociations).values({
+        aircraftMediaId: m.id,
+        aircraftId,
+        aircraftTypeId,
+        organisationId: input.organisationId ?? null,
+        associationStatus: input.status,
+        sourceEvidenceId: m.createdSourceEvidenceId,
+        reviewedBy: actor.id,
+        reviewedAt: new Date(),
+      });
+      await tx
+        .update(aircraftMedia)
+        .set({
+          associationStatus: input.status,
+          reviewState: reviewAfterChange(m.reviewState) ?? m.reviewState,
+          version: m.version + 1,
+          updatedAt: new Date(),
+        })
+        .where(eq(aircraftMedia.id, m.id));
+      return { mediaId: m.id, version: m.version + 1 };
+    },
+  });
+}
+
+/** Approve one exact content version. Idempotent per (content version, media version, actor). */
+export function approveMedia(db: Db, actor: Actor, input: { mediaId: string; contentVersionId: string; expectedVersion: number }) {
+  return runAction({
+    db,
+    actor,
+    name: "media.approve",
+    idempotencyKey: `${input.contentVersionId}:v${input.expectedVersion}:${actor.id}`,
+    input,
+    handler: async (tx) => {
+      const m = await loadMedia(tx, actor, input.mediaId);
+      checkVersion(m, input.expectedVersion);
+      if (m.lifecycleState !== "active") throw conflict("MEDIA_RETIRED", "Retired media cannot be approved. Restore it first.");
+      if (m.currentContentVersionId !== input.contentVersionId) throw conflict("CONTENT_CHANGED", "The photo content changed since you reviewed it.");
+      if (m.reviewState !== "needs_review") throw conflict("NOT_IN_REVIEW", `Media is ${m.reviewState}, not awaiting review.`);
+      if (m.primaryClassification === "unclassified") throw invalid("Choose a classification before approving");
+      if (m.associationStatus === "unresolved") throw invalid("Resolve the association (actual aircraft or representative type) before approving");
+      await tx
+        .update(aircraftMedia)
+        .set({ reviewState: "approved", rejectionReason: null, version: m.version + 1, updatedAt: new Date() })
+        .where(eq(aircraftMedia.id, m.id));
+      return { mediaId: m.id, version: m.version + 1 };
+    },
+  });
+}
+
+export function rejectMedia(db: Db, actor: Actor, key: string, input: { mediaId: string; expectedVersion: number; reason?: string }) {
+  return runAction({
+    db,
+    actor,
+    name: "media.reject",
+    idempotencyKey: key,
+    input,
+    handler: async (tx) => {
+      const m = await loadMedia(tx, actor, input.mediaId);
+      checkVersion(m, input.expectedVersion);
+      if (m.reviewState !== "needs_review") throw conflict("NOT_IN_REVIEW", `Media is ${m.reviewState}, not awaiting review.`);
+      await tx
+        .update(aircraftMedia)
+        .set({ reviewState: "rejected", rejectionReason: input.reason?.trim() || null, version: m.version + 1, updatedAt: new Date() })
+        .where(eq(aircraftMedia.id, m.id));
+      return { mediaId: m.id, version: m.version + 1 };
+    },
+  });
+}
+
+export function reopenMedia(db: Db, actor: Actor, key: string, input: { mediaId: string; expectedVersion: number }) {
+  return runAction({
+    db,
+    actor,
+    name: "media.reopen",
+    idempotencyKey: key,
+    input,
+    handler: async (tx) => {
+      const m = await loadMedia(tx, actor, input.mediaId);
+      checkVersion(m, input.expectedVersion);
+      if (m.reviewState !== "rejected") throw conflict("NOT_REJECTED", "Only rejected media can be reopened.");
+      await tx.update(aircraftMedia).set({ reviewState: "needs_review", version: m.version + 1, updatedAt: new Date() }).where(eq(aircraftMedia.id, m.id));
+      return { mediaId: m.id, version: m.version + 1 };
+    },
+  });
+}
+
+// ---------------------------------------------------------------- lifecycle (logical retire, never physical delete)
+
+export function retireMedia(db: Db, actor: Actor, key: string, input: { mediaId: string }) {
+  return runAction({
+    db,
+    actor,
+    name: "media.retire",
+    idempotencyKey: key,
+    input,
+    handler: async (tx) => {
+      const m = await loadMedia(tx, actor, input.mediaId);
+      if (m.lifecycleState === "retired") return { mediaId: m.id, version: m.version };
+      await tx.update(aircraftMedia).set({ lifecycleState: "retired", version: m.version + 1, updatedAt: new Date() }).where(eq(aircraftMedia.id, m.id));
+      return { mediaId: m.id, version: m.version + 1 };
+    },
+  });
+}
+
+export function restoreMedia(db: Db, actor: Actor, key: string, input: { mediaId: string }) {
+  return runAction({
+    db,
+    actor,
+    name: "media.restore",
+    idempotencyKey: key,
+    input,
+    handler: async (tx) => {
+      const m = await loadMedia(tx, actor, input.mediaId);
+      if (m.lifecycleState === "active") return { mediaId: m.id, version: m.version };
+      await tx.update(aircraftMedia).set({ lifecycleState: "active", version: m.version + 1, updatedAt: new Date() }).where(eq(aircraftMedia.id, m.id));
+      return { mediaId: m.id, version: m.version + 1 };
+    },
+  });
+}
+
+// ---------------------------------------------------------------- crop / separation (manual, no AI)
+
+export interface CropRect {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+async function cropBytes(store: FileStore, storageRef: string, rect: CropRect) {
+  const bytes = await store.get(storageRef);
+  const meta = await sharp(bytes).metadata();
+  const W = meta.width ?? 0;
+  const H = meta.height ?? 0;
+  const ints = [rect.x, rect.y, rect.width, rect.height].every(Number.isInteger);
+  if (!ints || rect.x < 0 || rect.y < 0 || rect.width < 1 || rect.height < 1 || rect.x + rect.width > W || rect.y + rect.height > H) {
+    throw invalid(`Crop must be whole pixels inside the ${W}x${H} image`);
+  }
+  const out = await sharp(bytes).extract({ left: rect.x, top: rect.y, width: rect.width, height: rect.height }).toBuffer();
+  const outMeta = await sharp(out).metadata();
+  return { out, mime: FORMAT_TO_MIME[outMeta.format ?? ""] ?? "image/jpeg", width: rect.width, height: rect.height };
+}
+
+async function loadCurrentVersion(tx: Q, mediaId: string, contentVersionId: string) {
+  const [cv] = await tx.select().from(mediaContentVersions).where(eq(mediaContentVersions.id, contentVersionId));
+  if (!cv || cv.aircraftMediaId !== mediaId) throw notFound("Content version");
+  return cv;
+}
+
+/**
+ * Correct a crop: adds a NEW derivative content version to the same media; the earlier
+ * version stays intact (it may be referenced by deliveries or exports). Re-approval needed.
+ */
+export function recropMedia(db: Db, store: FileStore, actor: Actor, input: { mediaId: string; sourceContentVersionId: string; rect: CropRect }) {
+  const { x, y, width, height } = input.rect;
+  return runAction({
+    db,
+    actor,
+    name: "media.recrop",
+    idempotencyKey: `${input.sourceContentVersionId}:${x},${y},${width},${height}:${CROP_EXTRACTION_VERSION}`,
+    input,
+    handler: async (tx) => {
+      const m = await loadMedia(tx, actor, input.mediaId);
+      if (m.lifecycleState !== "active") throw conflict("MEDIA_RETIRED", "Retired media cannot be changed.");
+      const src = await loadCurrentVersion(tx, m.id, input.sourceContentVersionId);
+      if (m.currentContentVersionId !== src.id) throw conflict("CONTENT_CHANGED", "The photo content changed since you opened it.");
+      const crop = await cropBytes(store, src.storageRef, input.rect);
+      const ref = await store.put(crop.out, "crop");
+      const [ev] = await tx
+        .insert(sourceEvidence)
+        .values({
+          tenantId: actor.tenantId,
+          sourceKind: "extracted_image",
+          parentEvidenceId: src.sourceEvidenceId,
+          cropRef: { ...input.rect, extractionVersion: CROP_EXTRACTION_VERSION },
+          senderId: actor.id,
+          contentHash: sha256(crop.out),
+          metadata: { parentContentVersionId: src.id, mode: "recrop" },
+        })
+        .returning({ id: sourceEvidence.id });
+      const [latest] = await tx
+        .select({ n: mediaContentVersions.versionNumber })
+        .from(mediaContentVersions)
+        .where(eq(mediaContentVersions.aircraftMediaId, m.id))
+        .orderBy(desc(mediaContentVersions.versionNumber))
+        .limit(1);
+      const [cv] = await tx
+        .insert(mediaContentVersions)
+        .values({
+          aircraftMediaId: m.id,
+          versionNumber: (latest?.n ?? 0) + 1,
+          storageKind: store.kind,
+          storageRef: ref,
+          contentHash: sha256(crop.out),
+          mimeType: crop.mime,
+          sizeBytes: crop.out.byteLength,
+          width: crop.width,
+          height: crop.height,
+          isDerivative: true,
+          parentContentVersionId: src.id,
+          sourceEvidenceId: ev.id,
+          createdBy: actor.id,
+        })
+        .returning({ id: mediaContentVersions.id });
+      await tx
+        .update(aircraftMedia)
+        .set({
+          currentContentVersionId: cv.id,
+          reviewState: reviewAfterChange(m.reviewState) ?? m.reviewState,
+          version: m.version + 1,
+          updatedAt: new Date(),
+        })
+        .where(eq(aircraftMedia.id, m.id));
+      return { mediaId: m.id, contentVersionId: cv.id };
+    },
+  });
+}
+
+/**
+ * Separate one photo out of a collage/multi-photo image as its own reviewable media.
+ * The source media (original) is untouched. The new media starts unclassified/unresolved.
+ */
+export function extractCropAsMedia(db: Db, store: FileStore, actor: Actor, input: { mediaId: string; sourceContentVersionId: string; rect: CropRect }) {
+  const { x, y, width, height } = input.rect;
+  return runAction({
+    db,
+    actor,
+    name: "media.extractCrop",
+    idempotencyKey: `${input.sourceContentVersionId}:p1:${x},${y},${width},${height}:${CROP_EXTRACTION_VERSION}`,
+    input,
+    handler: async (tx) => {
+      const m = await loadMedia(tx, actor, input.mediaId);
+      const src = await loadCurrentVersion(tx, m.id, input.sourceContentVersionId);
+      const crop = await cropBytes(store, src.storageRef, input.rect);
+      const ref = await store.put(crop.out, "crop");
+      const hash = sha256(crop.out);
+      const [ev] = await tx
+        .insert(sourceEvidence)
+        .values({
+          tenantId: actor.tenantId,
+          sourceKind: "extracted_image",
+          parentEvidenceId: src.sourceEvidenceId,
+          pageNumber: 1,
+          cropRef: { ...input.rect, extractionVersion: CROP_EXTRACTION_VERSION },
+          senderId: actor.id,
+          contentHash: hash,
+          metadata: { parentContentVersionId: src.id, parentMediaId: m.id, mode: "separate" },
+        })
+        .returning({ id: sourceEvidence.id });
+      const [nm] = await tx
+        .insert(aircraftMedia)
+        .values({ tenantId: actor.tenantId, reviewState: "needs_review", createdSourceEvidenceId: ev.id })
+        .returning({ id: aircraftMedia.id });
+      const [cv] = await tx
+        .insert(mediaContentVersions)
+        .values({
+          aircraftMediaId: nm.id,
+          versionNumber: 1,
+          storageKind: store.kind,
+          storageRef: ref,
+          contentHash: hash,
+          mimeType: crop.mime,
+          sizeBytes: crop.out.byteLength,
+          width: crop.width,
+          height: crop.height,
+          isDerivative: true,
+          parentContentVersionId: src.id,
+          sourceEvidenceId: ev.id,
+          createdBy: actor.id,
+        })
+        .returning({ id: mediaContentVersions.id });
+      await tx.update(aircraftMedia).set({ currentContentVersionId: cv.id }).where(eq(aircraftMedia.id, nm.id));
+      return { mediaId: nm.id, contentVersionId: cv.id, evidenceId: ev.id };
+    },
+  });
+}
+
+// ---------------------------------------------------------------- bytes
+
+/**
+ * Read exact stored bytes. If they cannot be retrieved the version is flagged unavailable
+ * (so it stops counting as available); a later successful read clears the flag.
+ */
+export async function readContentBytes(db: Db, store: FileStore, contentVersionId: string): Promise<{ bytes: Uint8Array; mimeType: string }> {
+  const [cv] = await db.select().from(mediaContentVersions).where(eq(mediaContentVersions.id, contentVersionId));
+  if (!cv) throw notFound("Content version");
+  try {
+    const bytes = await store.get(cv.storageRef);
+    if (cv.unavailableAt) await db.update(mediaContentVersions).set({ unavailableAt: null }).where(eq(mediaContentVersions.id, cv.id));
+    return { bytes, mimeType: cv.mimeType };
+  } catch {
+    await db.update(mediaContentVersions).set({ unavailableAt: new Date() }).where(eq(mediaContentVersions.id, cv.id));
+    throw new DomainError("CONTENT_UNAVAILABLE", "The stored file could not be retrieved.");
+  }
+}
+
+// ---------------------------------------------------------------- reads
+
+export async function getMediaDetail(db: Q, mediaId: string) {
+  const [media] = await db.select().from(aircraftMedia).where(eq(aircraftMedia.id, mediaId));
+  if (!media) return null;
+  const versions = await db.select().from(mediaContentVersions).where(eq(mediaContentVersions.aircraftMediaId, mediaId)).orderBy(asc(mediaContentVersions.versionNumber));
+  const [assoc] = await db.select().from(mediaAssociations).where(and(eq(mediaAssociations.aircraftMediaId, mediaId), eq(mediaAssociations.active, true)));
+  const proposals = await db.select().from(processingProposals).where(eq(processingProposals.aircraftMediaId, mediaId)).orderBy(desc(processingProposals.createdAt));
+  const [evidence] = media.createdSourceEvidenceId
+    ? await db.select().from(sourceEvidence).where(eq(sourceEvidence.id, media.createdSourceEvidenceId))
+    : [];
+  return { media, versions, association: assoc ?? null, proposals, evidence: evidence ?? null };
+}
+
+export async function listReviewQueue(db: Q, tenantId: string) {
+  return db
+    .select()
+    .from(aircraftMedia)
+    .where(and(eq(aircraftMedia.tenantId, tenantId), eq(aircraftMedia.reviewState, "needs_review"), eq(aircraftMedia.lifecycleState, "active")))
+    .orderBy(desc(aircraftMedia.createdAt));
+}
+
+export interface LineupItem {
+  mediaId: string;
+  contentVersionId: string;
+  classification: Classification;
+  label: string; // e.g. "EXT 1" — contextual order, not identity
+  associationStatus: AssociationStatus;
+}
+
+/** Contextual lineup: approved, active, non-restricted media with display labels per classification. */
+export async function getLineup(db: Q, opts: { aircraftId: string; aircraftTypeId: string }): Promise<LineupItem[]> {
+  const rows = await db
+    .select({
+      m: aircraftMedia,
+      a: mediaAssociations,
+      cv: mediaContentVersions,
+    })
+    .from(aircraftMedia)
+    .innerJoin(mediaAssociations, and(eq(mediaAssociations.aircraftMediaId, aircraftMedia.id), eq(mediaAssociations.active, true)))
+    .innerJoin(mediaContentVersions, eq(mediaContentVersions.id, aircraftMedia.currentContentVersionId))
+    .where(and(eq(aircraftMedia.reviewState, "approved"), eq(aircraftMedia.lifecycleState, "active")))
+    .orderBy(asc(aircraftMedia.displayOrder), asc(aircraftMedia.createdAt));
+  const counters = new Map<Classification, number>();
+  const out: LineupItem[] = [];
+  for (const r of rows) {
+    if (r.m.rightsStatus === "restricted" || r.cv.unavailableAt) continue;
+    const actual = r.a.associationStatus === "actual_aircraft" && r.a.aircraftId === opts.aircraftId;
+    const repr = r.a.associationStatus === "representative_type" && r.a.aircraftTypeId === opts.aircraftTypeId;
+    if (!actual && !repr) continue;
+    const n = (counters.get(r.m.primaryClassification) ?? 0) + 1;
+    counters.set(r.m.primaryClassification, n);
+    out.push({
+      mediaId: r.m.id,
+      contentVersionId: r.cv.id,
+      classification: r.m.primaryClassification,
+      label: displayLabel(r.m.primaryClassification, n),
+      associationStatus: r.a.associationStatus,
+    });
+  }
+  return out;
+}

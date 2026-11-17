@@ -1,0 +1,35 @@
+# Render blueprint: one web service + one PostgreSQL database. No background worker (see docs/ADR-001).
+# Secrets are declared with sync: false and set in the Render dashboard; none are stored here.
+services:
+  - type: web
+    name: aircraft-media
+    runtime: node
+    plan: starter
+    buildCommand: npm ci && npm run build
+    startCommand: npm run start
+    healthCheckPath: /login
+    envVars:
+      - key: NODE_VERSION
+        value: "24"
+      - key: DATABASE_URL
+        fromDatabase:
+          name: aircraft-media-db
+          property: connectionString
+      - key: AUTH_SECRET
+        generateValue: true
+      - key: AUTH_GOOGLE_ID
+        sync: false
+      - key: AUTH_GOOGLE_SECRET
+        sync: false
+      - key: OWNER_EMAIL
+        sync: false
+      - key: GOOGLE_DRIVE_ROOT_FOLDER_ID
+        value: 1KaOTmLDTrSg5lanEPuw3jppU0ZsOK6sn
+      - key: STORAGE_KIND
+        value: local # switch to "drive" in phase 2; local files are NOT durable on Render
+    # NOTE: do not set DEV_AUTH_BYPASS on Render. It is ignored when NODE_ENV=production.
+
+databases:
+  - name: aircraft-media-db
+    plan: basic-256mb
+    databaseName: aircraft_media
