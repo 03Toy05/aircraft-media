@@ -4,10 +4,11 @@ import { getDb } from "@/db/client";
 import { aircraftTypes, organisations } from "@/db/schema";
 import { requireOwner } from "@/lib/session";
 import { getCatalogue } from "@/domain/catalogue";
+import { resolveAircraftTypes } from "@/domain/directory";
 import { AIRCRAFT_CATEGORIES, AIRCRAFT_CATEGORY_LABEL } from "@/domain/constants";
 import { STANDARD_AIRCRAFT_TYPES } from "@/domain/standardTypes";
 import { addTypeAliasAction, createAircraftAction, createTypeAction, loadStandardTypesAction, setTypeCategoryAction } from "../../actions";
-import { Badge, Flash, Key, one, type SP } from "../../_components/ui";
+import { Flash, Key, one, type SP } from "../../_components/ui";
 
 export default async function AircraftList({ searchParams }: { searchParams: SP }) {
   const sp = await searchParams;
@@ -16,6 +17,8 @@ export default async function AircraftList({ searchParams }: { searchParams: SP 
   const types = await db.select().from(aircraftTypes).where(eq(aircraftTypes.tenantId, actor.tenantId)).orderBy(asc(aircraftTypes.model));
   const orgs = await db.select().from(organisations).where(eq(organisations.tenantId, actor.tenantId)).orderBy(asc(organisations.canonicalName));
   const rows = await getCatalogue(db, actor.tenantId);
+  const tq = (one(sp.tq) ?? "").trim();
+  const found = tq ? (await resolveAircraftTypes(db, actor.tenantId, tq)).slice(0, 12) : [];
   const tailInUse = (one(sp.error) ?? "").includes("another aircraft");
   const groups = [...AIRCRAFT_CATEGORIES, "none" as const]
     .map((k) => ({
@@ -31,12 +34,12 @@ export default async function AircraftList({ searchParams }: { searchParams: SP 
       <Flash error={one(sp.error)} ok={one(sp.ok)} />
       <div className="card" style={{ overflowX: "auto" }}>
         <table>
-          <thead><tr><th>Tail</th><th>Aircraft</th><th>Operator</th><th>Base</th><th>Availability</th></tr></thead>
+          <thead><tr><th>Tail</th><th>Aircraft</th><th>Operator</th><th>Base</th></tr></thead>
           <tbody>
-            {rows.length === 0 && <tr><td colSpan={5} className="muted">No aircraft yet.</td></tr>}
+            {rows.length === 0 && <tr><td colSpan={4} className="muted">No aircraft yet.</td></tr>}
             {rows.map((r) => (
               <tr key={r.aircraftId}>
-                <td><Link href={`/aircraft/${r.aircraftId}`}>{r.tail ?? "(no tail yet)"}</Link></td><td>{r.aircraft}</td><td>{r.operator ?? "–"}</td><td>{r.base ?? "–"}</td><td><Badge status={r.status} /></td>
+                <td><Link href={`/aircraft/${r.aircraftId}`}>{r.tail ?? "(no tail yet)"}</Link></td><td>{r.aircraft}</td><td>{r.operator ?? "–"}</td><td>{r.base ?? "–"}</td>
               </tr>
             ))}
           </tbody>
@@ -86,8 +89,10 @@ export default async function AircraftList({ searchParams }: { searchParams: SP 
             <p className="muted small">About {STANDARD_AIRCRAFT_TYPES.length} common business jets, turboprops, executive airliners and helicopters are loaded automatically, each with a size category (light jet, heavy jet, and so on). Use the button to check for newly added types. Nothing you already have is changed.</p>
             <button type="submit" className="secondary">Check for new standard types</button>
           </form>
-          <form action={createTypeAction} className="card">
-            <h3>Add aircraft type</h3><Key />
+          <details className="card">
+          <summary><b>Not in the list? Add an aircraft type</b></summary>
+          <form action={createTypeAction}>
+            <Key />
             <div className="row">
               <div><label>Manufacturer</label><input name="manufacturer" required placeholder="Gulfstream" /></div>
               <div><label>Model / variant</label><input name="model" required placeholder="G650ER" /></div>
@@ -98,23 +103,30 @@ export default async function AircraftList({ searchParams }: { searchParams: SP 
             <p className="muted small">An “other name” (alias) is another way the same aircraft type gets written, so a card that says “G650 ER” still finds “Gulfstream G650ER”.</p>
             <p><button type="submit">Create type</button></p>
           </form>
-          <div className="card">
-            <h3>Types, categories and other names</h3>
-            {types.length === 0 ? <p className="muted">None yet.</p> : types.map((t) => (
-              <div key={t.id} style={{ marginBottom: 8 }}>
-                <form action={setTypeCategoryAction} className="row">
-                  <Key /><input type="hidden" name="aircraftTypeId" value={t.id} />
-                  <div style={{ flex: "1 1 140px" }}>{t.manufacturer} {t.model}</div>
-                  <div><select name="category" defaultValue={t.category ?? ""}><option value="">No category</option>{AIRCRAFT_CATEGORIES.map((c) => <option key={c} value={c}>{AIRCRAFT_CATEGORY_LABEL[c]}</option>)}</select></div>
-                  <div style={{ flex: "0 0 auto" }}><button className="secondary" type="submit">Save</button></div>
-                </form>
-                <form action={addTypeAliasAction} className="row">
-                  <Key /><input type="hidden" name="aircraftTypeId" value={t.id} />
-                  <div><input name="alias" placeholder="add another name" required /></div>
-                  <div style={{ flex: "0 0 auto" }}><button className="secondary" type="submit">Add name</button></div>
-                </form>
-              </div>
-            ))}
+          </details>
+          <div className="card" id="types">
+            <h3>Find an aircraft type</h3>
+            <form method="get" action="/aircraft#types" className="row">
+              <div><input name="tq" defaultValue={tq} placeholder="e.g. G280, Citation, Falcon" /></div>
+              <div style={{ flex: "0 0 auto" }}><button type="submit">Search</button></div>
+            </form>
+            {!tq ? <p className="muted small">{types.length} types are available when you add an aircraft. Search here only to change a type's category or add another name for it.</p>
+              : found.length === 0 ? <p className="muted small">No type matches “{tq}”. Use “Not in the list?” above to add it.</p>
+              : found.map((t) => (
+                <div key={t.id} style={{ marginTop: 10 }}>
+                  <form action={setTypeCategoryAction} className="row">
+                    <Key /><input type="hidden" name="aircraftTypeId" value={t.id} />
+                    <div style={{ flex: "1 1 140px" }}>{t.manufacturer} {t.model}</div>
+                    <div><select name="category" defaultValue={t.category ?? ""}><option value="">No category</option>{AIRCRAFT_CATEGORIES.map((c) => <option key={c} value={c}>{AIRCRAFT_CATEGORY_LABEL[c]}</option>)}</select></div>
+                    <div style={{ flex: "0 0 auto" }}><button className="secondary" type="submit">Save</button></div>
+                  </form>
+                  <form action={addTypeAliasAction} className="row">
+                    <Key /><input type="hidden" name="aircraftTypeId" value={t.id} />
+                    <div><input name="alias" placeholder="add another name" required /></div>
+                    <div style={{ flex: "0 0 auto" }}><button className="secondary" type="submit">Add name</button></div>
+                  </form>
+                </div>
+              ))}
           </div>
         </div>
       </div>

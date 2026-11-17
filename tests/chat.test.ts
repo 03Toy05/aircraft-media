@@ -191,6 +191,43 @@ describe("Chocks conversation", () => {
     expect(r.reply.ready).toBe(true);
   });
 
+  it("understands plain lines with no labels: a type name is the type, the other name is the operator", async () => {
+    const r = await converse(t.db, t.actor.tenantId, emptyDraft("u1"), ["Advance aviation", "G280"].join("\n"), [fakePhoto("G280 Int 1.png"), fakePhoto("G280 Ext 1.png", "exterior")]);
+    expect(r.draft).toMatchObject({ operatorText: "Advance aviation", aircraftText: "G280" });
+    expect(say(r)).not.toMatch(/didn't understand/);
+    expect(r.draft.asked?.kind).toBe("operator"); // unknown name: asks new or same as another
+    const next = await converse(t.db, t.actor.tenantId, r.draft, "new", []);
+    expect(next.draft.typeLabel).toBe("Gulfstream G280");
+    expect(next.reply.ready).toBe(true);
+    // order does not matter
+    const flipped = await converse(t.db, t.actor.tenantId, emptyDraft("u2"), ["G280", "Advance aviation"].join("\n"), []);
+    expect(flipped.draft).toMatchObject({ operatorText: "Advance aviation", aircraftText: "G280" });
+  });
+
+  it("reads value-first lines and a confirmation sent together with changes", async () => {
+    let r = await converse(t.db, t.actor.tenantId, emptyDraft("v1"), ["CapaJet", "Gulfstream G280", "2013 YOM", "2020 YOR", "16 seats"].join("\n"), []);
+    expect(r.draft).toMatchObject({ yom: 2013, yor: 2020, capacity: 16, operatorText: "CapaJet" });
+    expect(say(r)).not.toMatch(/didn't understand/);
+    r = await converse(t.db, t.actor.tenantId, r.draft, "new", []);
+    expect(r.reply.ready).toBe(true);
+    r = await converse(t.db, t.actor.tenantId, r.draft, ["YOM 2014", "Confirm"].join("\n"), []);
+    expect(r.confirm).toBe(true);
+    expect(r.draft.yom).toBe(2014);
+  });
+
+  it("confirms however it is typed: alone, with a polite word, or after a change", async () => {
+    const ready = async () => {
+      const r = await converse(t.db, t.actor.tenantId, emptyDraft("c" + Math.random()), ["CapaJet", "Gulfstream G280"].join("\n"), []);
+      return (await converse(t.db, t.actor.tenantId, r.draft, "new", [])).draft;
+    };
+    for (const typed of ["confirm", "Confirm.", "yes please", "Confirm please", "ok"]) {
+      expect((await converse(t.db, t.actor.tenantId, await ready(), typed, [])).confirm, typed).toBe(true);
+    }
+    const withChange = await converse(t.db, t.actor.tenantId, await ready(), "Capacity: 12, confirm", []);
+    expect(withChange.confirm).toBe(true);
+    expect(withChange.draft.capacity).toBe(12);
+  });
+
   it("starts over on request", async () => {
     const r = await converse(t.db, t.actor.tenantId, emptyDraft("k5"), "Operator: X", []);
     const c = await converse(t.db, t.actor.tenantId, r.draft, "cancel", []);

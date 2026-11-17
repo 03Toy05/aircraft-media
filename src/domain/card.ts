@@ -56,6 +56,14 @@ export interface ParsedCard {
 
 /** Unlabelled lines: "10 seats" -> capacity; a bare year -> YOM (then YOR); a hyphenated or N-number tail. */
 function interpretLooseLine(line: string, out: ParsedCard): string | null {
+  // Value first, label after: "2013 YOM", "2020 YOR", "16 capacity".
+  const rev = line.match(/^(\d{1,4})\s*(yom|yor|capacity)$/i);
+  if (rev) {
+    const n = Number(rev[1]);
+    const f = rev[2].toLowerCase();
+    if (f === "capacity" && out.capacity == null) { out.capacity = n; return `"${line}" read as Capacity ${n}`; }
+    if (f !== "capacity" && n >= 1900 && n <= 2100 && out[f as "yom" | "yor"] == null) { out[f as "yom" | "yor"] = n; return `"${line}" read as ${f.toUpperCase()} ${n}`; }
+  }
   const seats = line.match(/^(\d{1,3})\s*(seats?|seater|pax|passengers?)$/i);
   if (seats && out.capacity == null) {
     out.capacity = Number(seats[1]);

@@ -119,8 +119,20 @@ export async function converse(
 ): Promise<{ draft: Draft; reply: ChocksReply; confirm: boolean }> {
   let d: Draft = structuredClone(input);
   const say: string[] = [];
-  const message = messageRaw.trim();
+  let message = messageRaw.trim();
   const asked = d.asked;
+  // "YOM 2013 / YOR 2020 / Confirm": changes and a confirmation in one message. Apply the changes, then confirm.
+  let confirmAfter = false;
+  if (asked?.kind === "confirm" && message.includes("\n")) {
+    const lines = message.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+    const rest = lines.filter((l) => !/^(confirm(ed)?|yes|ok(ay)?|go ahead|do it)[.!]?$/i.test(l));
+    if (rest.length && rest.length < lines.length) { confirmAfter = true; message = rest.join("\n"); }
+  }
+  if (asked?.kind === "confirm" && !confirmAfter) {
+    // "Capacity 12, confirm" / "YOM 2014 and confirm": a trailing confirmation on the same line.
+    const tail = message.match(/^(.+?)[ ,;.]+(?:and +)?(?:please +)?(?:confirm(?:ed)?|go ahead|do it)[.!]?$/is);
+    if (tail && tail[1].trim()) { confirmAfter = true; message = tail[1].trim(); }
+  }
   d.asked = null;
   d.photos.push(...newPhotos);
   if (newPhotos.length) say.push(`Got ${newPhotos.length} photo${newPhotos.length === 1 ? "" : "s"}.`);
@@ -200,25 +212,30 @@ export async function converse(
     if (c.wifi) d.wifi = c.wifi;
     if (c.notes) d.notes = c.notes;
     if (c.base) d.base = c.base;
-    // A lone unlabelled line right after photos, with nothing else understood, is most likely the operator or type name.
-    for (const line of c.unrecognised) {
-      if (!d.operatorText && !c.operator) {
-        const o = await resolveOrganisations(db, tenantId, line);
-        if (o.length) { d.operatorText = line; d.operator = { kind: "unset" }; continue; }
-      }
-      if (!d.aircraftText && !c.aircraft) {
-        const t = await resolveAircraftTypes(db, tenantId, line);
-        if (t.length) { d.aircraftText = line; d.typeId = null; continue; }
-      }
-      if (!d.operatorText && c.unrecognised.length === 1 && !asked) { d.operatorText = line; d.operator = { kind: "unset" }; continue; }
-      say.push(`I didn't understand “${line}”. Use a label like “Operator: …”, “Aircraft type: …” or “Tail number: …”.`);
+    // Lines with no label (the natural way to type: "Advance Aviation" then "G280"). Work out what each one is:
+    // 1) exact matches against your operators and aircraft types, 2) a closer look for a type, 3) whatever is left is the operator name.
+    let rest = [...c.unrecognised];
+    const take = (line: string) => { rest = rest.filter((x) => x !== line); };
+    for (const line of [...rest]) {
+      if (!d.aircraftText && !c.aircraft && (await resolveAircraftTypesExact(db, tenantId, line)).length) { d.aircraftText = line; d.typeId = null; d.typeLabel = ""; d.typeSkipped = false; take(line); continue; }
+      if (!d.operatorText && !c.operator && (await resolveOrganisationsExact(db, tenantId, line)).length) { d.operatorText = line; d.operator = { kind: "unset" }; take(line); }
     }
+    for (const line of [...rest]) {
+      if (!d.aircraftText && !c.aircraft && (await resolveAircraftTypes(db, tenantId, line)).length) { d.aircraftText = line; d.typeId = null; d.typeLabel = ""; d.typeSkipped = false; take(line); }
+    }
+    if (!d.operatorText && !c.operator && rest.length && asked?.kind !== "type") {
+      d.operatorText = rest[0];
+      d.operator = { kind: "unset" };
+      rest = rest.slice(1);
+    }
+    for (const line of rest) say.push(`I didn't understand “${line}”. You can add “Tail number: …”, “YOM: …” or “Capacity: …” on their own lines.`);
     for (const a of c.assumed) say.push(`I read ${a}.`);
     for (const p of c.problems) say.push(p + ".");
   }
 
   // 3) Check what already exists, then ask the next open question.
   const q = await nextStep(db, tenantId, d, say);
+  if (confirmAfter && q.reply.ready) return { draft: q.draft, reply: q.reply, confirm: true };
   return { draft: q.draft, reply: q.reply, confirm: false };
 }
 
