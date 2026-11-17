@@ -23,7 +23,7 @@ import {
 } from "./constants";
 import { DomainError, conflict, invalid, notFound } from "./errors";
 import { sha256 } from "../lib/hash";
-import type { FileStore } from "../storage";
+import type { FileStore, StorageKind } from "../storage";
 
 type Q = Db | Tx;
 
@@ -32,50 +32,68 @@ export const CROP_EXTRACTION_VERSION = "manual-crop-1";
 
 // ---------------------------------------------------------------- upload
 
+/** A photo that already lives in Google Drive: we reference it in place and never move or copy the original. */
+export interface DriveSource {
+  fileId: string;
+  /** Drive revision id when known, else the md5 checksum. Part of the duplicate identity. */
+  revision: string;
+}
+
 export interface UploadInput {
   filename: string;
   bytes: Uint8Array;
   cardText?: string | null;
+  drive?: DriveSource;
 }
 
-/**
- * Manual upload. Retains the original, registers it idempotently by content hash
- * (same bytes uploaded again return the first result and create nothing),
- * and leaves the photo unclassified/unresolved in needs_review. Upload success does
- * not imply classification, association or approval.
- */
-export async function ingestUpload(db: Db, store: FileStore, actor: Actor, input: UploadInput) {
-  if (input.bytes.byteLength === 0) throw invalid("The file is empty");
-  if (input.bytes.byteLength > MAX_UPLOAD_BYTES) throw invalid(`File is larger than ${MAX_UPLOAD_BYTES / 1024 / 1024} MB`);
+export const ensureImageBytes = async (bytes: Uint8Array) => {
+  if (bytes.byteLength === 0) throw invalid("The file is empty");
+  if (bytes.byteLength > MAX_UPLOAD_BYTES) throw invalid(`File is larger than ${MAX_UPLOAD_BYTES / 1024 / 1024} MB`);
   let meta: Awaited<ReturnType<ReturnType<typeof sharp>["metadata"]>>;
   try {
-    meta = await sharp(input.bytes).metadata();
+    meta = await sharp(bytes).metadata();
   } catch {
-    throw invalid("This file is not a readable image. PDFs are handled in a later release; upload JPEG, PNG or WebP.");
+    throw invalid("This file is not a readable image. Upload JPEG, PNG or WebP (or a PDF).");
   }
   const mime = meta.format ? FORMAT_TO_MIME[meta.format] : undefined;
   if (!mime || !(ALLOWED_IMAGE_MIME as readonly string[]).includes(mime)) throw invalid("Only JPEG, PNG or WebP images are supported");
+  return { meta, mime };
+};
 
+/**
+ * Image intake. Retains the original and registers it idempotently:
+ *  - manual upload: duplicate identity is the content hash (same bytes, even renamed, return the first result)
+ *  - Drive file:    duplicate identity is Drive file ID + revision (the original stays where it is in Drive)
+ * The photo starts unclassified/unresolved in needs_review. Upload success does not imply
+ * classification, association or approval.
+ */
+export async function ingestUpload(db: Db, store: FileStore, actor: Actor, input: UploadInput) {
+  const { meta, mime } = await ensureImageBytes(input.bytes);
   const hash = sha256(input.bytes);
+  const drive = input.drive;
   return runAction({
     db,
     actor,
-    name: "media.upload",
-    idempotencyKey: `sha256:${hash}`,
-    input: { hash },
-    fingerprintOf: { hash }, // identical bytes under another filename is a retry, not key reuse
+    name: drive ? "media.importDrive" : "media.upload",
+    idempotencyKey: drive ? `drive:${drive.fileId}:${drive.revision}` : `sha256:${hash}`,
+    input: drive ? { fileId: drive.fileId, revision: drive.revision } : { hash },
+    fingerprintOf: drive ? { fileId: drive.fileId, revision: drive.revision } : { hash }, // renamed re-upload is a retry, not key reuse
     handler: async (tx) => {
-      const ref = await store.put(input.bytes, input.filename);
+      const storageKind = drive ? "drive" : store.kind;
+      const ref = drive ? drive.fileId : await store.put(input.bytes, input.filename, "Sources", mime);
       const [ev] = await tx
         .insert(sourceEvidence)
         .values({
           tenantId: actor.tenantId,
-          sourceKind: "manual",
+          sourceKind: drive ? "drive" : "manual",
+          providerSourceId: drive?.fileId ?? null,
+          originalDriveFileId: drive?.fileId ?? null,
+          originalDriveVersion: drive?.revision ?? null,
           originalFilename: input.filename,
           senderId: actor.id,
           originalText: input.cardText?.trim() || null,
           contentHash: hash,
-          metadata: { mime, uploadedVia: "web" },
+          metadata: { mime, uploadedVia: drive ? "drive-import" : "web" },
         })
         .returning({ id: sourceEvidence.id });
       const [media] = await tx
@@ -87,8 +105,9 @@ export async function ingestUpload(db: Db, store: FileStore, actor: Actor, input
         .values({
           aircraftMediaId: media.id,
           versionNumber: 1,
-          storageKind: store.kind,
+          storageKind,
           storageRef: ref,
+          driveRevision: drive?.revision ?? null,
           contentHash: hash,
           mimeType: mime,
           sizeBytes: input.bytes.byteLength,
@@ -343,8 +362,8 @@ export interface CropRect {
   height: number;
 }
 
-async function cropBytes(store: FileStore, storageRef: string, rect: CropRect) {
-  const bytes = await store.get(storageRef);
+async function cropBytes(store: FileStore, storageRef: string, storageKind: string, rect: CropRect) {
+  const bytes = await store.get(storageRef, storageKind as StorageKind);
   const meta = await sharp(bytes).metadata();
   const W = meta.width ?? 0;
   const H = meta.height ?? 0;
@@ -380,8 +399,8 @@ export function recropMedia(db: Db, store: FileStore, actor: Actor, input: { med
       if (m.lifecycleState !== "active") throw conflict("MEDIA_RETIRED", "Retired media cannot be changed.");
       const src = await loadCurrentVersion(tx, m.id, input.sourceContentVersionId);
       if (m.currentContentVersionId !== src.id) throw conflict("CONTENT_CHANGED", "The photo content changed since you opened it.");
-      const crop = await cropBytes(store, src.storageRef, input.rect);
-      const ref = await store.put(crop.out, "crop");
+      const crop = await cropBytes(store, src.storageRef, src.storageKind, input.rect);
+      const ref = await store.put(crop.out, "crop", "Processing", crop.mime);
       const [ev] = await tx
         .insert(sourceEvidence)
         .values({
@@ -447,8 +466,8 @@ export function extractCropAsMedia(db: Db, store: FileStore, actor: Actor, input
     handler: async (tx) => {
       const m = await loadMedia(tx, actor, input.mediaId);
       const src = await loadCurrentVersion(tx, m.id, input.sourceContentVersionId);
-      const crop = await cropBytes(store, src.storageRef, input.rect);
-      const ref = await store.put(crop.out, "crop");
+      const crop = await cropBytes(store, src.storageRef, src.storageKind, input.rect);
+      const ref = await store.put(crop.out, "crop", "Processing", crop.mime);
       const hash = sha256(crop.out);
       const [ev] = await tx
         .insert(sourceEvidence)
@@ -501,7 +520,7 @@ export async function readContentBytes(db: Db, store: FileStore, contentVersionI
   const [cv] = await db.select().from(mediaContentVersions).where(eq(mediaContentVersions.id, contentVersionId));
   if (!cv) throw notFound("Content version");
   try {
-    const bytes = await store.get(cv.storageRef);
+    const bytes = await store.get(cv.storageRef, cv.storageKind as StorageKind);
     if (cv.unavailableAt) await db.update(mediaContentVersions).set({ unavailableAt: null }).where(eq(mediaContentVersions.id, cv.id));
     return { bytes, mimeType: cv.mimeType };
   } catch {
@@ -537,6 +556,7 @@ export interface LineupItem {
   contentVersionId: string;
   classification: Classification;
   label: string; // e.g. "EXT 1" — contextual order, not identity
+  mimeType: string;
   associationStatus: AssociationStatus;
 }
 
@@ -567,6 +587,7 @@ export async function getLineup(db: Q, opts: { aircraftId: string; aircraftTypeI
       contentVersionId: r.cv.id,
       classification: r.m.primaryClassification,
       label: displayLabel(r.m.primaryClassification, n),
+      mimeType: r.cv.mimeType,
       associationStatus: r.a.associationStatus,
     });
   }

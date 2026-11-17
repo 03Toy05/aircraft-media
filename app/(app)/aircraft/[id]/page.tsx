@@ -10,6 +10,7 @@ import { getLineup } from "@/domain/media";
 import { CLASSIFICATIONS, CLASSIFICATION_LABEL } from "@/domain/constants";
 import { addInfoVersionAction, addManagementAction, changeTailAction, setBasesAction, setOperatorAction } from "../../../actions";
 import { Flash, Key, one, type SP } from "../../../_components/ui";
+import { ShareBox } from "../../../_components/ShareBox";
 
 export default async function AircraftDetail({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: SP }) {
   const { id } = await params;
@@ -119,6 +120,23 @@ export default async function AircraftDetail({ params, searchParams }: { params:
                 <div style={{ flex: "0 0 auto" }}><button type="submit" className="secondary">Add</button></div>
               </div>
             </form>
+          </div>
+
+          <div className="card">
+            <h3>Send to a client</h3>
+            <ShareBox
+              aircraftId={id}
+              tail={card.tailNumber ?? "aircraft"}
+              cardText={formatAircraftCard(card)}
+              items={lineup.map((l) => ({
+                classification: l.classification,
+                classificationLabel: CLASSIFICATION_LABEL[l.classification],
+                label: l.label,
+                url: `/api/media/${l.contentVersionId}`,
+                mimeType: l.mimeType,
+                representative: l.associationStatus === "representative_type",
+              }))}
+            />
           </div>
 
           <div className="card">

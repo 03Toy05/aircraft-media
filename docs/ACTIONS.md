@@ -25,6 +25,8 @@ plus one HTTP route. The HTTP resource API in handoff §18 arrives with the What
 | `aircraft.setOperator` | client | aircraftId, organisationId | one current operator; previous relationship ended, kept | `NOT_FOUND` |
 | `aircraft.addManagementCompany` | client | aircraftId, organisationId | additive; no ownership implied | |
 | `media.upload` | `sha256:<hash>` | file bytes, optional card text | validates image type/size; stores original; evidence + media (`needs_review`, unclassified, unresolved) + content v1; card → pending proposal. Same bytes again → original result | `INVALID` |
+| `media.uploadPdf` | `pdf:sha256:<hash>` or `pdf:drive:<fileId>:<rev>` | PDF bytes, optional card text | keeps the complete original as evidence; extracts each embedded photo as its own `needs_review` media with page + extraction version; reports skipped images as `partially_succeeded`. Repeat returns the original result | `INVALID` (not a PDF / unreadable) |
+| `media.importDrive` | `drive:<fileId>:<revision>` | Drive file (image) | references the original in Drive in place; same file + revision is a no-op; a new revision makes new media | `INVALID` |
 | `media.updateMetadata` | client | mediaId, expectedVersion, classification?, displayOrder?, rightsStatus? | changing classification on approved media returns it to review | `VERSION_MISMATCH` |
 | `media.setAssociation` | client | mediaId, expectedVersion, status, aircraftId / aircraftTypeId | actual needs an aircraft; representative needs a type; previous association kept inactive; approved → review | `INVALID`, `VERSION_MISMATCH` |
 | `media.approve` | `<contentVersionId>:v<ver>:<actor>` | mediaId, contentVersionId, expectedVersion | needs classification ≠ unclassified and association ≠ unresolved; media active; content version must be the current one | `INVALID`, `CONTENT_CHANGED`, `MEDIA_RETIRED`, `NOT_IN_REVIEW` |
@@ -35,8 +37,13 @@ plus one HTTP route. The HTTP resource API in handoff §18 arrives with the What
 | `whatsapp.addVerifiedNumber` / `deactivateNumber` | client | phone / numberId | one active record per number | `NUMBER_IN_USE` |
 | `user.setLanguage` | client | language | one of 7 supported codes | `INVALID` |
 
+## Drive import (not a single action)
+`importDriveFolder` lists one folder tree inside the root (refusing others), then runs each file as its own idempotent action (`media.importDrive` / `media.uploadPdf`), skipping already-imported revisions before download. Per-file outcomes: imported, already imported, unsupported, failed. A failure does not affect other files and a retry repeats only that file. Bookkeeping lives in `drive_sync_state`.
+
 ## HTTP
 - `GET /api/media/{contentVersionId}` — owner-only, streams the exact stored bytes server-side (no storage URLs exposed). `404` if not found/not in tenant, `410` if the bytes cannot be read (the version is then flagged unavailable).
 
+- `GET /api/aircraft/{id}/export?views=cabin,floor_plan`: owner-only zip of the compact card (`aircraft-card.txt`) and the approved, active photos in lineup order, named like `CABIN 1 - B-KXX.jpg`; type-level photos are marked `(representative)`.
+
 ## Outcomes
-Recorded in `action_executions.status`: `succeeded`, `failed` (phase 1). `partially_succeeded` and `outcome_uncertain` exist for batch/external-send actions in phases 2–3.
+Recorded in `action_executions.status`: `succeeded`, `failed`, and `partially_succeeded` (PDF intake with skipped images). `outcome_uncertain` is reserved for external sends (WhatsApp, deferred).

@@ -37,8 +37,8 @@ export default async function Settings({ searchParams }: { searchParams: SP }) {
           <h3>Integrations</h3>
           <table><tbody>
             <tr><td>Google sign-in</td><td>{configured("AUTH_GOOGLE_ID")}</td></tr>
-            <tr><td>Google Drive</td><td>not connected (phase 2) — root folder {process.env.GOOGLE_DRIVE_ROOT_FOLDER_ID ?? "not set"}</td></tr>
-            <tr><td>WhatsApp Business</td><td>not connected (phase 3)</td></tr>
+            <tr><td>Google Drive</td><td>{process.env.GOOGLE_DRIVE_REFRESH_TOKEN && process.env.AUTH_GOOGLE_ID ? "credentials set" : "not connected"} · root folder {process.env.GOOGLE_DRIVE_ROOT_FOLDER_ID ?? "not set"} · new files stored in: {process.env.STORAGE_KIND === "drive" ? "Google Drive" : "local disk"}</td></tr>
+            <tr><td>WhatsApp Business</td><td>deferred — use Share on an aircraft page instead</td></tr>
             <tr><td>Gemini (optional)</td><td>disabled — the app works fully without it</td></tr>
           </tbody></table>
         </div>

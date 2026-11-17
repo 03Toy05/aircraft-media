@@ -7,13 +7,13 @@ exported to CBOS later. It never writes to CBOS.
 Build specification: `Aircraft_Media_App_Claude_Build_Handoff.md` (v1.0) as amended by
 [docs/SPEC-AMENDMENTS.md](docs/SPEC-AMENDMENTS.md) (v1.1: single owner, rejected state, aliases, phasing).
 
-## Status: Phase 1 of 4
+## Status: Phases 1-2 built; WhatsApp deferred
 
 | Phase | Scope | State |
 | --- | --- | --- |
-| 1 | Schema, directory, manual upload, review/approve/reject, crop & separate, catalogue, Google sign-in | **Built, tested locally** |
-| 2 | Google Drive storage + incremental import, PDF embedded-image extraction | Not started |
-| 3 | WhatsApp intake and delivery (`PHOTO ...` commands first) | Not started |
+| 1 | Schema, directory, manual upload, review/approve/reject, crop & separate, catalogue, Google sign-in | Built, tested locally |
+| 2 | Share/export (Share button, Copy card, zip), PDF embedded-photo extraction, Google Drive storage + folder import | Built; Drive tested against a **mock** only |
+| 3 | WhatsApp intake and delivery | **Deferred by the owner** (Share replaces most of the need); tables exist |
 | 4 | Seven-language card parsing/display, optional Gemini adapter | Not started (English card parsing done) |
 
 ## Run locally
@@ -34,7 +34,7 @@ Other commands: `npm test`, `npm run typecheck`, `npm run build`, `npm run db:ge
 
 ## Tests
 
-`npm test` runs 35 tests against a real PostgreSQL engine (PGlite, in-memory) with all migrations applied.
+`npm test` runs 48 tests against a real PostgreSQL engine (PGlite, in-memory) with all migrations applied.
 Coverage against the handoff's acceptance tests is listed in [docs/SPEC-AMENDMENTS.md](docs/SPEC-AMENDMENTS.md#acceptance-test-status).
 
 ## Layout
@@ -42,19 +42,20 @@ Coverage against the handoff's acceptance tests is listed in [docs/SPEC-AMENDMEN
 ```
 src/domain/    business rules: actions (idempotent), directory, media, catalogue, card parser
 src/db/        Drizzle schema + client (drizzle/ holds generated SQL migrations)
-src/storage/   byte storage interface (local now; Google Drive in phase 2)
+src/storage/   byte storage: local disk and Google Drive (REST client + import in src/domain/driveImport.ts)
 app/           Next.js UI and server actions (thin wrappers over src/domain)
 tests/         vitest suites
 docs/          ADR, action contract, configuration guide, spec amendments
 ```
 
-## Known limitations (phase 1)
+## Known limitations
 
-- **Not deployable to Render yet.** Photo bytes are stored on local disk, which Render discards on redeploy. Deploy after phase 2 (Drive storage), or attach a Render persistent disk and set `LOCAL_STORAGE_DIR` to it. `render.yaml` is ready for that.
-- Drive, WhatsApp and Gemini are not connected; Settings shows them as not configured. PDFs are rejected with a message (phase 2).
-- No live provider verification has happened. Everything verified so far is local: unit/integration tests, a production build, and a manual browser pass over the catalogue and review/approve flow with demo data.
-- Google sign-in code is written but has **not** been exercised against real Google credentials.
+- **Google Drive has never touched a real Google account.** The client and import logic are tested against a faithful in-memory fake of the Drive REST API (`tests/fakeDrive.ts`); live verification needs your OAuth credentials and refresh token (`docs/CONFIGURATION.md`). Likewise Google sign-in is written but not exercised against real credentials.
+- **Do not deploy to Render with `STORAGE_KIND=local`**: Render discards local files on redeploy. Set `STORAGE_KIND=drive` (after the live Drive check) or attach a persistent disk.
+- **PDF extraction reads embedded photos only** (JPEG, and 8-bit gray/RGB Flate). It does not render pages, so vector/text-only pages, CMYK/indexed/JPEG2000/CCITT images and images inside nested form XObjects are reported as skipped or "no photos found". Tiny images under 100px are reported as skipped. Skips are always shown, never silent.
+- Drive "incremental" refresh lists the chosen folder tree's metadata and skips already-imported file revisions before downloading (not Drive's account-wide change feed). Up to 100 new files per run; run again to continue.
+- The Share button uses the browser's native share sheet; it works on phones (HTTPS) and some desktops. WhatsApp may drop the caption on shared files, hence **Copy card**. It does not record a delivery history.
+- Drive folders `Approved/` and `Retired/` are not populated yet (folder placement is organisational only); new files go to `Sources/` and `Processing/`.
 - Only English card labels are parsed/displayed so far.
-- Catalogue is computed in application code per request; fine for hundreds of aircraft, would need SQL aggregation for thousands.
-- Crop UI uses numeric pixel fields, not a drag-to-crop overlay.
-- Next.js build prints file-tracing warnings about `process.cwd()` in the storage module; they are harmless today.
+- The catalogue is computed in application code per request; fine for hundreds of aircraft.
+- The crop UI uses numeric pixel fields, not a drag-to-crop overlay.

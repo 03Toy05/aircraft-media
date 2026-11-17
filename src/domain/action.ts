@@ -2,6 +2,7 @@ import { and, eq } from "drizzle-orm";
 import { actionExecutions } from "../db/schema";
 import type { Db } from "../db/client";
 import { fingerprint } from "../lib/hash";
+import type { ActionStatus } from "./constants";
 import { DomainError } from "./errors";
 
 export type Actor = { id: string; tenantId: string };
@@ -16,6 +17,8 @@ export interface RunOptions<I, R> {
   input: I;
   /** Override what is fingerprinted (e.g. upload: hash only, so the same bytes under another filename is a retry). */
   fingerprintOf?: unknown;
+  /** Batch actions report per-item outcomes: return "partially_succeeded" when some items failed. */
+  statusOf?: (result: R) => ActionStatus;
   handler: (tx: Tx) => Promise<R>;
 }
 
@@ -90,7 +93,7 @@ export async function runAction<I, R>(opts: RunOptions<I, R>): Promise<ActionOut
     await db
       .update(actionExecutions)
       .set({
-        status: "succeeded",
+        status: opts.statusOf?.(result) ?? "succeeded",
         result: result as unknown,
         completedAt: new Date(),
         updatedAt: new Date(),

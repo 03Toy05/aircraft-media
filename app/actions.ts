@@ -4,7 +4,9 @@ import { randomUUID } from "node:crypto";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { getDb } from "@/db/client";
-import { getFileStore } from "@/storage";
+import { getDriveClient, getFileStore } from "@/storage";
+import { importDriveFolder } from "@/domain/driveImport";
+import { ingestPdf } from "@/domain/intake";
 import { requireOwner } from "@/lib/session";
 import { DomainError } from "@/domain/errors";
 import * as dir from "@/domain/directory";
@@ -58,12 +60,23 @@ export async function signOutAction() {
 export async function uploadMediaAction(fd: FormData) {
   const { actor, db, store } = await ctx();
   const cardText = optStr(fd, "cardText");
-  const results: { name: string; status: "new" | "duplicate" | "failed"; mediaId?: string; error?: string }[] = [];
+  const results: { name: string; status: "new" | "duplicate" | "failed" | "partial"; mediaId?: string; error?: string; detail?: string }[] = [];
   for (const f of fd.getAll("files")) {
     if (!(f instanceof File) || f.size === 0) continue;
+    const bytes = new Uint8Array(await f.arrayBuffer());
     try {
-      const r = await media.ingestUpload(db, store, actor, { filename: f.name, bytes: new Uint8Array(await f.arrayBuffer()), cardText });
-      results.push({ name: f.name, status: r.replayed ? "duplicate" : "new", mediaId: r.result.mediaId });
+      if (f.type === "application/pdf" || /\.pdf$/i.test(f.name)) {
+        const r = await ingestPdf(db, store, actor, { filename: f.name, bytes, cardText });
+        const x = r.result;
+        const detail =
+          x.status === "no_images"
+            ? `PDF kept. No embedded photos were found in its ${x.pageCount} page(s) — page rendering is not supported; export the pages as images and upload those.`
+            : `${x.extracted.length} photo(s) extracted from ${x.pageCount} page(s)` + (x.skipped.length ? `; skipped ${x.skipped.length}: ${x.skipped.map((k) => `p${k.page} ${k.reason}`).join("; ")}` : "");
+        results.push({ name: f.name, status: r.replayed ? "duplicate" : x.status === "partially_processed" ? "partial" : "new", mediaId: x.extracted[0]?.mediaId, detail });
+      } else {
+        const r = await media.ingestUpload(db, store, actor, { filename: f.name, bytes, cardText });
+        results.push({ name: f.name, status: r.replayed ? "duplicate" : "new", mediaId: r.result.mediaId });
+      }
     } catch (e) {
       if (e instanceof DomainError) results.push({ name: f.name, status: "failed", error: e.message });
       else throw e;
@@ -71,6 +84,24 @@ export async function uploadMediaAction(fd: FormData) {
   }
   revalidatePath("/", "layout");
   redirect(withParam("/intake", "r", JSON.stringify(results)));
+}
+
+export async function driveImportAction(fd: FormData) {
+  const { actor, db, store } = await ctx();
+  const client = getDriveClient();
+  let error: string | null = null;
+  let summary: unknown = null;
+  try {
+    if (!client) throw new DomainError("DRIVE_NOT_CONNECTED", "Google Drive is not connected yet (see the configuration guide).");
+    const s = await importDriveFolder(db, client, store, actor, str(fd, "folder") || client.rootFolderId);
+    summary = { ...s, items: s.items.filter((i) => i.outcome !== "already_imported").slice(0, 25) };
+  } catch (e) {
+    if (e instanceof DomainError) error = e.message;
+    else throw e;
+  }
+  revalidatePath("/", "layout");
+  if (error) redirect(withParam("/intake", "error", error));
+  redirect(withParam("/intake", "d", JSON.stringify(summary)));
 }
 
 // ------------------------------------------------------------------ organisations & types

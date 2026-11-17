@@ -406,3 +406,19 @@ export const whatsappDeliveries = pgTable("whatsapp_deliveries", {
   createdAt: created(),
   updatedAt: updated(),
 });
+
+// ---- Google Drive import bookkeeping (phase 2) ----
+export const driveSyncState = pgTable(
+  "drive_sync_state",
+  {
+    id: pk(),
+    tenantId: uuid("tenant_id").notNull(),
+    folderId: text("folder_id").notNull(), // a folder inside the Aircraft Media root
+    folderName: text("folder_name"),
+    lastSyncedAt: timestamp("last_synced_at", { withTimezone: true }),
+    lastSummary: jsonb("last_summary").$type<Record<string, unknown>>(),
+    createdAt: created(),
+    updatedAt: updated(),
+  },
+  (t) => [uniqueIndex("drive_sync_folder_uq").on(t.tenantId, t.folderId)],
+);
