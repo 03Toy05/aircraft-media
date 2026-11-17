@@ -12,7 +12,8 @@
     "db:seed": "tsx scripts/seed.ts",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
-    "drive:authorize": "tsx --env-file=.env.local scripts/drive-authorize.ts"
+    "drive:authorize": "tsx --env-file=.env.local scripts/drive-authorize.ts",
+    "drive:check": "tsx --env-file=.env.local scripts/drive-live-check.ts"
   },
   "dependencies": {
     "@electric-sql/pglite": "^0.5.16",
