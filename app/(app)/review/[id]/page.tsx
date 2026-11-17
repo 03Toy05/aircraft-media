@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { asc, eq } from "drizzle-orm";
@@ -9,9 +10,10 @@ import { findAircraftByTail, getAircraftCard, resolveAircraftTypes, resolveOrgan
 import { CLASSIFICATIONS, CLASSIFICATION_LABEL } from "@/domain/constants";
 import type { ParsedCard } from "@/domain/card";
 import {
-  approveAction, cropAction, mediaAssociationAction, mediaMetadataAction, reopenAction, rejectAction, restoreAction, retireAction,
+  approveAction, cropAction, mediaAssociationAction, mediaMetadataAction, reopenAction, rejectAction, restoreAction, retireAction, useVersionAction,
 } from "../../../actions";
 import { Flash, Key, one, type SP } from "../../../_components/ui";
+import CropTool from "../../../_components/CropTool";
 
 export default async function ReviewWorkspace({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: SP }) {
   const { id } = await params;
@@ -42,6 +44,7 @@ export default async function ReviewWorkspace({ params, searchParams }: { params
   const prefill = new URLSearchParams();
   if (parsed?.tail) prefill.set("tail", parsed.tail);
   if (opMatches.length === 1) prefill.set("operatorId", opMatches[0].id);
+  else if (opMatches.length === 0 && parsed?.operator) prefill.set("newOperator", parsed.operator);
   if (typeMatches.length === 1) prefill.set("typeId", typeMatches[0].id);
   if (parsed?.yom != null) prefill.set("yom", String(parsed.yom));
   if (parsed?.yor != null) prefill.set("yor", String(parsed.yor));
@@ -70,27 +73,42 @@ export default async function ReviewWorkspace({ params, searchParams }: { params
             <h3>Source evidence</h3>
             <p className="small">File: {evidence?.originalFilename ?? "–"} · received {evidence?.receivedAt.toISOString().slice(0, 16).replace("T", " ")} · {evidence?.sourceKind}</p>
             {evidence?.originalText && <pre className="cardtext">{evidence.originalText}</pre>}
-            {versions.length > 1 && (
-              <p className="small">Earlier versions kept: {versions.filter((v) => v.id !== current.id).map((v) => <a key={v.id} href={`/api/media/${v.id}`} target="_blank">v{v.versionNumber}</a>).reduce<React.ReactNode[]>((a, x) => (a.length ? [...a, ", ", x] : [x]), [])}</p>
-            )}
-          </div>
+</div>
+          {versions.length > 1 && (
+            <div className="card">
+              <h3>Versions</h3>
+              <p className="muted small">Every crop is kept. Switching back (undo) does not delete anything.</p>
+              <table><tbody>
+                {versions.map((v) => (
+                  <tr key={v.id}>
+                    <td>{/* eslint-disable-next-line @next/next/no-img-element */}<a href={`/api/media/${v.id}`} target="_blank"><img src={`/api/media/${v.id}`} alt="" style={{ width: 80, height: 56, objectFit: "cover", borderRadius: 4 }} /></a></td>
+                    <td>v{v.versionNumber}<br /><span className="small muted">{v.width}×{v.height} · {v.isDerivative ? "cropped" : "original"}</span></td>
+                    <td>
+                      {v.id === current.id ? <b className="small">Current</b> : (
+                        <form action={useVersionAction}>
+                          <Key /><input type="hidden" name="mediaId" value={media.id} /><input type="hidden" name="expectedVersion" value={media.version} /><input type="hidden" name="contentVersionId" value={v.id} />
+                          <button className="secondary" type="submit" disabled={retired}>{v.id === current.parentContentVersionId ? "Undo crop (use this)" : "Use this version"}</button>
+                        </form>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody></table>
+            </div>
+          )}
           <div className="card">
             <h3>Crop / separate photos</h3>
-            <p className="muted small">Pixels from the top-left of the {current.width}×{current.height} image. “Replace” keeps this photo and adds a corrected version. “Separate” makes a new photo (for collages); the original stays untouched.</p>
-            <form action={cropAction}>
-              <input type="hidden" name="mediaId" value={media.id} />
-              <input type="hidden" name="contentVersionId" value={current.id} />
-              <div className="row">
-                <div><label>X</label><input name="x" type="number" min={0} defaultValue={0} required /></div>
-                <div><label>Y</label><input name="y" type="number" min={0} defaultValue={0} required /></div>
-                <div><label>Width</label><input name="width" type="number" min={1} defaultValue={current.width ?? 100} required /></div>
-                <div><label>Height</label><input name="height" type="number" min={1} defaultValue={current.height ?? 100} required /></div>
-              </div>
-              <div className="row">
-                <div><select name="mode"><option value="recrop">Replace with corrected crop (new version)</option><option value="separate">Separate as a new photo</option></select></div>
-                <div style={{ flex: "0 0 auto" }}><button className="secondary" type="submit" disabled={retired}>Apply crop</button></div>
-              </div>
-            </form>
+            <p className="muted small">“Replace” adds a cropped version and keeps the earlier one, so it can be undone. “Separate” makes a new photo (for collages); this photo stays untouched.</p>
+            <CropTool
+              src={`/api/media/${current.id}`}
+              width={current.width ?? 100}
+              height={current.height ?? 100}
+              action={cropAction}
+              mediaId={media.id}
+              contentVersionId={current.id}
+              disabled={retired}
+              submitKey={randomUUID()}
+            />
           </div>
         </div>
 

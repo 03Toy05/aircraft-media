@@ -386,14 +386,15 @@ async function loadCurrentVersion(tx: Q, mediaId: string, contentVersionId: stri
  * Correct a crop: adds a NEW derivative content version to the same media; the earlier
  * version stays intact (it may be referenced by deliveries or exports). Re-approval needed.
  */
-export function recropMedia(db: Db, store: FileStore, actor: Actor, input: { mediaId: string; sourceContentVersionId: string; rect: CropRect }) {
+export function recropMedia(db: Db, store: FileStore, actor: Actor, input: { mediaId: string; sourceContentVersionId: string; rect: CropRect; key?: string }) {
   const { x, y, width, height } = input.rect;
   return runAction({
     db,
     actor,
     name: "media.recrop",
-    idempotencyKey: `${input.sourceContentVersionId}:${x},${y},${width},${height}:${CROP_EXTRACTION_VERSION}`,
-    input,
+    // A per-submission key lets the same crop be applied again after an undo; without one, the same crop is a replay.
+    idempotencyKey: input.key ?? `${input.sourceContentVersionId}:${x},${y},${width},${height}:${CROP_EXTRACTION_VERSION}`,
+    input: { mediaId: input.mediaId, sourceContentVersionId: input.sourceContentVersionId, rect: input.rect },
     handler: async (tx) => {
       const m = await loadMedia(tx, actor, input.mediaId);
       if (m.lifecycleState !== "active") throw conflict("MEDIA_RETIRED", "Retired media cannot be changed.");
@@ -447,6 +448,37 @@ export function recropMedia(db: Db, store: FileStore, actor: Actor, input: { med
         })
         .where(eq(aircraftMedia.id, m.id));
       return { mediaId: m.id, contentVersionId: cv.id };
+    },
+  });
+}
+
+/**
+ * Undo a crop (or go to any earlier version): points the media back at an existing content version.
+ * No bytes are changed or deleted; the version being left stays in history. Re-approval is needed.
+ */
+export function useContentVersion(db: Db, actor: Actor, key: string, input: { mediaId: string; contentVersionId: string; expectedVersion: number }) {
+  return runAction({
+    db,
+    actor,
+    name: "media.useVersion",
+    idempotencyKey: key,
+    input,
+    handler: async (tx) => {
+      const m = await loadMedia(tx, actor, input.mediaId);
+      checkVersion(m, input.expectedVersion);
+      if (m.lifecycleState !== "active") throw conflict("MEDIA_RETIRED", "Retired media cannot be changed.");
+      const target = await loadCurrentVersion(tx, m.id, input.contentVersionId);
+      if (m.currentContentVersionId === target.id) return { mediaId: m.id, contentVersionId: target.id, version: m.version };
+      await tx
+        .update(aircraftMedia)
+        .set({
+          currentContentVersionId: target.id,
+          reviewState: reviewAfterChange(m.reviewState) ?? m.reviewState,
+          version: m.version + 1,
+          updatedAt: new Date(),
+        })
+        .where(eq(aircraftMedia.id, m.id));
+      return { mediaId: m.id, contentVersionId: target.id, version: m.version + 1 };
     },
   });
 }

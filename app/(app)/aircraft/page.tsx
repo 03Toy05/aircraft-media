@@ -46,7 +46,9 @@ export default async function AircraftList({ searchParams }: { searchParams: SP 
             <div><label>Serial number</label><input name="serialNumber" /></div>
           </div>
           <label>Operator</label>
-          <select name="operatorId" defaultValue={one(sp.operatorId) ?? ""}><option value="">Not recorded</option>{orgs.map((o) => <option key={o.id} value={o.id}>{o.canonicalName}</option>)}</select>
+          <select name="operatorId" defaultValue={one(sp.operatorId) ?? ""}><option value="">Not recorded / new operator below</option>{orgs.map((o) => <option key={o.id} value={o.id}>{o.canonicalName}</option>)}</select>
+          <label>…or add a new operator now (used only when none is chosen above)</label>
+          <input name="newOperatorName" defaultValue={one(sp.newOperator)} placeholder="e.g. Jet Aviation Hong Kong" />
           <div className="row">
             <div><label>Base</label>
               <select name="baseMode" defaultValue={one(sp.baseMode) ?? ""}><option value="">Not recorded</option><option value="based">Based at…</option><option value="floating">Floating</option></select></div>

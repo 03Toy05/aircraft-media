@@ -18,6 +18,7 @@ import {
   retireMedia,
   setMediaAssociation,
   updateMediaMetadata,
+  useContentVersion,
 } from "../src/domain/media";
 import { getCatalogue } from "../src/domain/catalogue";
 import { aircraftMedia, mediaContentVersions, sourceEvidence } from "../src/db/schema";
@@ -159,6 +160,21 @@ describe("Crop and separation keep the original (manual, no AI)", () => {
     expect((await readContentBytes(t.db, t.store, r.contentVersionId)).bytes.byteLength).toBeGreaterThan(0); // original intact
     const ev = await t.db.select().from(sourceEvidence).where(eq(sourceEvidence.sourceKind, "extracted_image"));
     expect(ev[0].cropRef).toMatchObject({ x: 10, y: 10, width: 100, height: 80, extractionVersion: "manual-crop-1" });
+  });
+
+  it("undo returns to the original version, keeps the crop in history, and the same crop can be applied again", async () => {
+    const r = await upload(23);
+    const rect = { x: 10, y: 10, width: 100, height: 80 };
+    const c1 = await recropMedia(t.db, t.store, t.actor, { mediaId: r.mediaId, sourceContentVersionId: r.contentVersionId, rect, key: key() });
+    let m = (await getMediaDetail(t.db, r.mediaId))!.media;
+    const undo = await useContentVersion(t.db, t.actor, key(), { mediaId: r.mediaId, contentVersionId: r.contentVersionId, expectedVersion: m.version });
+    m = (await getMediaDetail(t.db, r.mediaId))!.media;
+    expect(m.currentContentVersionId).toBe(r.contentVersionId);
+    expect(undo.result.contentVersionId).toBe(r.contentVersionId);
+    expect((await readContentBytes(t.db, t.store, c1.result.contentVersionId)).bytes.byteLength).toBeGreaterThan(0); // crop kept
+    const c2 = await recropMedia(t.db, t.store, t.actor, { mediaId: r.mediaId, sourceContentVersionId: r.contentVersionId, rect, key: key() });
+    expect(c2.replayed).toBe(false);
+    expect((await getMediaDetail(t.db, r.mediaId))!.versions).toHaveLength(3);
   });
 
   it("separates several photos from a collage as independent reviewable media; repeat is a no-op", async () => {

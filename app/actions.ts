@@ -31,7 +31,7 @@ function withParam(url: string, name: string, value: string) {
 }
 
 /** Runs a domain action; a DomainError becomes a visible message, anything else is a real failure. */
-async function run(returnTo: string, ok: string | null, fn: () => Promise<unknown>) {
+async function run(returnTo: string, ok: string | null, fn: () => Promise<unknown>, successTo?: string) {
   let error: string | null = null;
   try {
     await fn();
@@ -41,7 +41,8 @@ async function run(returnTo: string, ok: string | null, fn: () => Promise<unknow
   }
   revalidatePath("/", "layout");
   if (error) redirect(withParam(returnTo, "error", error));
-  redirect(ok ? withParam(returnTo, "ok", ok) : returnTo);
+  const dest = successTo ?? returnTo;
+  redirect(ok ? withParam(dest, "ok", ok) : dest);
 }
 
 async function ctx() {
@@ -157,11 +158,17 @@ export async function createAircraftAction(fd: FormData) {
   let newId: string | null = null;
   let error: string | null = null;
   try {
+    // No operator chosen but a new name typed: create that operator first (same submission key, so a retry reuses it).
+    let operatorId = optStr(fd, "operatorId");
+    const newOperator = optStr(fd, "newOperatorName");
+    if (!operatorId && newOperator) {
+      operatorId = (await dir.createOrganisation(db, actor, `${key(fd)}:operator`, { name: newOperator, roles: ["operator"], aliases: [] })).result.organisationId;
+    }
     const r = await dir.createAircraft(db, actor, key(fd), {
       aircraftTypeId: str(fd, "aircraftTypeId"),
       registration: str(fd, "registration"),
       serialNumber: optStr(fd, "serialNumber"),
-      operatorId: optStr(fd, "operatorId"),
+      operatorId,
       base: baseFrom(fd),
       info: infoFrom(fd),
       tailResolution: existingTail ? "distinct_aircraft" : undefined,
@@ -255,15 +262,28 @@ export async function mediaAssociationAction(fd: FormData) {
 export async function approveAction(fd: FormData) {
   const { actor, db } = await ctx();
   const id = str(fd, "mediaId");
-  await run(`/review/${id}`, "Approved", () =>
+  // After a decision, go back to the queue so the next photo is one click away.
+  await run(`/review/${id}`, "Photo approved", () =>
     media.approveMedia(db, actor, { mediaId: id, contentVersionId: str(fd, "contentVersionId"), expectedVersion: Number(str(fd, "expectedVersion")) }),
+    "/review",
+  );
+}
+
+export async function useVersionAction(fd: FormData) {
+  const { actor, db } = await ctx();
+  const id = str(fd, "mediaId");
+  await run(`/review/${id}`, "Switched version (earlier versions are kept)", () =>
+    media.useContentVersion(db, actor, key(fd), { mediaId: id, contentVersionId: str(fd, "contentVersionId"), expectedVersion: Number(str(fd, "expectedVersion")) }),
   );
 }
 
 export async function rejectAction(fd: FormData) {
   const { actor, db } = await ctx();
   const id = str(fd, "mediaId");
-  await run(`/review/${id}`, "Rejected", () => media.rejectMedia(db, actor, key(fd), { mediaId: id, expectedVersion: Number(str(fd, "expectedVersion")), reason: str(fd, "reason") }));
+  await run(`/review/${id}`, "Photo rejected. It is listed under Rejected, where you can reopen it.", () =>
+    media.rejectMedia(db, actor, key(fd), { mediaId: id, expectedVersion: Number(str(fd, "expectedVersion")), reason: str(fd, "reason") }),
+    "/review",
+  );
 }
 
 export async function reopenAction(fd: FormData) {
@@ -290,7 +310,8 @@ export async function cropAction(fd: FormData) {
   const input = {
     mediaId: id,
     sourceContentVersionId: str(fd, "contentVersionId"),
-    rect: { x: Number(str(fd, "x")), y: Number(str(fd, "y")), width: Number(str(fd, "width")), height: Number(str(fd, "height")) },
+    rect: { x: Math.round(Number(str(fd, "x"))), y: Math.round(Number(str(fd, "y"))), width: Math.round(Number(str(fd, "width"))), height: Math.round(Number(str(fd, "height"))) },
+    key: str(fd, "key") || undefined,
   };
   if (str(fd, "mode") === "separate") {
     let newId: string | null = null;
