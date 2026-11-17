@@ -41,7 +41,7 @@ export default async function AircraftDetail({ params, searchParams }: { params:
   return (
     <>
       <p className="small"><Link href="/aircraft">← Aircraft</Link></p>
-      <h1>{card.tailNumber} — {card.aircraft}</h1>
+      <h1>{card.tailNumber ?? "No tail number yet"} — {card.aircraft}</h1>
       <Flash error={one(sp.error)} ok={one(sp.ok)} />
       <div className="grid g2">
         <div>

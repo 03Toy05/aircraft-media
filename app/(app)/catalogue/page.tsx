@@ -80,7 +80,7 @@ export default async function Catalogue({ searchParams }: { searchParams: SP }) 
               <tr key={r.aircraftId}>
                 <td>{r.operator ?? <span className="muted">–</span>}</td>
                 <td><Link href={`/aircraft/${r.aircraftId}`}>{r.aircraft}</Link></td>
-                <td>{r.tail}</td>
+                <td>{r.tail ?? "(no tail yet)"}</td>
                 <td>{r.base ?? <span className="muted">–</span>}</td>
                 {cell(r, "exterior")}{cell(r, "cabin")}{cell(r, "floor_plan")}
                 <td className="small">{others(r) || <span className="muted">–</span>}</td>

@@ -115,6 +115,15 @@ export async function createOrganisationAction(fd: FormData) {
   );
 }
 
+/** One-click "create this operator" from a photo's card text; returns to the same photo so it now matches. */
+export async function createOperatorFromCardAction(fd: FormData) {
+  const { actor, db } = await ctx();
+  const mediaId = str(fd, "mediaId");
+  await run(`/review/${mediaId}`, "Operator created", () =>
+    dir.createOrganisation(db, actor, key(fd), { name: str(fd, "name"), roles: ["operator"], aliases: [] }),
+  );
+}
+
 export async function addOrgAliasAction(fd: FormData) {
   const { actor, db } = await ctx();
   const id = str(fd, "organisationId");
@@ -124,8 +133,21 @@ export async function addOrgAliasAction(fd: FormData) {
 export async function createTypeAction(fd: FormData) {
   const { actor, db } = await ctx();
   await run("/aircraft", "Aircraft type created", () =>
-    dir.createAircraftType(db, actor, key(fd), { manufacturer: str(fd, "manufacturer"), model: str(fd, "model"), aliases: list(str(fd, "aliases")) }),
+    dir.createAircraftType(db, actor, key(fd), { manufacturer: str(fd, "manufacturer"), model: str(fd, "model"), aliases: list(str(fd, "aliases")), category: optStr(fd, "category") }),
   );
+}
+
+export async function loadStandardTypesAction(fd: FormData) {
+  const { actor, db } = await ctx();
+  const r = await dir.loadStandardAircraftTypes(db, actor, key(fd));
+  revalidatePath("/", "layout");
+  const x = r.result;
+  redirect(withParam("/aircraft", "ok", `Standard types loaded: ${x.added} added, ${x.categorised} given a category, ${x.skipped} already there`));
+}
+
+export async function setTypeCategoryAction(fd: FormData) {
+  const { actor, db } = await ctx();
+  await run("/aircraft", "Category saved", () => dir.setAircraftTypeCategory(db, actor, key(fd), { aircraftTypeId: str(fd, "aircraftTypeId"), category: optStr(fd, "category") }));
 }
 
 export async function addTypeAliasAction(fd: FormData) {

@@ -22,6 +22,8 @@ plus one HTTP route. The HTTP resource API in handoff §18 arrives with the What
 | `aircraft.changeRegistration` | client | aircraftId, newRegistration, effectiveDate? | closes current registration, adds new current one; same aircraft id; at most one current | `TAIL_IN_USE`, `INVALID` |
 | `aircraft.addInformationVersion` | client | aircraftId, expectedVersion, info | new version; previous kept, `is_current` moves | `VERSION_MISMATCH` |
 | `aircraft.setBases` | client | aircraftId, base{mode, locations} | `based` needs ≥1 location; `floating` needs none and is exclusive; earlier rows kept inactive | `INVALID` |
+| `aircraftType.setCategory` | client | aircraftTypeId, category | category must be one of the known categories | `INVALID` |
+| `aircraftType.loadStandard` | `auto:<list version>` (or client) | list version | adds missing standard types; existing types and categories untouched | |
 | `aircraft.setOperator` | client | aircraftId, organisationId | one current operator; previous relationship ended, kept | `NOT_FOUND` |
 | `aircraft.addManagementCompany` | client | aircraftId, organisationId | additive; no ownership implied | |
 | `media.upload` | `sha256:<hash>` | file bytes, optional card text | validates image type/size; stores original; evidence + media (`needs_review`, unclassified, unresolved) + content v1; card → pending proposal. Same bytes again → original result | `INVALID` |
@@ -32,10 +34,14 @@ plus one HTTP route. The HTTP resource API in handoff §18 arrives with the What
 | `media.approve` | `<contentVersionId>:v<ver>:<actor>` | mediaId, contentVersionId, expectedVersion | needs classification ≠ unclassified and association ≠ unresolved; media active; content version must be the current one | `INVALID`, `CONTENT_CHANGED`, `MEDIA_RETIRED`, `NOT_IN_REVIEW` |
 | `media.reject` / `media.reopen` | client | mediaId, expectedVersion, reason? | rejected ↔ needs_review | `NOT_IN_REVIEW`, `NOT_REJECTED` |
 | `media.retire` / `media.restore` | client | mediaId | logical only; approval and content untouched | |
-| `media.recrop` | `<sourceVersion>:<x,y,w,h>:manual-crop-1` | mediaId, sourceContentVersionId, rect | new derivative content version; earlier kept; crop evidence recorded; approved → review | `INVALID`, `CONTENT_CHANGED` |
+| `media.recrop` | per-submission key (default `<sourceVersion>:<x,y,w,h>:manual-crop-1`) | mediaId, sourceContentVersionId, rect | new derivative content version; earlier kept; crop evidence recorded; approved → review | `INVALID`, `CONTENT_CHANGED` |
+| `media.useVersion` | client | mediaId, contentVersionId, expectedVersion | undo a crop / switch to an earlier content version; nothing deleted; approved → review | `VERSION_MISMATCH`, `MEDIA_RETIRED` |
 | `media.extractCrop` | `<sourceVersion>:p1:<x,y,w,h>:manual-crop-1` | same | new, separately reviewable media from a collage; original untouched | `INVALID` |
 | `whatsapp.addVerifiedNumber` / `deactivateNumber` | client | phone / numberId | one active record per number | `NUMBER_IN_USE` |
 | `user.setLanguage` | client | language | one of 7 supported codes | `INVALID` |
+
+## Chocks (assistant, `/chat`)
+Not an action itself. Each message is one server call that stores any attached photos (`media.upload`, waiting in Review) and returns Chocks' reply; the conversation state (the draft) travels with the browser. Nothing is created or approved until the owner confirms, which then runs the normal actions with keys derived from one submission key: `organisation.create`, `organisation.addAlias`, `aircraft.create` (tail optional) or, for an existing aircraft, `aircraft.addInformationVersion` / `setBases` / `setOperator` for the provided fields only, then per photo `media.updateMetadata`, `media.setAssociation`, `media.approve`. A failed step is reported and the others still run.
 
 ## Drive import (not a single action)
 `importDriveFolder` lists one folder tree inside the root (refusing others), then runs each file as its own idempotent action (`media.importDrive` / `media.uploadPdf`), skipping already-imported revisions before download. Per-file outcomes: imported, already imported, unsupported, failed. A failure does not affect other files and a retry repeats only that file. Bookkeeping lives in `drive_sync_state`.

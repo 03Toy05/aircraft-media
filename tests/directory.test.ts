@@ -10,13 +10,16 @@ import {
   getAircraftCard,
   listInformationVersions,
   listRegistrationHistory,
+  loadStandardAircraftTypes,
   resolveAircraftTypes,
   resolveOrganisations,
   setBases,
   setOperator,
 } from "../src/domain/directory";
 import { formatAircraftCard, parseAircraftCard } from "../src/domain/card";
-import { actionExecutions, aircraft, aircraftBases } from "../src/db/schema";
+import { guessClassificationFromFilename, normalizeKey } from "../src/domain/constants";
+import { STANDARD_AIRCRAFT_TYPES } from "../src/domain/standardTypes";
+import { actionExecutions, aircraft, aircraftBases, aircraftTypes } from "../src/db/schema";
 import { DomainError } from "../src/domain/errors";
 
 let t: Awaited<ReturnType<typeof setup>>;
@@ -185,6 +188,27 @@ describe("Operator relationship uses current active operator", () => {
   });
 });
 
+describe("Standard aircraft types", () => {
+  it("has no duplicate names and loads idempotently without touching existing types", async () => {
+    const names = STANDARD_AIRCRAFT_TYPES.map((s) => normalizeKey(`${s.manufacturer} ${s.model}`));
+    expect(new Set(names).size).toBe(names.length);
+    const own = await createAircraftType(t.db, t.actor, key(), { manufacturer: "Gulfstream", model: "G650ER", category: "heavy_jet" });
+    const first = await loadStandardAircraftTypes(t.db, t.actor, key());
+    expect(first.result.added).toBe(STANDARD_AIRCRAFT_TYPES.length - 1);
+    expect(first.result.skipped).toBe(1); // the owner's own G650ER, category kept
+    const again = await loadStandardAircraftTypes(t.db, t.actor, key());
+    expect(again.result.added).toBe(0);
+    const rows = await t.db.select().from(aircraftTypes);
+    expect(rows.find((r) => r.id === own.result.aircraftTypeId)?.category).toBe("heavy_jet");
+    expect(rows).toHaveLength(STANDARD_AIRCRAFT_TYPES.length);
+    expect((await resolveAircraftTypes(t.db, t.actor.tenantId, "G700")).map((x) => x.model)).toEqual(["G700"]);
+  });
+
+  it("rejects an unknown category", async () => {
+    await expect(createAircraftType(t.db, t.actor, key(), { manufacturer: "X", model: "Y", category: "space_ship" })).rejects.toThrow(/category/);
+  });
+});
+
 describe("Aircraft card parsing (English)", () => {
   it("parses the compact card and keeps unrecognised lines", () => {
     const p = parseAircraftCard(
@@ -193,6 +217,22 @@ describe("Aircraft card parsing (English)", () => {
     expect(p).toMatchObject({ operator: "Metrojet", tail: "B-KXX", yom: 2018, yor: 2024, capacity: 13, wifi: "yes" });
     expect(p.base).toEqual({ mode: "based", locations: ["Hong Kong", "Singapore"] });
     expect(p.unrecognised).toEqual(["Random line"]);
+  });
+
+  it("reads unambiguous unlabelled lines as assumptions and leaves names for directory matching", () => {
+    const p = parseAircraftCard("Advanced Aviation\n2025\n10 seats\nB-KXX");
+    expect(p).toMatchObject({ yom: 2025, capacity: 10, tail: "B-KXX" });
+    expect(p.unrecognised).toEqual(["Advanced Aviation"]);
+    expect(p.assumed).toHaveLength(3);
+    expect(parseAircraftCard("2018\n2024")).toMatchObject({ yom: 2018, yor: 2024 });
+    expect(parseAircraftCard("YOM: 2010\n2024")).toMatchObject({ yom: 2010, yor: 2024 });
+  });
+
+  it("suggests a classification from the file name only when it is clear", () => {
+    expect(guessClassificationFromFilename("G280 Int 1.jpeg")).toBe("cabin");
+    expect(guessClassificationFromFilename("B-KXX_exterior_2.png")).toBe("exterior");
+    expect(guessClassificationFromFilename("Floor Plan.pdf")).toBe("floor_plan");
+    expect(guessClassificationFromFilename("IMG_2231.jpg")).toBeNull();
   });
 
   it("handles Floating and omitted values", () => {

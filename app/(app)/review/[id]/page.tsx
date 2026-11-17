@@ -7,10 +7,11 @@ import { aircraft, aircraftTypes } from "@/db/schema";
 import { requireOwner } from "@/lib/session";
 import { getMediaDetail } from "@/domain/media";
 import { findAircraftByTail, getAircraftCard, resolveAircraftTypes, resolveOrganisations } from "@/domain/directory";
-import { CLASSIFICATIONS, CLASSIFICATION_LABEL } from "@/domain/constants";
-import type { ParsedCard } from "@/domain/card";
+import { CLASSIFICATIONS, CLASSIFICATION_LABEL, guessClassificationFromFilename } from "@/domain/constants";
+import { parseAircraftCard, type ParsedCard } from "@/domain/card";
+import { matchCard } from "@/domain/chat";
 import {
-  approveAction, cropAction, mediaAssociationAction, mediaMetadataAction, reopenAction, rejectAction, restoreAction, retireAction, useVersionAction,
+  approveAction, createOperatorFromCardAction, cropAction, mediaAssociationAction, mediaMetadataAction, reopenAction, rejectAction, restoreAction, retireAction, useVersionAction,
 } from "../../../actions";
 import { Flash, Key, one, type SP } from "../../../_components/ui";
 import CropTool from "../../../_components/CropTool";
@@ -32,20 +33,19 @@ export default async function ReviewWorkspace({ params, searchParams }: { params
 
   // Card proposal (deterministic parse): show what it suggests; the owner confirms through normal actions.
   const cardProposal = proposals.find((p) => p.proposalType === "details");
-  const parsed = cardProposal?.proposal as unknown as ParsedCard | undefined;
-  let tailMatches: string[] = [];
-  let opMatches: { id: string; canonicalName: string }[] = [];
-  let typeMatches: { id: string; manufacturer: string; model: string }[] = [];
-  if (parsed) {
-    if (parsed.tail) tailMatches = (await findAircraftByTail(db, actor.tenantId, parsed.tail)).map((r) => r.aircraftId);
-    if (parsed.operator) opMatches = await resolveOrganisations(db, actor.tenantId, parsed.operator);
-    if (parsed.aircraft) typeMatches = await resolveAircraftTypes(db, actor.tenantId, parsed.aircraft);
-  }
+  // Re-read the card text each time (deterministic) so improvements and newly created operators apply to old photos too.
+  const parsed: ParsedCard | undefined = evidence?.originalText
+    ? parseAircraftCard(evidence.originalText)
+    : cardProposal ? (cardProposal.proposal as unknown as ParsedCard) : undefined;
+  const { tailMatches, opMatches, typeMatches, operatorText, operatorLoose, aircraftText, leftover } = parsed
+    ? await matchCard(db, actor.tenantId, parsed)
+    : { tailMatches: [] as string[], opMatches: [], typeMatches: [], operatorText: "", operatorLoose: false, aircraftText: "", leftover: [] as string[] };
   const prefill = new URLSearchParams();
   if (parsed?.tail) prefill.set("tail", parsed.tail);
   if (opMatches.length === 1) prefill.set("operatorId", opMatches[0].id);
-  else if (opMatches.length === 0 && parsed?.operator) prefill.set("newOperator", parsed.operator);
+  else if (opMatches.length === 0 && operatorText) prefill.set("newOperator", operatorText);
   if (typeMatches.length === 1) prefill.set("typeId", typeMatches[0].id);
+  const suggestedClass = media.primaryClassification === "unclassified" ? guessClassificationFromFilename(evidence?.originalFilename ?? "") : null;
   if (parsed?.yom != null) prefill.set("yom", String(parsed.yom));
   if (parsed?.yor != null) prefill.set("yor", String(parsed.yor));
   if (parsed?.capacity != null) prefill.set("capacity", String(parsed.capacity));
@@ -115,11 +115,24 @@ export default async function ReviewWorkspace({ params, searchParams }: { params
         <div>
           {parsed && (
             <div className="card">
-              <h3>Proposed from aircraft card <span className="badge">{cardProposal!.state}</span></h3>
+              <h3>Proposed from aircraft card <span className="badge">{cardProposal?.state ?? "proposed"}</span></h3>
               <p className="muted small">Proposal only — not a fact until you confirm it through the forms below or on the Aircraft page.</p>
               <table><tbody>
-                {parsed.operator && <tr><td>Operator</td><td>{parsed.operator}</td><td className="small">{opMatches.length === 0 ? "no match" : opMatches.map((o) => o.canonicalName).join(" | ")}</td></tr>}
-                {parsed.aircraft && <tr><td>Aircraft</td><td>{parsed.aircraft}</td><td className="small">{typeMatches.length === 0 ? "no match" : typeMatches.map((t) => `${t.manufacturer} ${t.model}`).join(" | ")}</td></tr>}
+                {operatorText && (
+                  <tr>
+                    <td>Operator{operatorLoose && <span className="small muted"><br />(unlabelled line)</span>}</td>
+                    <td>{operatorText}</td>
+                    <td className="small">
+                      {opMatches.length === 0 ? (
+                        <form action={createOperatorFromCardAction}>
+                          <Key /><input type="hidden" name="mediaId" value={media.id} /><input type="hidden" name="name" value={operatorText} />
+                          <span>no match </span><button className="secondary" type="submit">Create operator “{operatorText}”</button>
+                        </form>
+                      ) : opMatches.map((o) => o.canonicalName).join(" | ")}
+                    </td>
+                  </tr>
+                )}
+                {aircraftText && <tr><td>Aircraft</td><td>{aircraftText}</td><td className="small">{typeMatches.length === 0 ? "no match" : typeMatches.map((t) => `${t.manufacturer} ${t.model}`).join(" | ")}</td></tr>}
                 {parsed.tail && <tr><td>Tail number</td><td>{parsed.tail}</td><td className="small">{tailMatches.length === 0 ? "no current aircraft" : `${tailMatches.length} aircraft`}</td></tr>}
                 {parsed.base && <tr><td>Base</td><td>{parsed.base.mode === "floating" ? "Floating" : parsed.base.locations.join(" / ")}</td><td /></tr>}
                 {parsed.yom != null && <tr><td>YOM</td><td>{parsed.yom}</td><td /></tr>}
@@ -128,7 +141,8 @@ export default async function ReviewWorkspace({ params, searchParams }: { params
                 {parsed.wifi && <tr><td>WIFI</td><td>{parsed.wifi}</td><td /></tr>}
                 {parsed.notes && <tr><td>Notes</td><td>{parsed.notes}</td><td /></tr>}
               </tbody></table>
-              {[...parsed.problems, ...parsed.unrecognised.map((u) => `Not recognised: ${u}`)].map((p, i) => <p key={i} className="small" style={{ color: "var(--warn)" }}>{p}</p>)}
+              {(parsed.assumed ?? []).map((a, i) => <p key={`a${i}`} className="small muted">Assumed: {a}</p>)}
+              {[...parsed.problems, ...leftover.map((u) => `Not recognised: ${u}`)].map((p, i) => <p key={i} className="small" style={{ color: "var(--warn)" }}>{p}</p>)}
               <p className="small">{tailMatches.length === 0 && <Link href={`/aircraft?${prefill.toString()}#create`}>Create this aircraft from the card →</Link>}</p>
             </div>
           )}
@@ -139,11 +153,12 @@ export default async function ReviewWorkspace({ params, searchParams }: { params
               <Key /><input type="hidden" name="mediaId" value={media.id} /><input type="hidden" name="expectedVersion" value={media.version} />
               <div className="row">
                 <div><label>Classification</label>
-                  <select name="classification" defaultValue={media.primaryClassification}>{CLASSIFICATIONS.map((c) => <option key={c} value={c}>{CLASSIFICATION_LABEL[c]}</option>)}</select></div>
+                  <select name="classification" defaultValue={suggestedClass ?? media.primaryClassification}>{CLASSIFICATIONS.map((c) => <option key={c} value={c}>{CLASSIFICATION_LABEL[c]}</option>)}</select></div>
                 <div><label>Library order</label><input name="displayOrder" type="number" min={0} defaultValue={media.displayOrder} /></div>
                 <div><label>Rights</label>
                   <select name="rightsStatus" defaultValue={media.rightsStatus}><option value="permitted">Permitted</option><option value="restricted">Restricted</option><option value="unknown">Unknown</option></select></div>
               </div>
+              {suggestedClass && <p className="small muted">Suggested “{CLASSIFICATION_LABEL[suggestedClass]}” from the file name “{evidence?.originalFilename}”. Click Save to accept it.</p>}
               <p><button type="submit" className="secondary">Save</button></p>
             </form>
           </div>

@@ -57,6 +57,46 @@ export const CLASSIFICATION_ALIASES: Record<string, Classification> = {
   unclassified: "unclassified",
 };
 
+/** Aircraft size/class ladder commonly used in business aviation. Sources differ at the edges, so it is editable per type. */
+export const AIRCRAFT_CATEGORIES = [
+  "very_light_jet",
+  "light_jet",
+  "midsize_jet",
+  "super_midsize_jet",
+  "heavy_jet",
+  "ultra_long_range_jet",
+  "executive_airliner",
+  "turboprop",
+  "helicopter",
+  "other",
+] as const;
+export type AircraftCategory = (typeof AIRCRAFT_CATEGORIES)[number];
+
+export const AIRCRAFT_CATEGORY_LABEL: Record<AircraftCategory, string> = {
+  very_light_jet: "Very light jet",
+  light_jet: "Light jet",
+  midsize_jet: "Midsize jet",
+  super_midsize_jet: "Super midsize jet",
+  heavy_jet: "Heavy (large) jet",
+  ultra_long_range_jet: "Ultra long range jet",
+  executive_airliner: "Executive airliner",
+  turboprop: "Turboprop",
+  helicopter: "Helicopter",
+  other: "Other",
+};
+
+/** Suggest a classification from a file name ("G280 Int 1.jpeg" -> cabin). A hint only; null when nothing matches. */
+export function guessClassificationFromFilename(filename: string): Classification | null {
+  const stem = filename.replace(/\.[a-z0-9]{2,5}$/i, "");
+  const words = stem.split(/[^A-Za-z]+/).filter(Boolean);
+  for (let i = 0; i < words.length; i++) {
+    const pair = i + 1 < words.length ? CLASSIFICATION_ALIASES[(words[i] + words[i + 1]).toLowerCase()] : undefined;
+    const hit = pair ?? CLASSIFICATION_ALIASES[words[i].toLowerCase()];
+    if (hit && hit !== "other" && hit !== "unclassified") return hit;
+  }
+  return null;
+}
+
 /** Parse a user-typed view name ("Floor Plan", "FLOOR PLAN", "interior") into a canonical classification. */
 export function parseClassification(text: string): Classification | null {
   const key = text.toLowerCase().replace(/[^a-z]/g, "");

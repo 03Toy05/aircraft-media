@@ -43,7 +43,7 @@ export default async function OrganisationDetail({ params, searchParams }: { par
             <thead><tr><th>Tail</th><th>Aircraft</th><th>Availability</th></tr></thead>
             <tbody>
               {rows.length === 0 && <tr><td colSpan={3} className="muted">No aircraft linked as operator yet.</td></tr>}
-              {rows.map((r) => <tr key={r.aircraftId}><td><Link href={`/aircraft/${r.aircraftId}`}>{r.tail}</Link></td><td>{r.aircraft}</td><td><Badge status={r.status} /></td></tr>)}
+              {rows.map((r) => <tr key={r.aircraftId}><td><Link href={`/aircraft/${r.aircraftId}`}>{r.tail ?? "(no tail yet)"}</Link></td><td>{r.aircraft}</td><td><Badge status={r.status} /></td></tr>)}
             </tbody>
           </table>
         </div>

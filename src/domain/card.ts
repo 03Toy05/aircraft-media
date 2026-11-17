@@ -10,13 +10,13 @@ export type CardField = (typeof CARD_FIELDS)[number];
 
 export const CARD_LABELS: Record<string, Record<CardField, string[]>> = {
   en: {
-    operator: ["operator"],
-    aircraft: ["aircraft"],
+    operator: ["operator", "operated by"],
+    aircraft: ["aircraft type", "aircraft", "type", "model"],
     tail: ["tail number", "tail", "registration"],
     base: ["base"],
-    yom: ["yom"],
-    yor: ["yor"],
-    capacity: ["capacity"],
+    yom: ["yom", "year of manufacture"],
+    yor: ["yor", "year of refurbishment"],
+    capacity: ["capacity", "seats", "pax"],
     wifi: ["wifi", "wi-fi", "wi fi"],
     notes: ["notes", "note"],
   },
@@ -50,21 +50,74 @@ export interface ParsedCard {
   unrecognised: string[];
   /** Field-level problems (e.g. YOM is not a number). The raw text is still kept in evidence. */
   problems: string[];
+  /** Values read from unlabelled lines (e.g. "10 seats", "2025"). Shown to the owner as assumptions. */
+  assumed: string[];
+}
+
+/** Unlabelled lines: "10 seats" -> capacity; a bare year -> YOM (then YOR); a hyphenated or N-number tail. */
+function interpretLooseLine(line: string, out: ParsedCard): string | null {
+  const seats = line.match(/^(\d{1,3})\s*(seats?|seater|pax|passengers?)$/i);
+  if (seats && out.capacity == null) {
+    out.capacity = Number(seats[1]);
+    return `"${line}" read as Capacity ${out.capacity}`;
+  }
+  if (/^(19[5-9]\d|20[0-4]\d)$/.test(line)) {
+    if (out.yom == null) {
+      out.yom = Number(line);
+      return `"${line}" read as YOM (year of manufacture)`;
+    }
+    if (out.yor == null) {
+      out.yor = Number(line);
+      return `"${line}" read as YOR (year of refurbishment)`;
+    }
+  }
+  if (!out.tail && (/^[A-Z0-9]{1,2}-[A-Z0-9]{2,5}$/.test(line) || /^N\d{1,5}[A-Z]{0,2}$/.test(line))) {
+    out.tail = line;
+    return `"${line}" read as Tail number`;
+  }
+  return null;
+}
+
+/**
+ * Dictated text arrives as one line: "Operator Advanced Aviation aircraft type G280 capacity 10".
+ * Single-line messages that contain two or more field labels are split before each label.
+ */
+export function splitInlineLabels(text: string, lang = "en"): string {
+  if (text.includes("\n")) return text;
+  const labels = Object.values(CARD_LABELS[lang] ?? CARD_LABELS.en).flat().sort((x, y) => y.length - x.length);
+  const escaped = labels.map((l) => l.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
+  const re = new RegExp("(?:^|[\\s,.;])(" + escaped.join("|") + ")(?=[\\s:：])", "gi");
+  const hits = [...text.matchAll(re)];
+  if (hits.length < 2) return text;
+  const starts = hits.map((h) => (h.index ?? 0) + (h[0].length - h[1].length));
+  const parts = starts.map((st, i) => text.slice(st, starts[i + 1] ?? text.length).replace(/[\s,.;]+$/, ""));
+  const lead = text.slice(0, starts[0]).replace(/[\s,.;]+$/, "");
+  return [lead, ...parts].filter(Boolean).join("\n");
 }
 
 export function parseAircraftCard(text: string, lang = "en"): ParsedCard {
+  text = splitInlineLabels(text, lang);
   const labels = CARD_LABELS[lang] ?? CARD_LABELS.en;
   const lookup = new Map<string, CardField>();
   for (const f of CARD_FIELDS) for (const l of labels[f]) lookup.set(l.toLowerCase(), f);
 
-  const out: ParsedCard = { unrecognised: [], problems: [] };
+  const out: ParsedCard = { unrecognised: [], problems: [], assumed: [] };
   for (const raw of text.split(/\r?\n/)) {
     const line = raw.trim();
     if (!line) continue;
-    const m = line.match(/^([^:：]+)[:：]\s*(.*)$/);
-    const field = m ? lookup.get(m[1].trim().toLowerCase()) : undefined;
+    let m = line.match(/^([^:：]+)[:：]\s*(.*)$/);
+    let field = m ? lookup.get(m[1].trim().toLowerCase()) : undefined;
+    if (!field) {
+      // "YOM 2025" / "Capacity 10": a known label followed by its value, no colon.
+      const lower = line.toLowerCase();
+      const label = [...lookup.keys()].sort((a, b) => b.length - a.length).find((l) => lower.startsWith(l + " ") && line.slice(l.length).trim() !== "");
+      if (label) { field = lookup.get(label); m = [line, label, line.slice(label.length).trim()] as unknown as RegExpMatchArray; }
+    }
     if (!m || !field) {
-      out.unrecognised.push(line);
+      // Unlabelled line: only unambiguous shapes are interpreted, and each is reported as an assumption.
+      const loose = interpretLooseLine(line, out);
+      if (loose) out.assumed.push(loose);
+      else out.unrecognised.push(line);
       continue;
     }
     const value = m[2].trim();

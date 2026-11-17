@@ -14,7 +14,9 @@ import {
 } from "../db/schema";
 import type { Db } from "../db/client";
 import { runAction, type Actor, type Tx } from "./action";
+import { STANDARD_AIRCRAFT_TYPES, STANDARD_LIST_VERSION } from "./standardTypes";
 import {
+  AIRCRAFT_CATEGORIES,
   normalizeKey,
   normalizeRegistration,
   type BaseMode,
@@ -117,6 +119,69 @@ export interface CreateAircraftTypeInput {
   manufacturer: string;
   model: string;
   aliases?: string[];
+  category?: string | null;
+}
+
+function checkCategory(c: string | null | undefined) {
+  if (c && !(AIRCRAFT_CATEGORIES as readonly string[]).includes(c)) throw invalid(`Unknown aircraft category "${c}"`);
+  return c || null;
+}
+
+export function setAircraftTypeCategory(db: Db, actor: Actor, key: string, input: { aircraftTypeId: string; category: string | null }) {
+  return runAction({
+    db,
+    actor,
+    name: "aircraftType.setCategory",
+    idempotencyKey: key,
+    input,
+    handler: async (tx) => {
+      const category = checkCategory(input.category);
+      const [t] = await tx.select().from(aircraftTypes).where(and(eq(aircraftTypes.id, input.aircraftTypeId), eq(aircraftTypes.tenantId, actor.tenantId)));
+      if (!t) throw notFound("Aircraft type");
+      await tx.update(aircraftTypes).set({ category, updatedAt: new Date() }).where(eq(aircraftTypes.id, t.id));
+      return { aircraftTypeId: t.id };
+    },
+  });
+}
+
+/**
+ * Adds every type from the starter list that is not already present (matched by normalised name).
+ * Existing types, their aliases and their categories are never changed; types that exist without a category get one.
+ */
+export function loadStandardAircraftTypes(db: Db, actor: Actor, key: string) {
+  return runAction({
+    db,
+    actor,
+    name: "aircraftType.loadStandard",
+    idempotencyKey: key,
+    input: { list: STANDARD_LIST_VERSION },
+    handler: async (tx) => {
+      let added = 0;
+      let categorised = 0;
+      let skipped = 0;
+      for (const s of STANDARD_AIRCRAFT_TYPES) {
+        const norm = normalizeKey(`${s.manufacturer} ${s.model}`);
+        const [existing] = await tx
+          .select()
+          .from(aircraftTypes)
+          .where(and(eq(aircraftTypes.tenantId, actor.tenantId), eq(aircraftTypes.normalizedName, norm), eq(aircraftTypes.active, true)));
+        if (existing) {
+          if (!existing.category) {
+            await tx.update(aircraftTypes).set({ category: s.category, updatedAt: new Date() }).where(eq(aircraftTypes.id, existing.id));
+            categorised++;
+          } else skipped++;
+          continue;
+        }
+        const [row] = await tx
+          .insert(aircraftTypes)
+          .values({ tenantId: actor.tenantId, manufacturer: s.manufacturer, model: s.model, normalizedName: norm, category: s.category })
+          .returning({ id: aircraftTypes.id });
+        await insertAliases(tx, "type", row.id, [s.model, ...(s.aliases ?? [])], norm);
+        added++;
+      }
+      return { added, categorised, skipped };
+    },
+  });
 }
 
 export function createAircraftType(db: Db, actor: Actor, key: string, input: CreateAircraftTypeInput) {
@@ -130,6 +195,7 @@ export function createAircraftType(db: Db, actor: Actor, key: string, input: Cre
       const manufacturer = input.manufacturer.trim();
       const model = input.model.trim();
       if (!manufacturer || !model) throw invalid("Manufacturer and model are required");
+      const category = checkCategory(input.category);
       const norm = normalizeKey(`${manufacturer} ${model}`);
       const dup = await tx
         .select({ id: aircraftTypes.id })
@@ -138,7 +204,7 @@ export function createAircraftType(db: Db, actor: Actor, key: string, input: Cre
       if (dup.length) throw conflict("DUPLICATE_AIRCRAFT_TYPE", `Aircraft type "${manufacturer} ${model}" already exists`, { id: dup[0].id });
       const [t] = await tx
         .insert(aircraftTypes)
-        .values({ tenantId: actor.tenantId, manufacturer, model, normalizedName: norm })
+        .values({ tenantId: actor.tenantId, manufacturer, model, normalizedName: norm, category })
         .returning({ id: aircraftTypes.id });
       // "G650ER" alone must resolve to "Gulfstream G650ER".
       await insertAliases(tx, "type", t.id, [model, ...(input.aliases ?? [])], norm);
@@ -180,7 +246,8 @@ export interface InformationInput {
 
 export interface CreateAircraftInput {
   aircraftTypeId: string;
-  registration: string;
+  /** Optional: an aircraft can be recorded before its tail number is known (add it later with "Change tail"). */
+  registration?: string | null;
   serialNumber?: string | null;
   operatorId?: string | null;
   base?: BaseInput;
@@ -200,8 +267,7 @@ export function createAircraft(db: Db, actor: Actor, key: string, input: CreateA
     handler: async (tx) => {
       const [type] = await tx.select().from(aircraftTypes).where(and(eq(aircraftTypes.id, input.aircraftTypeId), eq(aircraftTypes.tenantId, actor.tenantId)));
       if (!type || !type.active) throw notFound("Aircraft type");
-      const reg = input.registration.trim();
-      if (!reg) throw invalid("Tail number is required");
+      const reg = (input.registration ?? "").trim();
       const serial = input.serialNumber?.trim() || null;
 
       if (serial) {
@@ -211,7 +277,7 @@ export function createAircraft(db: Db, actor: Actor, key: string, input: CreateA
           .where(and(eq(aircraft.tenantId, actor.tenantId), eq(aircraft.aircraftTypeId, type.id), eq(aircraft.serialNumber, serial), eq(aircraft.active, true)));
         if (dup.length) throw conflict("DUPLICATE_AIRCRAFT", `An aircraft of this type with serial ${serial} already exists`, { aircraftId: dup[0].id });
       }
-      await assertTailFree(tx, actor, reg, undefined, input.tailResolution);
+      if (reg) await assertTailFree(tx, actor, reg, undefined, input.tailResolution);
 
       const evidenceId = await recordManualEvidence(tx, actor, input.evidenceText);
       const [ac] = await tx
@@ -219,14 +285,16 @@ export function createAircraft(db: Db, actor: Actor, key: string, input: CreateA
         .values({ tenantId: actor.tenantId, aircraftTypeId: type.id, serialNumber: serial, createdSourceEvidenceId: evidenceId })
         .returning({ id: aircraft.id });
 
-      await tx.insert(aircraftRegistrations).values({
-        aircraftId: ac.id,
-        registration: reg,
-        normalizedRegistration: normalizeRegistration(reg),
-        isCurrent: true,
-        sourceEvidenceId: evidenceId,
-        recordedBy: actor.id,
-      });
+      if (reg) {
+        await tx.insert(aircraftRegistrations).values({
+          aircraftId: ac.id,
+          registration: reg,
+          normalizedRegistration: normalizeRegistration(reg),
+          isCurrent: true,
+          sourceEvidenceId: evidenceId,
+          recordedBy: actor.id,
+        });
+      }
       if (input.info) await insertInformationVersion(tx, actor, ac.id, 1, input.info, evidenceId, null);
       if (input.base) await replaceBases(tx, actor, ac.id, input.base, evidenceId, null);
       if (input.operatorId) await replaceOperator(tx, actor, ac.id, input.operatorId, evidenceId, null);
@@ -616,4 +684,40 @@ export async function listRegistrationHistory(db: Q, aircraftId: string) {
 
 export async function listInformationVersions(db: Q, aircraftId: string) {
   return db.select().from(aircraftInformationVersions).where(eq(aircraftInformationVersions.aircraftId, aircraftId)).orderBy(asc(aircraftInformationVersions.versionNumber));
+}
+
+/** Only names or aliases that are exactly the text (ignoring case, spaces and punctuation); never partial matches. */
+export async function resolveOrganisationsExact(db: Q, tenantId: string, text: string) {
+  const n = normalizeKey(text);
+  if (!n) return [];
+  const orgs = await db.select().from(organisations).where(and(eq(organisations.tenantId, tenantId), eq(organisations.active, true)));
+  const aliases = await db.select().from(organisationAliases);
+  return orgs.filter((o) => o.normalizedName === n || aliases.some((a) => a.organisationId === o.id && a.normalizedAlias === n));
+}
+
+export async function resolveAircraftTypesExact(db: Q, tenantId: string, text: string) {
+  const n = normalizeKey(text);
+  if (!n) return [];
+  const types = await db.select().from(aircraftTypes).where(and(eq(aircraftTypes.tenantId, tenantId), eq(aircraftTypes.active, true)));
+  const aliases = await db.select().from(aircraftTypeAliases);
+  return types.filter((t) => t.normalizedName === n || aliases.some((a) => a.aircraftTypeId === t.id && a.normalizedAlias === n));
+}
+
+/** Active aircraft of a type (optionally for one operator) that have no tail number recorded yet. */
+export async function findAircraftWithoutTail(db: Q, tenantId: string, aircraftTypeId: string, operatorId?: string | null) {
+  const acs = await db.select().from(aircraft).where(and(eq(aircraft.tenantId, tenantId), eq(aircraft.aircraftTypeId, aircraftTypeId), eq(aircraft.active, true)));
+  const out: string[] = [];
+  for (const a of acs) {
+    const [reg] = await db.select({ id: aircraftRegistrations.id }).from(aircraftRegistrations).where(and(eq(aircraftRegistrations.aircraftId, a.id), eq(aircraftRegistrations.isCurrent, true)));
+    if (reg) continue;
+    if (operatorId) {
+      const [rel] = await db
+        .select({ id: organisationAircraftRelationships.id })
+        .from(organisationAircraftRelationships)
+        .where(and(eq(organisationAircraftRelationships.aircraftId, a.id), eq(organisationAircraftRelationships.organisationId, operatorId), eq(organisationAircraftRelationships.role, "operator"), eq(organisationAircraftRelationships.active, true)));
+      if (!rel) continue;
+    }
+    out.push(a.id);
+  }
+  return out;
 }

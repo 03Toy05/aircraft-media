@@ -149,6 +149,7 @@ export const aircraftTypes = pgTable(
     manufacturer: text("manufacturer").notNull(),
     model: text("model").notNull(),
     normalizedName: text("normalized_name").notNull(),
+    category: text("category"),
     active: boolean("active").notNull().default(true),
     createdAt: created(),
     updatedAt: updated(),

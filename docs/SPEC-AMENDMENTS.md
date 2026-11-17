@@ -1,4 +1,4 @@
-# Spec amendments (v1.1) and acceptance-test status
+# Spec amendments (v1.2) and acceptance-test status
 
 Amends `Aircraft_Media_App_Claude_Build_Handoff.md` v1.0. Where this file and the handoff differ, this file governs.
 
@@ -16,6 +16,10 @@ Amends `Aircraft_Media_App_Claude_Build_Handoff.md` v1.0. Where this file and th
 | A8 | WhatsApp number is recorded by the owner in Settings as verified (no OTP message), preserving "no proactive outbound". |
 | A10 | **WhatsApp deferred** (owner decision, 2026-11-17): the Share button (native share sheet with photos), Copy card and Download zip replace the need to download repeatedly. Phase 3 remains available later. |
 | A11 | Drive import detects changes per folder tree using file ID + revision (skips before download) instead of the account-wide changes feed; confined to descendants of the Aircraft Media root. |
+| A12 | **Tail number is optional** when adding an aircraft; it can be added later ("Change tail" keeps history). An operator can also be added with no aircraft. |
+| A13 | **Aircraft types carry a category** (very light, light, midsize, super midsize, heavy, ultra long range, executive airliner, turboprop, helicopter, other). About 190 standard types load automatically once per list version; owner types and categories are never overwritten. |
+| A14 | **Chocks**, a deterministic (no AI) assistant at `/chat`: reads labelled or dictated text, checks operators, types and tails against the directory (exact matches only; near matches are offered, never assumed), asks one question at a time, and applies nothing until the owner confirms. For an existing aircraft it saves only the details the owner gave, as new versions. Voice input/read-aloud use the browser's speech features. |
+| A15 | **Crop can be undone** by switching to an earlier content version (nothing is deleted); approve/reject return to the review queue; rejected photos are listed there. |
 | A9 | `media_content_versions.drive_file_id` is generalised to `storage_kind` + `storage_ref` (Drive file ID when kind is `drive`). |
 
 ## Phases
