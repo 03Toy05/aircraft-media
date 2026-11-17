@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="Aircraft Media">
+  <rect width="64" height="64" rx="14" fill="#1f5fbf"/>
+  <!-- photo-frame corners: the "media" half -->
+  <g fill="none" stroke="#ffffff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" opacity="0.9">
+    <path d="M10 20V12a2 2 0 0 1 2-2h8"/>
+    <path d="M44 10h8a2 2 0 0 1 2 2v8"/>
+    <path d="M54 44v8a2 2 0 0 1-2 2h-8"/>
+    <path d="M20 54h-8a2 2 0 0 1-2-2v-8"/>
+  </g>
+  <!-- aircraft: the "aircraft" half -->
+  <g transform="translate(32 32) rotate(40) scale(0.62) translate(-32 -32)" fill="#ffffff">
+    <rect x="29" y="8" width="6" height="48" rx="3"/>
+    <polygon points="32,24 58,42 58,47 32,38 6,47 6,42"/>
+    <polygon points="32,47 44,57 44,60 32,56 20,60 20,57"/>
+  </g>
+</svg>

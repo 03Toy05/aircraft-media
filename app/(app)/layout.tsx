@@ -7,7 +7,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   return (
     <>
       <nav className="top">
-        <span className="brand">Aircraft Media</span>
+        <span className="brand" style={{ display: "flex", alignItems: "center", gap: 8 }}>{/* eslint-disable-next-line @next/next/no-img-element */}<img src="/logo.svg" alt="" width={26} height={26} />Aircraft Media</span>
         <Link href="/">Dashboard</Link>
         <Link href="/catalogue">Catalogue</Link>
         <Link href="/intake">Intake</Link>

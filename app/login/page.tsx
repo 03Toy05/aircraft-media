@@ -8,6 +8,8 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
   return (
     <main style={{ maxWidth: 420, margin: "12vh auto", padding: 16 }}>
       <div className="card">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src="/logo.svg" alt="" width={48} height={48} />
         <h1>Aircraft Media</h1>
         <p className="muted">Private application. Sign in with the owner&apos;s Google account.</p>
         {error && <div className="flash err">That Google account is not authorised.</div>}
