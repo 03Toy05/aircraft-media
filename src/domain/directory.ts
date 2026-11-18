@@ -85,6 +85,46 @@ export function createOrganisation(db: Db, actor: Actor, key: string, input: Cre
   });
 }
 
+/**
+ * Rename an operator. The record, its aircraft and its history stay as they are; only the name changes.
+ * By default the old name is kept as another name, so cards that still use it keep matching.
+ */
+export function renameOrganisation(db: Db, actor: Actor, key: string, input: { organisationId: string; name: string; keepOldAsAlias?: boolean }) {
+  return runAction({
+    db,
+    actor,
+    name: "organisation.rename",
+    idempotencyKey: key,
+    input,
+    handler: async (tx) => {
+      const name = input.name.trim();
+      if (!name) throw invalid("The name cannot be empty");
+      const norm = normalizeKey(name);
+      if (!norm) throw invalid("The name needs letters or numbers");
+      const [org] = await tx.select().from(organisations).where(and(eq(organisations.id, input.organisationId), eq(organisations.tenantId, actor.tenantId)));
+      if (!org) throw notFound("Organisation");
+      if (norm !== org.normalizedName) {
+        const dup = await tx
+          .select({ id: organisations.id, name: organisations.canonicalName })
+          .from(organisations)
+          .where(and(eq(organisations.tenantId, actor.tenantId), eq(organisations.normalizedName, norm), eq(organisations.active, true)));
+        if (dup.length) throw conflict("DUPLICATE_ORGANISATION", `Another operator is already called "${dup[0].name}"`, { id: dup[0].id });
+        const clash = await tx
+          .select({ owner: organisationAliases.organisationId })
+          .from(organisationAliases)
+          .innerJoin(organisations, eq(organisations.id, organisationAliases.organisationId))
+          .where(and(eq(organisations.tenantId, actor.tenantId), eq(organisationAliases.normalizedAlias, norm)));
+        if (clash.some((c) => c.owner !== org.id)) throw conflict("DUPLICATE_ALIAS", `"${name}" is already another name of a different operator`, {});
+      }
+      await tx.update(organisations).set({ canonicalName: name, normalizedName: norm, updatedAt: new Date() }).where(eq(organisations.id, org.id));
+      // The new name no longer needs to be an alias of its own operator; the old one is kept unless told otherwise.
+      await tx.delete(organisationAliases).where(and(eq(organisationAliases.organisationId, org.id), eq(organisationAliases.normalizedAlias, norm)));
+      if (input.keepOldAsAlias !== false && org.normalizedName !== norm) await insertAliases(tx, "org", org.id, [org.canonicalName], norm);
+      return { organisationId: org.id, name };
+    },
+  });
+}
+
 export function setOrganisationRegion(db: Db, actor: Actor, key: string, input: { organisationId: string; region: string | null; base?: string | null }) {
   return runAction({
     db,

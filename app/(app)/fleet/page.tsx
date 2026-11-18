@@ -5,6 +5,7 @@ import { aircraftTypes, organisations } from "@/db/schema";
 import { requireOwner } from "@/lib/session";
 import Icon from "../../_components/Icon";
 import OpenSection from "../../_components/OpenSection";
+import CollapseOnMobile from "../../_components/CollapseOnMobile";
 import { AC_SORTS, runFleetQuery, type AcSort, type OperatorSort } from "@/domain/fleetQuery";
 import { getCatalogue, type CatalogueRow } from "@/domain/catalogue";
 import { AIRCRAFT_CATEGORIES, AIRCRAFT_CATEGORY_LABEL } from "@/domain/constants";
@@ -91,7 +92,8 @@ export default async function Fleet({ searchParams }: { searchParams: SP }) {
       </div>
 
       {orgs.length > 0 && (
-        <form method="get" className="card row" style={{ alignItems: "end" }}>
+        <CollapseOnMobile keepOpen={filtering} summary="Filter and sort">
+        <form method="get" className="row filterbar" style={{ alignItems: "end" }}>
           <div><label>Search</label><input name="q" defaultValue={q} placeholder="Operator, tail or aircraft" /></div>
           <div><label>Region</label>
             <select name="region" defaultValue={regionFilter}>
@@ -118,6 +120,7 @@ export default async function Fleet({ searchParams }: { searchParams: SP }) {
             <select name="acsort" defaultValue={acSort}>{AC_SORTS.map((o) => <option key={o.id} value={o.id}>{o.label}</option>)}</select></div>
           <div style={{ flex: "0 0 auto" }}><button type="submit"><Icon name="search" />Apply</button> {filtering && <Link href="/fleet">Clear</Link>}</div>
         </form>
+        </CollapseOnMobile>
       )}
       {filtering && <p className="muted small">Showing {shown.length} of {orgs.length} operators.</p>}
 

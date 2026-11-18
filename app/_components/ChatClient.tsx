@@ -6,6 +6,7 @@ import { chocksTurnAction, type TurnResult } from "../chatActions";
 import type { Draft } from "@/domain/chocks";
 import { prepareShareAction, type SharePayload } from "../shareActions";
 import { ShareBox } from "./ShareBox";
+import Icon from "./Icon";
 import { CHAT_LANGUAGES, parseChatLang, toHans, type ChatLang } from "@/domain/chocksText";
 
 /** The words on the chat itself. Chocks's own sentences come from the server in the chosen language. */
@@ -15,7 +16,7 @@ const UI_EN = {
   template: "Operator: \nRegion: \nAircraft type: \nTail number: \nYOM: \nCapacity: ",
   placeholderNew: "Operator: \nAircraft type: \nYOM: \nCapacity: ",
   placeholderReply: "Reply to Chocks, or add more details…",
-  templateBtn: "Template", speak: "Speak", stop: "Stop listening", send: "Send",
+  templateBtn: "Template", speak: "Speak", stop: "Stop", send: "Send", attach: "Photos", voiceOptions: "Voice options",
   readAloud: "Chocks reads replies aloud", autoSend: "Send when I stop speaking", voiceLanguage: "Voice language", language: "Language",
   listening: "Listening… keep talking, pauses are fine. Press Stop listening when you are done (or tick “Send when I stop speaking”). Say something like “Operator Advanced Aviation, aircraft type G280, capacity 10”.",
   noVoice: "Voice input isn't available in this browser. Chrome or Edge work best.",
@@ -33,7 +34,7 @@ const UI_HANT: UI = {
   template: "營運商：\n地區：\n機型：\n機尾號：\n出廠年份：\n載客量：",
   placeholderNew: "營運商：\n機型：\n出廠年份：\n載客量：",
   placeholderReply: "回覆 Chocks，或補充更多資料…",
-  templateBtn: "範本", speak: "語音輸入", stop: "停止收音", send: "傳送",
+  templateBtn: "範本", speak: "語音輸入", stop: "停止", send: "傳送", attach: "相片", voiceOptions: "語音選項",
   readAloud: "由 Chocks 朗讀回覆", autoSend: "停止說話後自動傳送", voiceLanguage: "語音語言", language: "語言",
   listening: "正在收音…請繼續說，停頓沒關係。說完後按「停止收音」（或勾選「停止說話後自動傳送」）。可以這樣說：「營運商 Advanced Aviation，機型 G280，載客量 10」。",
   noVoice: "此瀏覽器不支援語音輸入。建議使用 Chrome 或 Edge。",
@@ -104,6 +105,7 @@ export default function ChatClient() {
 
   // voice
   const [canListen, setCanListen] = useState(false);
+  const [canSpeak, setCanSpeak] = useState(false);
   const [listening, setListening] = useState(false);
   const [speak, setSpeak] = useState(false);
   const [autoSend, setAutoSend] = useState(false);
@@ -117,7 +119,7 @@ export default function ChatClient() {
   const sendRef = useRef<(t: string) => void>(() => {});
   const autoSendRef = useRef(false);
 
-  useEffect(() => { setCanListen(!!getRecognition()); }, []);
+  useEffect(() => { setCanListen(!!getRecognition()); setCanSpeak("speechSynthesis" in window); }, []);
   // Remember the chosen language on this device.
   useEffect(() => {
     try {
@@ -296,7 +298,7 @@ export default function ChatClient() {
       {pending && <div className="card muted" style={{ marginRight: "8%" }}>{ui.checking}</div>}
       <div ref={endRef} />
 
-      <div className="card" style={{ position: "sticky", bottom: 8 }}>
+      <div className="card composer">
         <textarea
           value={text}
           onChange={(e) => setText(e.target.value)}
@@ -305,33 +307,31 @@ export default function ChatClient() {
           placeholder={lastChocks && !lastChocks.done ? ui.placeholderReply : ui.placeholderNew}
           style={{ width: "100%" }}
         />
-        <div className="row" style={{ marginTop: 6, alignItems: "center" }}>
-          <div style={{ flex: "0 0 auto" }}>
-            <input ref={fileRef} type="file" accept="image/jpeg,image/png,image/webp,application/pdf" multiple onChange={(e) => setFiles([...(e.target.files ?? [])])} />
-          </div>
-          <div style={{ flex: "0 0 auto" }}><button type="button" className="secondary" onClick={() => setText((v) => (v.trim() ? v : ui.template))}>{ui.templateBtn}</button></div>
-          {canListen && (
-            <div style={{ flex: "0 0 auto" }}>
-              <button type="button" className={listening ? "danger" : "secondary"} onClick={toggleMic} aria-pressed={listening}>{listening ? ui.stop : ui.speak}</button>
-            </div>
-          )}
-          <div style={{ flex: "0 0 auto" }}><button type="button" onClick={() => send()} disabled={pending || (!text.trim() && files.length === 0)}>{ui.send}</button></div>
+        <input ref={fileRef} type="file" hidden accept="image/jpeg,image/png,image/webp,application/pdf" multiple onChange={(e) => setFiles([...(e.target.files ?? [])])} />
+        <div className="composer-bar">
+          <button type="button" className="secondary" onClick={() => fileRef.current?.click()} aria-label={ui.attach}><Icon name="photos" />{files.length > 0 && <b>{files.length}</b>}<span className="lbl">{files.length > 0 ? "" : ui.attach}</span></button>
+          <button type="button" className="secondary" onClick={() => setText((v) => (v.trim() ? v : ui.template))}>{ui.templateBtn}</button>
+          {canListen && <button type="button" className={listening ? "danger" : "secondary"} onClick={toggleMic} aria-pressed={listening}><Icon name="mic" /><span className="lbl">{listening ? ui.stop : ui.speak}</span></button>}
+          <button type="button" className="send" onClick={() => send()} disabled={pending || (!text.trim() && files.length === 0)}><Icon name="send" />{ui.send}</button>
         </div>
-        {(canListen || "speechSynthesis" in (typeof window === "undefined" ? {} : window)) && (
-          <div className="row small" style={{ marginTop: 6, alignItems: "center" }}>
-            <label style={{ flex: "0 0 auto" }}><input type="checkbox" checked={speak} onChange={(e) => setSpeak(e.target.checked)} /> {ui.readAloud}</label>
-            {canListen && <label style={{ flex: "0 0 auto" }}><input type="checkbox" checked={autoSend} onChange={(e) => setAutoSend(e.target.checked)} /> {ui.autoSend}</label>}
-            {canListen && (
-              <select value={voice} onChange={(e) => setVoice(e.target.value)} style={{ flex: "0 0 auto", width: "auto" }} aria-label={ui.voiceLanguage}>
-                {VOICES.map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}
-              </select>
-            )}
-          </div>
-        )}
         {listening && <p className="small muted">{ui.listening}</p>}
         {voiceMsg && <p className="small" style={{ color: "var(--warn)" }}>{voiceMsg}</p>}
-        {!canListen && <p className="small muted">{ui.noVoice}</p>}
-        {files.length > 0 && <p className="small muted">{ui.files.replace("{n}", String(files.length))}</p>}
+        {files.length > 0 && <p className="small muted" style={{ margin: "6px 0 0" }}>{ui.files.replace("{n}", String(files.length))}</p>}
+        <details className="voice-opts">
+          <summary className="small muted">{ui.voiceOptions}</summary>
+          {(canListen || canSpeak) ? (
+            <div className="row small" style={{ marginTop: 6, alignItems: "center" }}>
+              <label style={{ flex: "0 0 auto" }}><input type="checkbox" checked={speak} onChange={(e) => setSpeak(e.target.checked)} /> {ui.readAloud}</label>
+              {canListen && <label style={{ flex: "0 0 auto" }}><input type="checkbox" checked={autoSend} onChange={(e) => setAutoSend(e.target.checked)} /> {ui.autoSend}</label>}
+              {canListen && (
+                <select value={voice} onChange={(e) => setVoice(e.target.value)} style={{ flex: "0 0 auto", width: "auto" }} aria-label={ui.voiceLanguage}>
+                  {VOICES.map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}
+                </select>
+              )}
+            </div>
+          ) : null}
+          {!canListen && <p className="small muted" style={{ margin: "6px 0 0" }}>{ui.noVoice}</p>}
+        </details>
       </div>
     </div>
   );

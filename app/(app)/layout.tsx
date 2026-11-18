@@ -5,6 +5,7 @@ import { loadStandardAircraftTypes } from "@/domain/directory";
 import { STANDARD_LIST_VERSION } from "@/domain/standardTypes";
 import { signOutAction } from "../actions";
 import Icon from "../_components/Icon";
+import MobileNav from "../_components/MobileNav";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const { email, actor } = await requireOwner(); // redirects to /login unless the owner is signed in
@@ -31,6 +32,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         </form>
       </nav>
       <main>{children}</main>
+      <MobileNav email={email} signOut={signOutAction} />
     </>
   );
 }

@@ -8,7 +8,7 @@ import { getCatalogue } from "@/domain/catalogue";
 import { getAircraftCard } from "@/domain/directory";
 import { getLineup } from "@/domain/media";
 import { AIRCRAFT_CATEGORY_LABEL, type AircraftCategory } from "@/domain/constants";
-import { addOrgAliasAction, setOrgRegionAction } from "../../../actions";
+import { addOrgAliasAction, renameOrgAction, setOrgRegionAction } from "../../../actions";
 import { Flash, Key, one, type SP } from "../../../_components/ui";
 
 export default async function OrganisationDetail({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: SP }) {
@@ -38,6 +38,16 @@ export default async function OrganisationDetail({ params, searchParams }: { par
       <p className="small"><Link href="/fleet">← Operators &amp; aircraft</Link></p>
       <h1>{org.canonicalName}</h1>
       <Flash error={one(sp.error)} ok={one(sp.ok)} />
+      <details className="card">
+        <summary><b>Change the name</b> <span className="muted small">(for example a spelling fix or a new company name)</span></summary>
+        <form action={renameOrgAction}>
+          <Key /><input type="hidden" name="organisationId" value={id} />
+          <label>Name</label>
+          <input name="name" defaultValue={org.canonicalName} required />
+          <label><input type="checkbox" name="keepOld" defaultChecked /> Keep the old name as another name, so cards that still use it keep matching</label>
+          <p><button type="submit" className="secondary">Save name</button></p>
+        </form>
+      </details>
       <form action={setOrgRegionAction} className="row" style={{ marginBottom: 12, alignItems: "end" }}>
         <Key /><input type="hidden" name="organisationId" value={id} /><input type="hidden" name="returnTo" value={`/organisations/${id}`} />
         <div style={{ maxWidth: 280 }}><label>Region</label><input name="region" defaultValue={org.region ?? ""} placeholder="e.g. Asia, Middle East, Europe" /></div>

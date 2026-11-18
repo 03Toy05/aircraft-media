@@ -135,6 +135,14 @@ export async function createOperatorThenAircraftAction(fd: FormData) {
   redirect(`/fleet?add=aircraft&operatorId=${newId}&ok=${encodeURIComponent("Operator created. Now add its aircraft")}#add-aircraft`);
 }
 
+export async function renameOrgAction(fd: FormData) {
+  const { actor, db } = await ctx();
+  const id = str(fd, "organisationId");
+  await run(`/organisations/${id}`, "Name changed", () =>
+    dir.renameOrganisation(db, actor, key(fd), { organisationId: id, name: str(fd, "name"), keepOldAsAlias: fd.get("keepOld") === "on" }),
+  );
+}
+
 export async function setOrgRegionAction(fd: FormData) {
   const { actor, db } = await ctx();
   const id = str(fd, "organisationId");

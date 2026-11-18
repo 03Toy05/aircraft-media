@@ -47,3 +47,64 @@ nav.top a, button, .btn { display: inline-flex; align-items: center; }
 .apps .app { display: inline-flex; align-items: center; gap: 6px; padding: 6px 10px; border: 1px solid var(--line); border-radius: 999px; background: var(--card); color: var(--text); font: inherit; cursor: pointer; }
 .apps .app:hover { background: var(--bg); text-decoration: none; }
 .apps .dot { width: 20px; height: 20px; border-radius: 50%; color: #fff; font-size: 11px; font-weight: 700; display: inline-flex; align-items: center; justify-content: center; }
+
+/* ---------------------------------------------------------------- phones */
+.bottom-nav, .sheet, .sheet-backdrop { display: none; }
+.composer { position: sticky; bottom: 8px; z-index: 5; }
+.composer-bar { display: flex; gap: 8px; margin-top: 8px; align-items: center; }
+.composer-bar .send { margin-left: auto; }
+.voice-opts { margin-top: 8px; } .voice-opts summary { cursor: pointer; }
+details.collapse > summary { cursor: pointer; font-weight: 600; list-style: none; display: flex; align-items: center; }
+details.collapse > summary::-webkit-details-marker { display: none; }
+details.collapse[open] > summary { margin-bottom: 8px; }
+
+@media (max-width: 720px) {
+  body { font-size: 16px; padding-bottom: 0; }
+  /* top bar: just the name; the bottom bar does the navigating */
+  nav.top { padding: 8px 12px; flex-wrap: nowrap; position: sticky; top: 0; z-index: 20; padding-top: calc(8px + env(safe-area-inset-top)); }
+  nav.top > a, nav.top > .spacer, nav.top > span.muted, nav.top > form { display: none; }
+  nav.top .brand { margin-right: 0; }
+  main { padding: 12px 12px calc(84px + env(safe-area-inset-bottom)); }
+  h1 { font-size: 20px; margin-bottom: 10px; }
+  .card { padding: 12px; margin-bottom: 12px; }
+  .dash { gap: 0; }
+
+  /* comfortable touch targets, and no zoom-on-focus on iPhones (inputs must be at least 16px) */
+  input, select, textarea { font-size: 16px; padding: 10px 10px; min-height: 44px; }
+  input[type=checkbox], input[type=radio] { min-height: 0; width: 20px; height: 20px; }
+  button, .btn { min-height: 44px; padding: 8px 14px; }
+  .row { gap: 8px; } .row > * { min-width: 140px; }
+  label { font-size: 14px; }
+  .apps .app { padding: 10px 12px; min-height: 44px; }
+  .qa { grid-template-columns: 1fr 1fr; } .qa .btn { justify-content: center; text-align: center; }
+  .qa .btn:last-child { grid-column: 1 / -1; }
+
+  /* photos: three to a row, whatever the screen */
+  .thumbs { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); }
+  .thumbs img { width: 100% !important; height: 84px !important; }
+  table { display: block; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+
+  /* the message box sits just above the bottom bar */
+  .composer { bottom: calc(66px + env(safe-area-inset-bottom)); box-shadow: 0 -4px 14px rgba(0, 0, 0, .12); margin-bottom: 8px; }
+  .composer textarea { min-height: 64px; }
+  .composer-bar button { padding: 8px 12px; } .composer-bar .lbl { display: none; } .composer-bar .ico { margin-right: 0; }
+  .composer-bar .send .ico { margin-right: 6px; }
+
+  .bottom-nav {
+    display: flex; position: fixed; left: 0; right: 0; bottom: 0; z-index: 30; background: var(--card);
+    border-top: 1px solid var(--line); padding: 4px 4px calc(4px + env(safe-area-inset-bottom));
+  }
+  .bottom-nav a, .bottom-nav button {
+    flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; min-height: 54px;
+    background: transparent; border: 0; border-radius: 10px; color: var(--muted); font-size: 11px; padding: 4px 2px; text-decoration: none;
+  }
+  .bottom-nav .ico { margin: 0; }
+  .bottom-nav .on { color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, transparent); font-weight: 600; }
+  .sheet-backdrop { display: block; position: fixed; inset: 0; z-index: 40; background: rgba(0, 0, 0, .35); border: 0; border-radius: 0; padding: 0; min-height: 0; }
+  .sheet {
+    display: flex; flex-direction: column; gap: 4px; position: fixed; left: 8px; right: 8px; z-index: 50; background: var(--card);
+    border: 1px solid var(--line); border-radius: 14px; padding: 10px; bottom: calc(66px + env(safe-area-inset-bottom)); box-shadow: 0 8px 30px rgba(0, 0, 0, .25);
+  }
+  .sheet a { display: flex; align-items: center; padding: 12px; border-radius: 10px; color: var(--text); min-height: 48px; }
+  .sheet a:active { background: var(--bg); }
+}

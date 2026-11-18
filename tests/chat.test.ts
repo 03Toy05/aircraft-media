@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { eq } from "drizzle-orm";
 import { setup, key, makeImage } from "./helpers";
-import { createAircraft, createAircraftType, createOrganisation, getAircraftCard, listInformationVersions, setOrganisationRegion, getOrganisationBase } from "../src/domain/directory";
+import { createAircraft, createAircraftType, createOrganisation, getAircraftCard, listInformationVersions, setOrganisationRegion, getOrganisationBase, renameOrganisation, resolveOrganisationsExact } from "../src/domain/directory";
 import { ingestUpload } from "../src/domain/media";
 import { applyChatProposal, matchCard } from "../src/domain/chat";
 import { converse, emptyDraft, type Draft, type DraftPhoto } from "../src/domain/chocks";
@@ -563,5 +563,27 @@ describe("Chocks: 'give me X's G550 and Y's G650ER template and photos'", () => 
     );
     expect(turn.reply.say.join("\n")).toMatch(/G550/);
     expect(turn.reply.say.join("\n")).not.toMatch(/N-OTHER/);
+  });
+});
+
+describe("Renaming an operator", () => {
+  it("changes the name, keeps the old one as another name, and keeps its aircraft", async () => {
+    const org = (await createOrganisation(t.db, t.actor, key(), { name: "Metro Jet", region: "Hong Kong" })).result.organisationId;
+    const other = (await createOrganisation(t.db, t.actor, key(), { name: "Deer Jet" })).result.organisationId;
+    const ac = (await createAircraft(t.db, t.actor, key(), { aircraftTypeId: g280, registration: "B-MJ1", operatorId: org })).result.aircraftId;
+    await renameOrganisation(t.db, t.actor, key(), { organisationId: org, name: "Metrojet" });
+    const [o] = await t.db.select().from(organisations).where(eq(organisations.id, org));
+    expect(o).toMatchObject({ canonicalName: "Metrojet", normalizedName: "metrojet", region: "Hong Kong" });
+    expect((await getAircraftCard(t.db, ac))!.operator).toBe("Metrojet");
+    // "Metro Jet" and "Metrojet" are the same key, so no alias is needed; a genuinely different old name is kept as an alias.
+    await renameOrganisation(t.db, t.actor, key(), { organisationId: org, name: "Metrojet Limited" });
+    expect((await resolveOrganisationsExact(t.db, t.actor.tenantId, "Metrojet")).map((x) => x.id)).toEqual([org]);
+    expect((await resolveOrganisationsExact(t.db, t.actor.tenantId, "Metrojet Limited")).map((x) => x.id)).toEqual([org]);
+    // Not allowed: an empty name, or another operator's name.
+    await expect(renameOrganisation(t.db, t.actor, key(), { organisationId: org, name: "  " })).rejects.toThrow(/cannot be empty/);
+    await expect(renameOrganisation(t.db, t.actor, key(), { organisationId: org, name: "deer jet" })).rejects.toThrow(/already called/);
+    // Without keeping the old name.
+    await renameOrganisation(t.db, t.actor, key(), { organisationId: other, name: "Deer Jet Asia", keepOldAsAlias: false });
+    expect(await resolveOrganisationsExact(t.db, t.actor.tenantId, "Deer Jet")).toEqual([]);
   });
 });

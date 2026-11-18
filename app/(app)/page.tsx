@@ -32,7 +32,7 @@ export default async function Dashboard() {
       <aside style={{ minWidth: 0 }}>
         <div className="card">
           <h3>Quick actions</h3>
-          <div style={{ display: "grid", gap: 8 }}>
+          <div className="qa" style={{ display: "grid", gap: 8 }}>
             <Link className="btn" href="/review"><Icon name="review" />Review photos{needsReview > 0 ? ` (${needsReview})` : ""}</Link>
             <Link className="btn" href="/intake"><Icon name="upload" />Upload photos</Link>
             <Link className="btn" href="/quote"><Icon name="quote" />Quote for a client</Link>
