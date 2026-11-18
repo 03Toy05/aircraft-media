@@ -21,7 +21,29 @@ export const CARD_LABELS: Record<string, Record<CardField, string[]>> = {
     wifi: ["wifi", "wi-fi", "wi fi"],
     notes: ["notes", "note"],
   },
+  // Traditional and Simplified Chinese. Both scripts are always recognised, whichever language the chat is set to.
+  zh: {
+    operator: ["營運商", "运营商", "運營商", "營運人", "运营人", "營運公司", "运营公司", "營運者"],
+    region: ["地區", "地区", "區域", "区域"],
+    aircraft: ["飛機型號", "飞机型号", "機型", "机型", "飛機", "飞机", "型號", "型号"],
+    tail: ["機尾編號", "机尾编号", "機尾號", "机尾号", "註冊編號", "注册编号", "註冊號", "注册号", "尾號", "尾号", "機號", "机号"],
+    base: ["基地"],
+    yom: ["出廠年份", "出厂年份", "製造年份", "制造年份", "生產年份", "生产年份", "出廠", "出厂"],
+    yor: ["翻新年份", "改裝年份", "改装年份", "翻新"],
+    capacity: ["載客量", "载客量", "座位數", "座位数", "座位", "乘客數", "乘客数", "人數", "人数"],
+    wifi: ["無線網絡", "无线网络", "無線上網", "无线上网"],
+    notes: ["備註", "备注"],
+  },
 };
+
+const isCjk = (t: string) => /[\u3400-\u9fff]/.test(t);
+
+/** Every language's labels together: a card may be typed in any of them, whatever the chat language is. */
+function allLabels(): Record<CardField, string[]> {
+  const out = {} as Record<CardField, string[]>;
+  for (const f of CARD_FIELDS) out[f] = Object.values(CARD_LABELS).flatMap((l) => l[f] ?? []);
+  return out;
+}
 
 export const CARD_DISPLAY_LABELS: Record<string, Record<CardField, string>> = {
   en: {
@@ -76,18 +98,18 @@ function interpretLooseLine(line: string, out: ParsedCard): string | null {
     if (f === "capacity" && out.capacity == null) { out.capacity = n; return `"${line}" read as Capacity ${n}`; }
     if (f !== "capacity" && n >= 1900 && n <= 2100 && out[f as "yom" | "yor"] == null) { out[f as "yom" | "yor"] = n; return `"${line}" read as ${f.toUpperCase()} ${n}`; }
   }
-  const seats = line.match(/^(\d{1,3})\s*(seats?|seater|pax|passengers?)$/i);
+  const seats = line.match(/^(\d{1,3})\s*(seats?|seater|pax|passengers?|座位|座|人座|個座位|个座位)$/i);
   if (seats && out.capacity == null) {
     out.capacity = Number(seats[1]);
     return `"${line}" read as Capacity ${out.capacity}`;
   }
-  if (/^(19[5-9]\d|20[0-4]\d)$/.test(line)) {
+  if (/^(19[5-9]\d|20[0-4]\d)\s*年?$/.test(line)) {
     if (out.yom == null) {
-      out.yom = Number(line);
+      out.yom = Number(line.replace(/\D/g, ""));
       return `"${line}" read as YOM (year of manufacture)`;
     }
     if (out.yor == null) {
-      out.yor = Number(line);
+      out.yor = Number(line.replace(/\D/g, ""));
       return `"${line}" read as YOR (year of refurbishment)`;
     }
   }
@@ -103,15 +125,20 @@ function interpretLooseLine(line: string, out: ParsedCard): string | null {
  * Single-line messages that contain two or more field labels are split before each label.
  */
 export function splitInlineLabels(text: string, lang = "en"): string {
+  void lang;
   if (text.includes("\n")) return text;
-  const labels = Object.values(CARD_LABELS[lang] ?? CARD_LABELS.en).flat().sort((x, y) => y.length - x.length);
-  const escaped = labels.map((l) => l.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
-  const re = new RegExp("(?:^|[\\s,.;])(" + escaped.join("|") + ")(?=[\\s:：])", "gi");
-  const hits = [...text.matchAll(re)];
-  if (hits.length < 2) return text;
-  const starts = hits.map((h) => (h.index ?? 0) + (h[0].length - h[1].length));
-  const parts = starts.map((st, i) => text.slice(st, starts[i + 1] ?? text.length).replace(/[\s,.;]+$/, ""));
-  const lead = text.slice(0, starts[0]).replace(/[\s,.;]+$/, "");
+  const labels = Object.values(allLabels()).flat().sort((x, y) => y.length - x.length);
+  const esc = (l: string) => l.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const latin = labels.filter((l) => !isCjk(l));
+  const cjk = labels.filter(isCjk);
+  const starts: number[] = [];
+  for (const h of text.matchAll(new RegExp("(?:^|[\\s,.;，。；])(" + latin.map(esc).join("|") + ")(?=[\\s:：])", "gi"))) starts.push((h.index ?? 0) + (h[0].length - h[1].length));
+  // Chinese labels need no spaces around them (dictation often has none); a label is followed by a space, a colon or a Latin letter/digit.
+  for (const h of text.matchAll(new RegExp("(" + cjk.map(esc).join("|") + ")(?=[\\s:：A-Za-z0-9])", "g"))) starts.push(h.index ?? 0);
+  starts.sort((x, y) => x - y);
+  if (starts.length < 2) return text;
+  const parts = starts.map((st, i) => text.slice(st, starts[i + 1] ?? text.length).replace(/[\s,.;，。；]+$/, ""));
+  const lead = text.slice(0, starts[0]).replace(/[\s,.;，。；]+$/, "");
   return [lead, ...parts].filter(Boolean).join("\n");
 }
 
@@ -128,12 +155,30 @@ export function normalizeSpoken(text: string): string {
   t = t.replace(/\b(?:based|base|bass)\s+(?:in|at|is)\s+/gi, "base ");
   t = t.replace(/\b(?:built|manufactured|made)\s+in\s+(?=\d{4}\b)/gi, "yom ");
   t = t.replace(/\b(\d{1,3})[- ]?(?:seats?|seater|passengers?|pax)\b/gi, "capacity $1");
+  // Chinese: "新增營運商 X 基地在 Y 機型 Z 13座" -> labelled. "是/係/在" after a label is dropped; "2015年出廠" -> yom; "13座" -> capacity.
+  t = t.replace(/^(?:請|请)?(?:幫我|帮我)?(?:新增|加入|添加|增加|登記|登记|建立|創建|创建|新建)(?:一個|一个|個|个)?(?:新)?(?=營運商|运营商|運營商|飛機|飞机)/, "");
+  t = t.replace(/^新(?=營運商|运营商|運營商|飛機|飞机)/, "");
+  t = t.replace(/(基地|營運商|运营商|運營商|機型|机型|機尾號|机尾号|地區|地区)\s*(?:是|係|為|为|叫|喺|在|位於|位于)\s*/g, "$1 ");
+  t = t.replace(/(\d{4})\s*年\s*(?:出廠|出厂|製造|制造|生產|生产)/g, "yom $1");
+  t = t.replace(/(\d{4})\s*年\s*(?:翻新|改裝|改装)/g, "yor $1");
+  t = t.replace(/(\d{1,3})\s*(?:個座位|个座位|座位|人座|座|位乘客|名乘客)/g, "capacity $1");
   return t;
+}
+
+/** "Yes, at USD 10/MB", "有，每MB 10美元", "無", "待確認" -> status and the rest as detail. */
+function parseWifiValue(value: string): { status: WifiStatus; detail: string } | null {
+  const en = value.match(/^(yes|no|tbc|unknown)\b[\s,;:\-–—]*(.*)$/i);
+  if (en) return { status: en[1].toLowerCase() as WifiStatus, detail: en[2].trim() };
+  const zh = value.match(/^(待確認|待确认|未確認|未确认|待定|不明|未知|已包含|包含|不提供|沒有|没有|提供|有|是|無|无|冇|否)[\s,，;；:：\-–—]*(.*)$/);
+  if (!zh) return null;
+  const w = zh[1];
+  const status: WifiStatus = /^(待|未確|未确)/.test(w) ? "tbc" : /^(不明|未知)$/.test(w) ? "unknown" : /^(不提供|沒有|没有|無|无|冇|否)$/.test(w) ? "no" : "yes";
+  return { status, detail: zh[2].trim() };
 }
 
 export function parseAircraftCard(text: string, lang = "en"): ParsedCard {
   text = splitInlineLabels(normalizeSpoken(text), lang);
-  const labels = CARD_LABELS[lang] ?? CARD_LABELS.en;
+  const labels = allLabels();
   const lookup = new Map<string, CardField>();
   for (const f of CARD_FIELDS) for (const l of labels[f]) lookup.set(l.toLowerCase(), f);
 
@@ -146,7 +191,7 @@ export function parseAircraftCard(text: string, lang = "en"): ParsedCard {
     if (!field) {
       // "YOM 2025" / "Capacity 10": a known label followed by its value, no colon.
       const lower = line.toLowerCase();
-      const label = [...lookup.keys()].sort((a, b) => b.length - a.length).find((l) => lower.startsWith(l + " ") && line.slice(l.length).trim() !== "");
+      const label = [...lookup.keys()].sort((a, b) => b.length - a.length).find((l) => (isCjk(l) ? lower.startsWith(l) : lower.startsWith(l + " ")) && line.slice(l.length).trim() !== "");
       if (label) { field = lookup.get(label); m = [line, label, line.slice(label.length).trim()] as unknown as RegExpMatchArray; }
     }
     if (!m || !field) {
@@ -167,9 +212,10 @@ export function parseAircraftCard(text: string, lang = "en"): ParsedCard {
         out[field] = value;
         break;
       case "base": {
-        const parts = value.split(/\s*[\/,;]\s*/).map((p) => p.trim()).filter(Boolean);
-        if (parts.length === 1 && parts[0].toLowerCase() === "floating") out.base = { mode: "floating", locations: [] };
-        else if (parts.some((p) => p.toLowerCase() === "floating")) out.problems.push("Base cannot combine Floating with locations");
+        const parts = value.split(/\s*[\/,;，、；]\s*/).map((p) => p.trim()).filter(Boolean);
+        const floating = (p: string) => p.toLowerCase() === "floating" || /^(浮動|浮动|不固定|無固定基地|无固定基地)$/.test(p);
+        if (parts.length === 1 && floating(parts[0])) out.base = { mode: "floating", locations: [] };
+        else if (parts.some(floating)) out.problems.push("Base cannot combine Floating with locations");
         else out.base = { mode: "based", locations: parts };
         break;
       }
@@ -181,10 +227,10 @@ export function parseAircraftCard(text: string, lang = "en"): ParsedCard {
         break;
       }
       case "wifi": {
-        const w = value.match(/^(yes|no|tbc|unknown)\b[\s,;:\-–—]*(.*)$/i);
+        const w = parseWifiValue(value);
         if (w) {
-          out.wifi = w[1].toLowerCase() as WifiStatus;
-          if (w[2].trim()) out.wifiDetail = w[2].trim();
+          out.wifi = w.status;
+          if (w.detail) out.wifiDetail = w.detail;
         } else out.problems.push(`WIFI must start with Yes, No, TBC or Unknown: ${value}`);
         break;
       }

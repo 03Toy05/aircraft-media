@@ -6,7 +6,13 @@ import { mentions } from "./chocksLookup";
 /** "send the G280 photos to Mr Chan" -> { what: "G280", who: "Mr Chan" }. Single-line messages only. */
 export function parseShareRequest(message: string): { what: string; who: string } | null {
   const m = message.trim().match(/^(?:please\s+|can you\s+|could you\s+)?(?:send|share|forward|message|whatsapp)\s+(?:the\s+|my\s+)?(.+?)\s+(?:to|with)\s+(.+?)[.!?]*$/i);
-  if (!m) return null;
+  if (!m) {
+    // Chinese: "把 G280 發給 陳生", "發送 G280 的相片給 陳生"
+    const zh = message.trim().match(/^(?:請|请)?(?:幫我|帮我)?(?:把|將|将)?\s*(?:發送|发送|分享|傳送|传送|轉發|转发|發|发|傳|传)?\s*(.+?)\s*(?:發送給|发送给|發給|发给|傳給|传给|分享給|分享给|轉發給|转发给|寄給|寄给|發俾|发俾|傳俾|传俾|給|给)\s*(.+?)[。！!]*$/);
+    if (!zh || !/[\u3400-\u9fff]/.test(message)) return null;
+    const whatZh = zh[1].replace(/(?:的)?(?:相片|照片|圖片|图片|模板|報價|报价|資料卡|资料卡)\s*$/, "").trim();
+    return whatZh && zh[2].trim() ? { what: whatZh, who: zh[2].trim() } : null;
+  }
   const what = m[1].replace(/\b(photos?|pictures?|pics?|images?|card|details|info(?:rmation)?)\s*$/i, "").replace(/\b(and|&)\s*$/i, "").trim();
   const who = m[2].trim();
   return what && who ? { what, who } : null;
@@ -15,7 +21,13 @@ export function parseShareRequest(message: string): { what: string; who: string 
 /** Aircraft whose tail, type or operator contains every word of the request. */
 export async function findAircraftsForShare(db: Db, tenantId: string, text: string) {
   const rows = await getCatalogue(db, tenantId);
-  const words = text.replace(/['’]s\b/gi, "").split(/\s+/).map(normalizeKey).filter((w) => w.length >= 2 && !["the", "of", "for", "aircraft", "plane", "jet"].includes(w));
+  // Chinese filler ("的", "飛機", "一架") is dropped and Latin names are separated from Chinese characters next to them.
+  const cleaned = text
+    .replace(/['’]s\b/gi, "")
+    .replace(/(?:私人)?(?:飛機|飞机|噴射機|喷射机)|[的嘅架部個个]/g, " ")
+    .replace(/([A-Za-z0-9])([\u3400-\u9fff])/g, "$1 $2")
+    .replace(/([\u3400-\u9fff])([A-Za-z0-9])/g, "$1 $2");
+  const words = cleaned.split(/\s+/).map(normalizeKey).filter((w) => w.length >= 2 && !["the", "of", "for", "aircraft", "plane", "jet"].includes(w));
   if (words.length === 0) return [];
   return rows
     .filter((r) => {
@@ -35,8 +47,16 @@ const TRAILING_WORDS = /\s*\b(?:(?:quote|quotation|template|templates|message|te
  * Single-line messages only.
  */
 export function parseQuoteRequest(message: string): { what: string[] } | null {
-  const m = message.trim().replace(/[.!?]+$/, "");
+  const m = message.trim().replace(/[.!?。！？]+$/, "");
   if (/\r?\n/.test(m)) return null;
+  // Chinese: "給我 CapacJet 的 G550 和 Tag 的 G650ER 的模板和相片", "幫我整 CapaJet G550 嘅報價"
+  if (/報價|报价|模板|範本|范本|訊息|信息|消息|資料卡|资料卡/.test(m) && /[\u3400-\u9fff]/.test(m)) {
+    const lead = m.replace(/^(?:請|请)?(?:幫我|帮我|給我|给我|俾我|我要|我想要|我需要|我想|傳給我|传给我)?\s*(?:生成|整|做|準備|准备|預備|预备)?\s*(?:一份|一個|一个)?/, "");
+    const subject = lead.replace(/(?:的|嘅)?\s*(?:(?:報價|报价|模板|範本|范本|訊息|信息|消息|資料卡|资料卡|相片|照片|圖片|图片)\s*(?:,|，|和|及|同|與|与|跟|、|以及)?\s*)+$/, "").trim();
+    if (!subject) return { what: [] };
+    if (/發給|发给|傳給|传给|發送給|发送给|分享給|分享给/.test(subject)) return null;
+    return { what: subject.split(/\s*(?:,|，|、|和|及|同|與|与|跟|以及|\band\b|&)\s*/).map((x) => x.replace(/的$/, "").trim()).filter(Boolean) };
+  }
   const split = (t: string) => t.split(/\s*(?:,|&|\band\b|\bplus\b)\s*/i).map((x) => x.replace(/^(?:the|my)\s+/i, "").trim()).filter(Boolean);
   if (QUOTE_WORD.test(m)) {
     const after = m.replace(/^.*?\b(?:quote|quotation|quoting)s?\b\s*(?:message|text|template)?\s*(?:for|of|on|with)?\s*/i, "").trim();

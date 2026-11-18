@@ -6,16 +6,60 @@ import { chocksTurnAction, type TurnResult } from "../chatActions";
 import type { Draft } from "@/domain/chocks";
 import { prepareShareAction, type SharePayload } from "../shareActions";
 import { ShareBox } from "./ShareBox";
+import { CHAT_LANGUAGES, parseChatLang, toHans, type ChatLang } from "@/domain/chocksText";
+
+/** The words on the chat itself. Chocks's own sentences come from the server in the chosen language. */
+const UI_EN = {
+  hi: "Hi, I'm Chocks.",
+  intro: "Send me photos and details and I'll check what you already have, ask about anything unclear, and file it once you confirm.",
+  template: "Operator: \nRegion: \nAircraft type: \nTail number: \nYOM: \nCapacity: ",
+  placeholderNew: "Operator: \nAircraft type: \nYOM: \nCapacity: ",
+  placeholderReply: "Reply to Chocks, or add more details…",
+  templateBtn: "Template", speak: "Speak", stop: "Stop listening", send: "Send",
+  readAloud: "Chocks reads replies aloud", autoSend: "Send when I stop speaking", voiceLanguage: "Voice language", language: "Language",
+  listening: "Listening… keep talking, pauses are fine. Press Stop listening when you are done (or tick “Send when I stop speaking”). Say something like “Operator Advanced Aviation, aircraft type G280, capacity 10”.",
+  noVoice: "Voice input isn't available in this browser. Chrome or Edge work best.",
+  blocked: "The microphone is blocked. Allow it in the browser's address bar.",
+  stopped: "Voice input stopped ({e}).", nothingHeard: "I stopped listening because I heard nothing for a while.",
+  files: "{n} file(s) attached", checking: "Chocks is checking…", sorry: "Sorry, something went wrong on my side. Please try that again.",
+  attached: "Attached:", copy: "Copy message", copied: "Copied. Paste it into your chat or email.",
+  copyFail: "Could not copy automatically. Select the message above and copy it.",
+  openAircraft: "Open the aircraft →", review: "Review queue →", view: "view?",
+};
+type UI = typeof UI_EN;
+const UI_HANT: UI = {
+  hi: "你好，我是 Chocks。",
+  intro: "傳相片和資料給我，我會核對你已有的內容，不清楚的地方會問你，確認後才會歸檔。",
+  template: "營運商：\n地區：\n機型：\n機尾號：\n出廠年份：\n載客量：",
+  placeholderNew: "營運商：\n機型：\n出廠年份：\n載客量：",
+  placeholderReply: "回覆 Chocks，或補充更多資料…",
+  templateBtn: "範本", speak: "語音輸入", stop: "停止收音", send: "傳送",
+  readAloud: "由 Chocks 朗讀回覆", autoSend: "停止說話後自動傳送", voiceLanguage: "語音語言", language: "語言",
+  listening: "正在收音…請繼續說，停頓沒關係。說完後按「停止收音」（或勾選「停止說話後自動傳送」）。可以這樣說：「營運商 Advanced Aviation，機型 G280，載客量 10」。",
+  noVoice: "此瀏覽器不支援語音輸入。建議使用 Chrome 或 Edge。",
+  blocked: "麥克風已被封鎖。請在瀏覽器網址列允許使用麥克風。",
+  stopped: "語音輸入已停止（{e}）。", nothingHeard: "因為一段時間沒有聽到聲音，已停止收音。",
+  files: "已附上 {n} 個檔案", checking: "Chocks 正在查核…", sorry: "抱歉，我這邊出了問題，請再試一次。",
+  attached: "附件：", copy: "複製訊息", copied: "已複製。請貼到你的聊天或電郵中。",
+  copyFail: "無法自動複製。請選取上面的訊息再複製。",
+  openAircraft: "打開飛機 →", review: "審核隊列 →", view: "角度？",
+};
+const UI_HANS: UI = Object.fromEntries(Object.entries(UI_HANT).map(([k, v]) => [k, toHans(v)])) as UI;
+const uiFor = (l: ChatLang): UI => (l === "zh-Hant" ? UI_HANT : l === "zh-Hans" ? UI_HANS : UI_EN);
+const VOICES: { id: string; name: string }[] = [
+  { id: "en-US", name: "English (US)" }, { id: "en-GB", name: "English (UK)" }, { id: "en-HK", name: "English (HK)" },
+  { id: "zh-HK", name: "廣東話" }, { id: "zh-TW", name: "國語 (台灣)" }, { id: "zh-CN", name: "普通话" },
+];
 
 /** "Copy message": puts the quotation text Chocks just showed on the clipboard. */
-function CopyButton({ text }: { text: string }) {
+function CopyButton({ text, ui }: { text: string; ui: UI }) {
   const [done, setDone] = useState<string | null>(null);
   return (
     <p style={{ margin: "6px 0" }}>
       <button type="button" onClick={async () => {
-        try { await navigator.clipboard.writeText(text); setDone("Copied. Paste it into your chat or email."); }
-        catch { setDone("Could not copy automatically. Select the message above and copy it."); }
-      }}>Copy message</button>
+        try { await navigator.clipboard.writeText(text); setDone(ui.copied); }
+        catch { setDone(ui.copyFail); }
+      }}>{ui.copy}</button>
       {done && <span className="small muted"> {done}</span>}
     </p>
   );
@@ -29,8 +73,6 @@ function SharePanel({ aircraftId, contactId }: { aircraftId: string; contactId: 
   if (p === null) return <p className="small">I couldn't prepare that one. Try again.</p>;
   return <div style={{ marginTop: 6 }}><ShareBox aircraftId={p.aircraftId} tail={p.tail} cardText={p.cardText} items={p.items} contact={p.contact} /></div>;
 }
-
-const TEMPLATE = "Operator: \nRegion: \nAircraft type: \nTail number: \nYOM: \nCapacity: ";
 
 type Msg =
   | { id: string; role: "user"; text: string; files: string[] }
@@ -65,13 +107,29 @@ export default function ChatClient() {
   const [listening, setListening] = useState(false);
   const [speak, setSpeak] = useState(false);
   const [autoSend, setAutoSend] = useState(false);
-  const [lang, setLang] = useState("en-US");
+  const [voice, setVoice] = useState("en-US");
+  const [chatLang, setChatLang] = useState<ChatLang>("en");
+  const ui = uiFor(chatLang);
+  const chatLangRef = useRef<ChatLang>("en");
+  chatLangRef.current = chatLang;
   const [voiceMsg, setVoiceMsg] = useState<string | null>(null);
   const rec = useRef<Recognition | null>(null);
   const sendRef = useRef<(t: string) => void>(() => {});
   const autoSendRef = useRef(false);
 
   useEffect(() => { setCanListen(!!getRecognition()); }, []);
+  // Remember the chosen language on this device.
+  useEffect(() => {
+    try {
+      const saved = parseChatLang(window.localStorage.getItem("chocksLang"));
+      if (saved !== "en") { setChatLang(saved); setVoice(saved === "zh-Hans" ? "zh-CN" : "zh-HK"); }
+    } catch { /* storage blocked: stay in English */ }
+  }, []);
+  const changeChatLang = (l: ChatLang) => {
+    setChatLang(l);
+    setVoice(l === "zh-Hans" ? "zh-CN" : l === "zh-Hant" ? "zh-HK" : "en-US");
+    try { window.localStorage.setItem("chocksLang", l); } catch { /* ignore */ }
+  };
   useEffect(() => { endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" }); }, [msgs]);
 
   const send = (override?: { text: string; label?: string }) => {
@@ -80,6 +138,7 @@ export default function ChatClient() {
     const fd = new FormData();
     fd.set("text", t);
     fd.set("draft", draft);
+    fd.set("lang", chatLangRef.current);
     for (const f of files) fd.append("files", f);
     setMsgs((m) => [...m, { id: crypto.randomUUID(), role: "user", text: override?.label ?? t, files: files.map((f) => f.name) }]);
     if (!override) setText("");
@@ -90,7 +149,7 @@ export default function ChatClient() {
       try {
         r = await chocksTurnAction(fd);
       } catch {
-        setMsgs((m) => [...m, { id: crypto.randomUUID(), role: "chocks", say: ["Sorry, something went wrong on my side. Please try that again."], chips: [], draft: JSON.parse(draft || "null") ?? ({ photos: [] } as unknown as Draft), failures: [] }]);
+        setMsgs((m) => [...m, { id: crypto.randomUUID(), role: "chocks", say: [ui.sorry], chips: [], draft: JSON.parse(draft || "null") ?? ({ photos: [] } as unknown as Draft), failures: [] }]);
         return;
       }
       setDraft(JSON.stringify(r.draft));
@@ -98,7 +157,7 @@ export default function ChatClient() {
       if (speak && "speechSynthesis" in window) {
         window.speechSynthesis.cancel();
         const u = new SpeechSynthesisUtterance(r.reply.say.join(" ").replace(/[•“”]/g, ""));
-        u.lang = lang;
+        u.lang = voice;
         window.speechSynthesis.speak(u);
       }
     });
@@ -127,7 +186,7 @@ export default function ChatClient() {
     const Ctor = getRecognition();
     if (!Ctor || !wantListening.current) return;
     const r = new Ctor();
-    r.lang = lang;
+    r.lang = voice;
     r.interimResults = true;
     r.continuous = true;
     let sessionText = "";
@@ -141,13 +200,13 @@ export default function ChatClient() {
     r.onerror = (e) => {
       if (e.error === "no-speech" || e.error === "aborted") return; // quiet spell: onend restarts
       wantListening.current = false;
-      setVoiceMsg(e.error === "not-allowed" ? "The microphone is blocked. Allow it in the browser's address bar." : `Voice input stopped (${e.error}).`);
+      setVoiceMsg(e.error === "not-allowed" ? ui.blocked : ui.stopped.replace("{e}", e.error));
     };
     r.onend = () => {
       if (sessionText) committed.current += sessionText + " ";
       else emptyRuns.current += 1;
       if (wantListening.current && emptyRuns.current < 4) { setTimeout(startSession, 150); return; }
-      if (wantListening.current) setVoiceMsg("I stopped listening because I heard nothing for a while.");
+      if (wantListening.current) setVoiceMsg(ui.nothingHeard);
       wantListening.current = false;
       setListening(false);
     };
@@ -172,15 +231,20 @@ export default function ChatClient() {
   return (
     <div>
       <div className="card" style={{ marginBottom: 12 }}>
-        <p style={{ margin: 0 }}><b>Hi, I'm Chocks.</b> Send me photos and details and I'll check what you already have, ask about anything unclear, and file it once you confirm.</p>
-        <pre className="cardtext" style={{ marginBottom: 0 }}>{TEMPLATE}</pre>
+        <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "start" }}>
+          <p style={{ margin: 0 }}><b>{ui.hi}</b> {ui.intro}</p>
+          <select value={chatLang} onChange={(e) => changeChatLang(e.target.value as ChatLang)} style={{ width: "auto", flex: "0 0 auto" }} aria-label={ui.language}>
+            {CHAT_LANGUAGES.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
+          </select>
+        </div>
+        <pre className="cardtext" style={{ marginBottom: 0 }}>{ui.template}</pre>
       </div>
 
       {msgs.map((m) =>
         m.role === "user" ? (
           <div key={m.id} className="card" style={{ marginLeft: "15%", background: "var(--chip, #eef4ff)" }}>
             {m.text && <pre className="cardtext" style={{ margin: 0 }}>{m.text}</pre>}
-            {m.files.length > 0 && <p className="small muted" style={{ margin: "6px 0 0" }}>Attached: {m.files.join(", ")}</p>}
+            {m.files.length > 0 && <p className="small muted" style={{ margin: "6px 0 0" }}>{ui.attached} {m.files.join(", ")}</p>}
           </div>
         ) : (
           <div key={m.id} className="card" style={{ marginRight: "8%" }}>
@@ -193,7 +257,7 @@ export default function ChatClient() {
                   <div key={p.mediaId} className="small" style={{ width: 96 }}>
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     {p.contentVersionId && <img src={`/api/media/${p.contentVersionId}`} alt="" style={{ width: 96, height: 68, objectFit: "cover", borderRadius: 4 }} />}
-                    <div className="muted" style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.classification === "unclassified" ? "view?" : p.classification.replace(/_/g, " ")}</div>
+                    <div className="muted" style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.classification === "unclassified" ? ui.view : p.classification.replace(/_/g, " ")}</div>
                   </div>
                 ))}
               </div>
@@ -208,13 +272,13 @@ export default function ChatClient() {
                 ))}
               </div>
             )}
-            {m.copy && <CopyButton text={m.copy} />}
+            {m.copy && <CopyButton text={m.copy} ui={ui} />}
             {m.link && <p className="small"><Link href={m.link.href}>{m.link.label} →</Link></p>}
             {m.share && <SharePanel aircraftId={m.share.aircraftId} contactId={m.share.contactId} />}
             {m.done && !m.share && (
               <p className="small">
-                {m.aircraftId && <><Link href={`/aircraft/${m.aircraftId}`}>Open the aircraft →</Link>{" "}</>}
-                <Link href="/review">Review queue →</Link>
+                {m.aircraftId && <><Link href={`/aircraft/${m.aircraftId}`}>{ui.openAircraft}</Link>{" "}</>}
+                <Link href="/review">{ui.review}</Link>
               </p>
             )}
             {m === lastChocks && !m.done && m.chips.length > 0 && (
@@ -229,7 +293,7 @@ export default function ChatClient() {
           </div>
         ),
       )}
-      {pending && <div className="card muted" style={{ marginRight: "8%" }}>Chocks is checking…</div>}
+      {pending && <div className="card muted" style={{ marginRight: "8%" }}>{ui.checking}</div>}
       <div ref={endRef} />
 
       <div className="card" style={{ position: "sticky", bottom: 8 }}>
@@ -238,36 +302,36 @@ export default function ChatClient() {
           onChange={(e) => setText(e.target.value)}
           onKeyDown={(e) => { if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); send(); } }}
           rows={Math.min(8, Math.max(2, text.split("\n").length))}
-          placeholder={lastChocks && !lastChocks.done ? "Reply to Chocks, or add more details…" : "Operator: \nAircraft type: \nYOM: \nCapacity: "}
+          placeholder={lastChocks && !lastChocks.done ? ui.placeholderReply : ui.placeholderNew}
           style={{ width: "100%" }}
         />
         <div className="row" style={{ marginTop: 6, alignItems: "center" }}>
           <div style={{ flex: "0 0 auto" }}>
             <input ref={fileRef} type="file" accept="image/jpeg,image/png,image/webp,application/pdf" multiple onChange={(e) => setFiles([...(e.target.files ?? [])])} />
           </div>
-          <div style={{ flex: "0 0 auto" }}><button type="button" className="secondary" onClick={() => setText((v) => (v.trim() ? v : TEMPLATE))}>Template</button></div>
+          <div style={{ flex: "0 0 auto" }}><button type="button" className="secondary" onClick={() => setText((v) => (v.trim() ? v : ui.template))}>{ui.templateBtn}</button></div>
           {canListen && (
             <div style={{ flex: "0 0 auto" }}>
-              <button type="button" className={listening ? "danger" : "secondary"} onClick={toggleMic} aria-pressed={listening}>{listening ? "Stop listening" : "Speak"}</button>
+              <button type="button" className={listening ? "danger" : "secondary"} onClick={toggleMic} aria-pressed={listening}>{listening ? ui.stop : ui.speak}</button>
             </div>
           )}
-          <div style={{ flex: "0 0 auto" }}><button type="button" onClick={() => send()} disabled={pending || (!text.trim() && files.length === 0)}>Send</button></div>
+          <div style={{ flex: "0 0 auto" }}><button type="button" onClick={() => send()} disabled={pending || (!text.trim() && files.length === 0)}>{ui.send}</button></div>
         </div>
         {(canListen || "speechSynthesis" in (typeof window === "undefined" ? {} : window)) && (
           <div className="row small" style={{ marginTop: 6, alignItems: "center" }}>
-            <label style={{ flex: "0 0 auto" }}><input type="checkbox" checked={speak} onChange={(e) => setSpeak(e.target.checked)} /> Chocks reads replies aloud</label>
-            {canListen && <label style={{ flex: "0 0 auto" }}><input type="checkbox" checked={autoSend} onChange={(e) => setAutoSend(e.target.checked)} /> Send when I stop speaking</label>}
+            <label style={{ flex: "0 0 auto" }}><input type="checkbox" checked={speak} onChange={(e) => setSpeak(e.target.checked)} /> {ui.readAloud}</label>
+            {canListen && <label style={{ flex: "0 0 auto" }}><input type="checkbox" checked={autoSend} onChange={(e) => setAutoSend(e.target.checked)} /> {ui.autoSend}</label>}
             {canListen && (
-              <select value={lang} onChange={(e) => setLang(e.target.value)} style={{ flex: "0 0 auto", width: "auto" }} aria-label="Voice language">
-                <option value="en-US">English (US)</option><option value="en-GB">English (UK)</option><option value="en-HK">English (HK)</option>
+              <select value={voice} onChange={(e) => setVoice(e.target.value)} style={{ flex: "0 0 auto", width: "auto" }} aria-label={ui.voiceLanguage}>
+                {VOICES.map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}
               </select>
             )}
           </div>
         )}
-        {listening && <p className="small muted">Listening… keep talking, pauses are fine. Press Stop listening when you are done (or tick “Send when I stop speaking”). Say something like “Operator Advanced Aviation, aircraft type G280, capacity 10”.</p>}
+        {listening && <p className="small muted">{ui.listening}</p>}
         {voiceMsg && <p className="small" style={{ color: "var(--warn)" }}>{voiceMsg}</p>}
-        {!canListen && <p className="small muted">Voice input isn't available in this browser. Chrome or Edge work best.</p>}
-        {files.length > 0 && <p className="small muted">{files.length} file(s) attached</p>}
+        {!canListen && <p className="small muted">{ui.noVoice}</p>}
+        {files.length > 0 && <p className="small muted">{ui.files.replace("{n}", String(files.length))}</p>}
       </div>
     </div>
   );

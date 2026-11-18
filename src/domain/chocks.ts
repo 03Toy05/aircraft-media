@@ -3,6 +3,7 @@ import type { Db } from "../db/client";
 import { aircraftTypeAliases, aircraftTypes, organisationAliases, organisations } from "../db/schema";
 import { parseAircraftCard } from "./card";
 import { AIRCRAFT_CATEGORY_LABEL, CLASSIFICATION_LABEL, normalizeKey, parseClassification, type AircraftCategory, type Classification, type WifiStatus } from "./constants";
+import { isChinese, plural, tr, trCategory, trClassification, trLoose, trWifi, type ChatLang } from "./chocksText";
 import { parseShareRequest, parseQuoteRequest, findAircraftsForShare } from "./chocksShare";
 import { answerFleet, answerLookup, fleetBasics, isLookupQuestion, quotePreview } from "./chocksLookup";
 import { parseFleetQuery } from "./fleetQuery";
@@ -51,6 +52,8 @@ export interface Draft {
   asked: Asked | null;
   evidence: string[];
   submitKey: string;
+  /** The language Chocks speaks; the browser sets it on every turn. */
+  lang?: ChatLang;
 }
 
 export interface Chip { label: string; send: string }
@@ -103,23 +106,24 @@ async function countOperators(db: Db, tenantId: string) {
 
 // ---------------------------------------------------------------- answers
 
-const YES = /^(yes|yep|yeah|y|ok(ay)?|sure|correct|right|confirm(ed)?|go( ahead)?|do it|looks good|that'?s right|please)\b/i;
-const NEW = /^(new|it'?s new|a new one|new one|new operator|create( it| one)?|add( it)?|yes|yep|yeah|y)\b/i;
-const SKIP = /^(skip|none|no operator|blank|leave( it)?( blank| out)?|later|not now|no tail|no|nope|n)\b/i;
-const UNSURE = /(don'?t know|do not know|not sure|unsure|no idea|dunno|unknown|i'?m not certain)/i;
-const RESTART = /^(cancel|start over|reset|forget (it|that)|never ?mind)\b/i;
-const SAME = /^(use|same as|it'?s|its|that'?s|choose|pick)\s+(.+)$/i;
+const END = "(?:[。！!，,\\s]|$)";
+const YES = new RegExp("^(?:(?:yes|yep|yeah|y|ok(?:ay)?|sure|correct|right|confirm(?:ed)?|go(?: ahead)?|do it|looks good|that'?s right|please)\\b|(?:是的?|對|对|好的?|可以|確認|确认|確定|确定|沒問題|没问题|冇問題)" + END + ")", "i");
+const NEW = new RegExp("^(?:(?:new|it'?s new|a new one|new one|new operator|create(?: it| one)?|add(?: it)?|yes|yep|yeah|y)\\b|(?:新增|新的|新營運商|新运营商|新建|建立|創建|创建|是新的|是)" + END + ")", "i");
+const SKIP = new RegExp("^(?:(?:skip|none|no operator|blank|leave(?: it)?(?: blank| out)?|later|not now|no tail|no|nope|n)\\b|(?:跳過|跳过|略過|略过|不用|不需要|留空|無|无|沒有|没有|稍後|稍后|之後|之后|否|不是|不要)" + END + ")", "i");
+const UNSURE = /(don'?t know|do not know|not sure|unsure|no idea|dunno|unknown|i'?m not certain|不知道|不確定|不确定|唔知|不清楚|未必)/i;
+const RESTART = new RegExp("^(?:(?:cancel|start over|reset|forget (?:it|that)|never ?mind)\\b|(?:取消|重來|重来|重新開始|重新开始|算了|不用了)" + END + ")", "i");
+const SAME = /^(use|same as|it'?s|its|that'?s|choose|pick|用|選|选|揀)(?:\s+|(?<=[用選选揀]))(.+)$/i;
 
 function pickOption(text: string, options: Option[]): Option | null {
   const t = text.trim().replace(SAME, "$2").trim();
-  const num = t.match(/^#?(\d)$/);
+  const num = t.match(/^(?:#|第)?(\d)(?:個|个)?$/);
   if (num) return options[Number(num[1]) - 1] ?? null;
   const n = normalizeKey(t);
   return options.find((o) => normalizeKey(o.name) === n) ?? options.find((o) => n.length >= 3 && normalizeKey(o.name).includes(n)) ?? null;
 }
 
-function sharePrepared(aircraftId: string, contactId: string): ChocksReply {
-  return { say: ["Here you go. I've prepared the card. Nothing is sent until you press Send in the messenger."], chips: [], ready: false, done: true, share: { aircraftId, contactId } };
+function sharePrepared(L: ChatLang | undefined, aircraftId: string, contactId: string): ChocksReply {
+  return { say: [tr(L, "Here you go. I've prepared the card. Nothing is sent until you press Send in the messenger.")], chips: [], ready: false, done: true, share: { aircraftId, contactId } };
 }
 
 // ---------------------------------------------------------------- the conversation turn
@@ -132,6 +136,7 @@ export async function converse(
   newPhotos: DraftPhoto[],
 ): Promise<{ draft: Draft; reply: ChocksReply; confirm: boolean }> {
   let d: Draft = structuredClone(input);
+  const L = d.lang;
   const say: string[] = [];
   let message = messageRaw.trim();
   const asked = d.asked;
@@ -139,20 +144,20 @@ export async function converse(
   let confirmAfter = false;
   if (asked?.kind === "confirm" && message.includes("\n")) {
     const lines = message.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
-    const rest = lines.filter((l) => !/^(confirm(ed)?|yes|ok(ay)?|go ahead|do it)[.!]?$/i.test(l));
+    const rest = lines.filter((l) => !/^(confirm(ed)?|yes|ok(ay)?|go ahead|do it|確認|确认|確定|确定|好|是)[.!。！]?$/i.test(l));
     if (rest.length && rest.length < lines.length) { confirmAfter = true; message = rest.join("\n"); }
   }
   if (asked?.kind === "confirm" && !confirmAfter) {
     // "Capacity 12, confirm" / "YOM 2014 and confirm": a trailing confirmation on the same line.
-    const tail = message.match(/^(.+?)[ ,;.]+(?:and +)?(?:please +)?(?:confirm(?:ed)?|go ahead|do it)[.!]?$/is);
+    const tail = message.match(/^(.+?)[ ,;.，；]+(?:and +|並且?|并且?)?(?:please +)?(?:confirm(?:ed)?|go ahead|do it|確認|确认|確定|确定)[.!。！]?$/is);
     if (tail && tail[1].trim()) { confirmAfter = true; message = tail[1].trim(); }
   }
   d.asked = null;
   d.photos.push(...newPhotos);
-  if (newPhotos.length) say.push(`Got ${newPhotos.length} photo${newPhotos.length === 1 ? "" : "s"}.`);
+  if (newPhotos.length) say.push(tr(L, "Got {n} photo{s}.", { n: newPhotos.length, s: plural(newPhotos.length) }));
 
   if (message && RESTART.test(message)) {
-    return { draft: emptyDraft(d.submitKey), reply: { say: ["No problem, I've cleared that. Send me photos and details whenever you're ready."], chips: [], ready: false }, confirm: false };
+    return { draft: { ...emptyDraft(d.submitKey), lang: L }, reply: { say: [tr(L, "No problem, I've cleared that. Send me photos and details whenever you're ready.")], chips: [], ready: false }, confirm: false };
   }
 
   // "Make a quote for the G650 and B-KXX": open the Quote page with those aircraft already chosen. Nothing is saved.
@@ -167,12 +172,12 @@ export async function converse(
       for (const f of found.slice(0, 4)) if (!ids.includes(f.id)) { ids.push(f.id); names.push(f.label); }
     }
     if (asked) d.asked = asked;
-    const preview = ids.length ? await quotePreview(db, tenantId, ids) : null;
+    const preview = ids.length ? await quotePreview(db, tenantId, ids, L) : null;
     const say = preview
-      ? [["Here is the message and photos for:", ...names.map((n) => `• ${n}`)].join(String.fromCharCode(10)), preview.text, "Open the quote to add prices, change the language, edit the wording and send it with the photos."]
-      : [quoteReq.what.length ? `I couldn't find ${missing.join(" or ")}.` : "Open the Quote page to choose the aircraft."];
-    if (ids.length && missing.length) say.push(`I couldn't find: ${missing.join(", ")}.`);
-    return { draft: d, reply: { say, chips: [], ready: false, photos: preview?.photos, copy: preview?.text, link: { href: ids.length ? `/quote?ids=${ids.join(",")}` : "/quote", label: "Open the quote" } }, confirm: false };
+      ? [[tr(L, "Here is the message and photos for:"), ...names.map((n) => `• ${n}`)].join(String.fromCharCode(10)), preview.text, tr(L, "Open the quote to add prices, change the language, edit the wording and send it with the photos.")]
+      : [quoteReq.what.length ? tr(L, "I couldn't find {names}.", { names: missing.join(isChinese(L) ? "、" : " or ") }) : tr(L, "Open the Quote page to choose the aircraft.")];
+    if (ids.length && missing.length) say.push(tr(L, "I couldn't find: {names}.", { names: missing.join(", ") }));
+    return { draft: d, reply: { say, chips: [], ready: false, photos: preview?.photos, copy: preview?.text, link: { href: ids.length ? `/quote?ids=${ids.join(",")}` : "/quote", label: tr(L, "Open the quote") } }, confirm: false };
   }
 
   // A question about what you already have ("show me what aircraft Capa Jet has"): answer it, change nothing.
@@ -180,9 +185,9 @@ export async function converse(
     // Explicit filters or sorting ("heavy jets in Asia, newest first") run the Operators & aircraft page's own filters.
     // Otherwise a named operator or tail is looked up; a general "show operators" falls back to the whole list.
     const fleetFirst = parseFleetQuery(message, await fleetBasics(db, tenantId)).understood.length > 0;
-    const fleet = fleetFirst ? await answerFleet(db, tenantId, message) : null;
-    const answer = fleet ? null : await answerLookup(db, tenantId, message);
-    const fleetAny = fleet ?? (answer ? null : await answerFleet(db, tenantId, message));
+    const fleet = fleetFirst ? await answerFleet(db, tenantId, message, L) : null;
+    const answer = fleet ? null : await answerLookup(db, tenantId, message, L);
+    const fleetAny = fleet ?? (answer ? null : await answerFleet(db, tenantId, message, L));
     if (asked) d.asked = asked; // a side question must not make Chocks forget what it was waiting for
     const f = fleet ?? fleetAny;
     return {
@@ -191,7 +196,7 @@ export async function converse(
         ? { say: f.say, chips: [], ready: false, link: f.link }
         : answer
           ? { say: answer.say, chips: [], ready: false, link: answer.link, photos: answer.photos }
-          : { say: ["I couldn't match that to an operator or tail number you have. Try the operator's name or a tail number, for example “what does Capa Jet have?”."], chips: [], ready: false },
+          : { say: [tr(L, "I couldn't match that to an operator or tail number you have. Try the operator's name or a tail number, for example “what does Capa Jet have?”.")], chips: [], ready: false },
       confirm: false,
     };
   }
@@ -199,29 +204,29 @@ export async function converse(
   // Sending an aircraft to a saved contact ("send the G280 to Mr Chan"). Nothing is saved; Chocks only prepares the message.
   if (asked?.kind === "share_aircraft" || asked?.kind === "share_contact") {
     const picked = pickOption(message, asked.options);
-    if (picked) return { draft: d, reply: sharePrepared(asked.kind === "share_aircraft" ? picked.id : asked.aircraftId, asked.kind === "share_aircraft" ? asked.contactId : picked.id), confirm: false };
+    if (picked) return { draft: d, reply: sharePrepared(L, asked.kind === "share_aircraft" ? picked.id : asked.aircraftId, asked.kind === "share_aircraft" ? asked.contactId : picked.id), confirm: false };
     d.asked = asked;
-    return { draft: d, reply: { say: ["Please pick one of the options below."], chips: asked.options.map((o, i) => ({ label: o.name, send: `Use #${i + 1}` })), ready: false }, confirm: false };
+    return { draft: d, reply: { say: [tr(L, "Please pick one of the options below.")], chips: asked.options.map((o, i) => ({ label: o.name, send: `Use #${i + 1}` })), ready: false }, confirm: false };
   }
   const shareReq = d.photos.length === 0 && !/\r?\n/.test(message) ? parseShareRequest(message) : null;
   if (shareReq) {
     const people = await findContacts(db, tenantId, shareReq.who);
     if (people.length === 0) {
-      return { draft: d, reply: { say: [`I don't have a contact called “${shareReq.who}”. Add them on the Contacts page first, with the messenger they prefer, then ask me again.`], chips: [], ready: false }, confirm: false };
+      return { draft: d, reply: { say: [tr(L, "I don't have a contact called “{who}”. Add them on the Contacts page first, with the messenger they prefer, then ask me again.", { who: shareReq.who })], chips: [], ready: false }, confirm: false };
     }
     const planes = await findAircraftsForShare(db, tenantId, shareReq.what);
-    if (planes.length === 0) return { draft: d, reply: { say: [`I couldn't find an aircraft matching “${shareReq.what}”. Try the tail number, the operator or the aircraft type.`], chips: [], ready: false }, confirm: false };
+    if (planes.length === 0) return { draft: d, reply: { say: [tr(L, "I couldn't find an aircraft matching “{what}”. Try the tail number, the operator or the aircraft type.", { what: shareReq.what })], chips: [], ready: false }, confirm: false };
     if (planes.length > 1) {
       const options = planes.slice(0, 6).map((a) => ({ id: a.id, name: a.label }));
       d.asked = { kind: "share_aircraft", options, contactId: people[0].id };
-      return { draft: d, reply: { say: [`“${shareReq.what}” matches ${planes.length} aircraft. Which one should go to ${people[0].name}?`], chips: options.map((o, i) => ({ label: o.name, send: `Use #${i + 1}` })), ready: false }, confirm: false };
+      return { draft: d, reply: { say: [tr(L, "“{what}” matches {n} aircraft. Which one should go to {who}?", { what: shareReq.what, n: planes.length, who: people[0].name })], chips: options.map((o, i) => ({ label: o.name, send: `Use #${i + 1}` })), ready: false }, confirm: false };
     }
     if (people.length > 1) {
       const options = people.slice(0, 6).map((c) => ({ id: c.id, name: c.name }));
       d.asked = { kind: "share_contact", options, aircraftId: planes[0].id };
-      return { draft: d, reply: { say: [`“${shareReq.who}” matches ${people.length} contacts. Which one?`], chips: options.map((o, i) => ({ label: o.name, send: `Use #${i + 1}` })), ready: false }, confirm: false };
+      return { draft: d, reply: { say: [tr(L, "“{who}” matches {n} contacts. Which one?", { who: shareReq.who, n: people.length })], chips: options.map((o, i) => ({ label: o.name, send: `Use #${i + 1}` })), ready: false }, confirm: false };
     }
-    return { draft: d, reply: sharePrepared(planes[0].id, people[0].id), confirm: false };
+    return { draft: d, reply: sharePrepared(L, planes[0].id, people[0].id), confirm: false };
   }
 
   // 1) Is this message an answer to what I just asked?
@@ -236,7 +241,7 @@ export async function converse(
       if (picked) {
         const isAlias = picked.note === "similar";
         d.operator = isAlias ? { kind: "alias_of", id: picked.id, name: picked.name } : { kind: "existing", id: picked.id, name: picked.name };
-        if (isAlias) say.push(`Got it: “${d.operatorText}” is another name for ${picked.name}. I'll save that so it matches next time.`);
+        if (isAlias) say.push(tr(L, "Got it: “{text}” is another name for {name}. I'll save that so it matches next time.", { text: d.operatorText, name: picked.name }));
         consumed = true;
       } else if (shortAnswer && NEW.test(message)) {
         d.operator = { kind: "new" };
@@ -244,8 +249,10 @@ export async function converse(
       } else if (UNSURE.test(message) && !/^(skip|leave)/i.test(message)) {
         const n = await countOperators(db, tenantId);
         d.asked = { ...asked, tries: asked.tries + 1 };
-        say.push(`That's fine. I checked all ${n} operator${n === 1 ? "" : "s"} you have${asked.options.length ? " and the closest ones are listed below" : " and none looks like “" + d.operatorText + "”"}, so it is most likely a new operator.`);
-        return { draft: d, reply: { say: [...say, "Shall I create it as new, or leave the operator blank for now? You can add it later."], chips: operatorChips(d, asked.options), ready: false }, confirm: false };
+        say.push(asked.options.length
+          ? tr(L, "That's fine. I checked all {n} operator{s} you have and the closest ones are listed below, so it is most likely a new operator.", { n, s: plural(n) })
+          : tr(L, "That's fine. I checked all {n} operator{s} you have and none looks like “{text}”, so it is most likely a new operator.", { n, s: plural(n), text: d.operatorText }));
+        return { draft: d, reply: { say: [...say, tr(L, "Shall I create it as new, or leave the operator blank for now? You can add it later.")], chips: operatorChips(d, asked.options), ready: false }, confirm: false };
       } else if (shortAnswer && SKIP.test(message) && !/^(no|nope|n)$/i.test(message)) {
         d.operator = { kind: "none" };
         consumed = true;
@@ -267,15 +274,15 @@ export async function converse(
         }
       }
     } else if (asked.kind === "tail") {
-      if (/^(different|another|new|no|nope|n|not the same|distinct)\b/i.test(message)) { d.aircraft = { kind: "new", distinct: true }; consumed = true; }
-      else if (/^(skip|none|no tail|leave)\b/i.test(message)) { d.aircraft = { kind: "none" }; consumed = true; }
-      else if (YES.test(message) || /^(same|existing|use)\b/i.test(message)) {
+      if (/^(different|another|new|no|nope|n|not the same|distinct)\b|^(?:另一架|不同|新的|不是同一架)/i.test(message)) { d.aircraft = { kind: "new", distinct: true }; consumed = true; }
+      else if (/^(skip|none|no tail|leave)\b|^(?:略過|略过|跳過|跳过|無|无)/i.test(message)) { d.aircraft = { kind: "none" }; consumed = true; }
+      else if (YES.test(message) || /^(same|existing|use)\b|^(?:同一架|同一個|同一个|一樣|一样)/i.test(message)) {
         const o = pickOption(message, asked.existing) ?? asked.existing[0];
         d.aircraft = { kind: "existing", id: o.id, label: o.name };
         consumed = true;
       }
     } else if (asked.kind === "classify") {
-      const all = message.match(/^all\s+(.+)$/i);
+      const all = message.match(/^(?:all\s+|全部\s*|所有\s*)(.+)$/i);
       const cls = parseClassification((all ? all[1] : message).replace(/^(it'?s|its|this is|a|an|the)\s+/i, "").replace(/[.!]+$/, ""));
       if (cls) {
         for (const p of d.photos) if (p.classification === "unclassified" && (all || p.mediaId === asked.mediaId)) p.classification = cls;
@@ -314,9 +321,9 @@ export async function converse(
       d.operator = { kind: "unset" };
       rest = rest.slice(1);
     }
-    for (const line of rest) say.push(`I didn't understand “${line}”. You can add “Tail number: …”, “YOM: …” or “Capacity: …” on their own lines.`);
-    for (const a of c.assumed) say.push(`I read ${a}.`);
-    for (const p of c.problems) say.push(p + ".");
+    for (const line of rest) say.push(tr(L, "I didn't understand “{line}”. You can add “Tail number: …”, “YOM: …” or “Capacity: …” on their own lines.", { line }));
+    for (const a of c.assumed) say.push(tr(L, "I read {a}.", { a: trLoose(L, a) }));
+    for (const p of c.problems) say.push(trLoose(L, p) + (isChinese(L) ? "。" : "."));
   }
 
   // 3) Check what already exists, then ask the next open question.
@@ -327,30 +334,31 @@ export async function converse(
 
 function operatorChips(d: Draft, options: Option[]): Chip[] {
   return [
-    { label: `Yes, create “${d.operatorText}”`, send: "New operator" },
-    ...options.map((o, i) => ({ label: `Same as ${o.name}`, send: `Same as #${i + 1}` })),
-    { label: "Leave operator blank", send: "Leave blank" },
+    { label: tr(d.lang, "Yes, create “{text}”", { text: d.operatorText }), send: "New operator" },
+    ...options.map((o, i) => ({ label: tr(d.lang, "Same as {name}", { name: o.name }), send: `Same as #${i + 1}` })),
+    { label: tr(d.lang, "Leave operator blank"), send: "Leave blank" },
   ];
 }
 
 async function nextStep(db: Db, tenantId: string, d: Draft, say: string[]): Promise<{ draft: Draft; reply: ChocksReply }> {
+  const L = d.lang;
   // -- operator
   if (d.operatorText && d.operator.kind === "unset") {
     const matches = await resolveOrganisationsExact(db, tenantId, d.operatorText);
     if (matches.length === 1) {
       d.operator = { kind: "existing", id: matches[0].id, name: matches[0].canonicalName };
-      say.push(`Operator: ${matches[0].canonicalName} is already in your list.`);
+      say.push(tr(L, "Operator: {name} is already in your list.", { name: matches[0].canonicalName }));
     } else if (matches.length > 1) {
       const options = matches.map((m) => ({ id: m.id, name: m.canonicalName }));
       d.asked = { kind: "operator", options, tries: 0 };
-      return { draft: d, reply: { say: [...say, `“${d.operatorText}” matches ${matches.length} of your operators. Which one is it?`], chips: options.map((o, i) => ({ label: o.name, send: `Use #${i + 1}` })), ready: false } };
+      return { draft: d, reply: { say: [...say, tr(L, "“{text}” matches {n} of your operators. Which one is it?", { text: d.operatorText, n: matches.length })], chips: options.map((o, i) => ({ label: o.name, send: `Use #${i + 1}` })), ready: false } };
     } else {
       const n = await countOperators(db, tenantId);
       const options = (await similarOperators(db, tenantId, d.operatorText)).map((o) => ({ ...o, note: "similar" }));
       d.asked = { kind: "operator", options, tries: 0 };
-      const lines = [...say, `I checked your ${n} operator${n === 1 ? "" : "s"} and “${d.operatorText}” isn't one of them.`];
-      if (options.length) lines.push(`The closest ${options.length === 1 ? "one is" : "ones are"}: ${options.map((o) => o.name).join(", ")}. Is it one of those under another name, or a new operator?`);
-      else lines.push("Is it a new operator? If you're not sure, say “not sure” and I'll tell you what I'd do.");
+      const lines = [...say, tr(L, "I checked your {n} operator{s} and “{text}” isn't one of them.", { n, s: plural(n), text: d.operatorText })];
+      if (options.length) lines.push(tr(L, options.length === 1 ? "The closest one is: {names}. Is it one of those under another name, or a new operator?" : "The closest ones are: {names}. Is it one of those under another name, or a new operator?", { names: options.map((o) => o.name).join(isChinese(L) ? "、" : ", ") }));
+      else lines.push(tr(L, "Is it a new operator? If you're not sure, say “not sure” and I'll tell you what I'd do."));
       return { draft: d, reply: { say: lines, chips: operatorChips(d, options), ready: false } };
     }
   }
@@ -362,16 +370,17 @@ async function nextStep(db: Db, tenantId: string, d: Draft, say: string[]): Prom
       if (m.length === 1) {
         d.typeId = m[0].id;
         d.typeLabel = `${m[0].manufacturer} ${m[0].model}`;
-        say.push(`Aircraft type: ${d.typeLabel}${m[0].category ? ` (${AIRCRAFT_CATEGORY_LABEL[m[0].category as AircraftCategory] ?? m[0].category})` : ""}.`);
+        const cat = m[0].category ? trCategory(L, m[0].category, AIRCRAFT_CATEGORY_LABEL[m[0].category as AircraftCategory] ?? m[0].category) : "";
+        say.push(cat ? tr(L, "Aircraft type: {label} ({category}).", { label: d.typeLabel, category: cat }) : tr(L, "Aircraft type: {label}.", { label: d.typeLabel }));
       } else {
         const options = (m.length ? m.map((x) => ({ id: x.id, name: `${x.manufacturer} ${x.model}` })) : await similarTypes(db, tenantId, d.aircraftText));
         d.asked = { kind: "type", options };
-        const first = m.length > 1 ? `“${d.aircraftText}” matches ${m.length} aircraft types. Which one?` : options.length ? `I don't have “${d.aircraftText}”. Did you mean one of these?` : `I don't have an aircraft type called “${d.aircraftText}”. Tell me the exact name (like “Gulfstream G280”), or load the standard list on the Aircraft page.`;
-        return { draft: d, reply: { say: [...say, first], chips: [...options.map((o, i) => ({ label: o.name, send: `Use #${i + 1}` })), { label: "Skip the type", send: "Skip" }], ready: false } };
+        const first = m.length > 1 ? tr(L, "“{text}” matches {n} aircraft types. Which one?", { text: d.aircraftText, n: m.length }) : options.length ? tr(L, "I don't have “{text}”. Did you mean one of these?", { text: d.aircraftText }) : tr(L, "I don't have an aircraft type called “{text}”. Tell me the exact name (like “Gulfstream G280”), or load the standard list on the Operators & aircraft page.", { text: d.aircraftText });
+        return { draft: d, reply: { say: [...say, first], chips: [...options.map((o, i) => ({ label: o.name, send: `Use #${i + 1}` })), { label: tr(L, "Skip the type"), send: "Skip" }], ready: false } };
       }
     } else if (d.photos.length || d.tail || d.yom || d.yor || d.capacity) {
       d.asked = { kind: "type", options: [] };
-      return { draft: d, reply: { say: [...say, "Which aircraft type is this? For example “Gulfstream G280”."], chips: [{ label: "Skip the type", send: "Skip" }], ready: false } };
+      return { draft: d, reply: { say: [...say, tr(L, "Which aircraft type is this? For example “Gulfstream G280”.")], chips: [{ label: tr(L, "Skip the type"), send: "Skip" }], ready: false } };
     }
   }
 
@@ -388,14 +397,14 @@ async function nextStep(db: Db, tenantId: string, d: Draft, say: string[]): Prom
       return {
         draft: d,
         reply: {
-          say: [...say, `${d.tail} is already in your directory: ${existing.map((e) => e.name).join("; ")}. Is this photo set for that aircraft, or a different aircraft with the same tail number?`],
-          chips: [{ label: "Same aircraft", send: "Same aircraft" }, { label: "Different aircraft", send: "Different aircraft" }, { label: "Skip the tail", send: "Skip the tail" }],
+          say: [...say, tr(L, "{tail} is already in your directory: {list}. Is this photo set for that aircraft, or a different aircraft with the same tail number?", { tail: d.tail, list: existing.map((e) => e.name).join("; ") })],
+          chips: [{ label: tr(L, "Same aircraft"), send: "Same aircraft" }, { label: tr(L, "Different aircraft"), send: "Different aircraft" }, { label: tr(L, "Skip the tail"), send: "Skip the tail" }],
           ready: false,
         },
       };
     }
     d.aircraft = { kind: "new", distinct: false };
-    say.push(`${d.tail} isn't in your directory yet, so I'll create it as a new aircraft.`);
+    say.push(tr(L, "{tail} isn't in your directory yet, so I'll create it as a new aircraft.", { tail: d.tail }));
   }
   // -- no tail number: still fine. Record the aircraft without one (when there is an operator or details to attach it to).
   if (!d.tail && d.aircraft.kind === "unset") {
@@ -410,56 +419,63 @@ async function nextStep(db: Db, tenantId: string, d: Draft, say: string[]): Prom
         const existing: Option[] = [];
         for (const id of ids) {
           const c = await getAircraftCard(db, id);
-          existing.push({ id, name: c ? `${c.aircraft}${c.operator ? ` — ${c.operator}` : ""} (no tail number yet)` : id });
+          existing.push({ id, name: c ? `${c.aircraft}${c.operator ? ` — ${c.operator}` : ""} ${tr(L, "(no tail number yet)")}` : id });
         }
         d.asked = { kind: "tail", existing, noTail: true };
         return {
           draft: d,
           reply: {
-            say: [...say, `You already have ${existing.map((e) => e.name).join("; ")}. Is this that aircraft, or another one?`],
-            chips: [{ label: "Same aircraft", send: "Same aircraft" }, { label: "Another aircraft", send: "Different aircraft" }, { label: "Photos for the type only", send: "Skip" }],
+            say: [...say, tr(L, "You already have {list}. Is this that aircraft, or another one?", { list: existing.map((e) => e.name).join("; ") })],
+            chips: [{ label: tr(L, "Same aircraft"), send: "Same aircraft" }, { label: tr(L, "Another aircraft"), send: "Different aircraft" }, { label: tr(L, "Photos for the type only"), send: "Skip" }],
             ready: false,
           },
         };
       }
       d.aircraft = { kind: "new", distinct: false };
-      say.push("No tail number was given, so I'll record the aircraft without one. You can add it later.");
+      say.push(tr(L, "No tail number was given, so I'll record the aircraft without one. You can add it later."));
     }
   }
   if (d.aircraft.kind === "new" && !d.typeId) {
     d.asked = { kind: "type", options: [] };
-    return { draft: d, reply: { say: [...say, `To create ${d.tail} I need its aircraft type. Which one is it?`], chips: [], ready: false } };
+    return { draft: d, reply: { say: [...say, tr(L, "To create {tail} I need its aircraft type. Which one is it?", { tail: d.tail })], chips: [], ready: false } };
   }
 
   // -- each photo needs a view
   const unclassified = d.photos.find((p) => p.classification === "unclassified");
   if (unclassified) {
     d.asked = { kind: "classify", mediaId: unclassified.mediaId };
-    const chips = (["exterior", "cabin", "floor_plan", "galley", "flight_deck"] as Classification[]).map((c) => ({ label: CLASSIFICATION_LABEL[c], send: c }));
-    return { draft: d, reply: { say: [...say, `What view is “${unclassified.name}”? Say “all cabin” to apply a view to every unclassified photo.`], chips, ready: false } };
+    const chips = (["exterior", "cabin", "floor_plan", "galley", "flight_deck"] as Classification[]).map((c) => ({ label: trClassification(L, c, CLASSIFICATION_LABEL[c]), send: c }));
+    return { draft: d, reply: { say: [...say, tr(L, "What view is “{name}”? Say “all cabin” to apply a view to every unclassified photo.", { name: unclassified.name })], chips, ready: false } };
   }
 
   // -- ready
   if (!d.photos.length && d.operator.kind === "unset" && d.aircraft.kind === "none" && !d.typeId && !d.yom && !d.capacity) {
-    return { draft: d, reply: { say: [...say, "I need a bit more. Send photos, or details like “Operator: …”, “Aircraft type: …”, “Tail number: …”."], chips: [], ready: false } };
+    return { draft: d, reply: { say: [...say, tr(L, "I need a bit more. Send photos, or details like “Operator: …”, “Aircraft type: …”, “Tail number: …”.")], chips: [], ready: false } };
   }
   d.asked = { kind: "confirm" };
-  return { draft: d, reply: { say: [...say, ...summary(d), "Say “confirm”, or change something by sending it again (for example “Capacity: 12”)."], chips: [{ label: "Confirm", send: "Confirm" }, { label: "Cancel", send: "Cancel" }], ready: true } };
+  return { draft: d, reply: { say: [...say, ...summary(d), tr(L, "Say “confirm”, or change something by sending it again (for example “Capacity: 12”).")], chips: [{ label: tr(L, "Confirm"), send: "Confirm" }, { label: tr(L, "Cancel"), send: "Cancel" }], ready: true } };
 }
 
 export function summary(d: Draft): string[] {
-  const lines = ["Here is what I'll do:"];
-  const reg = d.region ? ` (region: ${d.region})` : "";
-  if (d.operator.kind === "new") lines.push(`• Create operator “${d.operatorText}”${reg}`);
-  else if (d.operator.kind === "alias_of") lines.push(`• Use operator ${d.operator.name} and remember “${d.operatorText}” as another name`);
-  else if (d.operator.kind === "existing") lines.push(`• Operator: ${d.operator.name}${reg ? `, set region to ${d.region}` : ""}`);
-  if (d.aircraft.kind === "new") lines.push(`• Create aircraft ${d.tail || "without a tail number yet"}${d.typeLabel ? ` (${d.typeLabel})` : ""}${d.aircraft.distinct && d.tail ? " as a different aircraft from the existing one" : ""}`);
-  else if (d.aircraft.kind === "existing") lines.push(`• Use the existing aircraft ${d.aircraft.label}, and update the details you gave`);
-  else if (d.typeLabel) lines.push(`• No tail number: photos will represent the ${d.typeLabel} type`);
-  const facts = [d.yom && `YOM ${d.yom}`, d.yor && `YOR ${d.yor}`, d.capacity && `${d.capacity} seats`, d.wifi !== "unknown" && `WIFI ${d.wifi}${d.wifiDetail ? `, ${d.wifiDetail}` : ""}`, d.notes && `notes “${d.notes}”`].filter(Boolean);
-  if (facts.length && d.aircraft.kind === "new") lines.push(`• Details: ${facts.join(", ")}`);
-  else if (facts.length && d.aircraft.kind === "existing") lines.push(`• Details to save on it: ${facts.join(", ")} (anything you didn't mention stays as it is)`);
-  if (d.photos.length && d.aircraft.kind !== "existing" && d.aircraft.kind !== "new" && !d.typeId) lines.push("• These photos have no aircraft or type to attach to, so they stay in Review");
-  if (d.photos.length) lines.push(`• Approve ${d.photos.length} photo${d.photos.length === 1 ? "" : "s"}: ${d.photos.map((p) => `${p.name} (${CLASSIFICATION_LABEL[p.classification]})`).join(", ")}`);
+  const L = d.lang;
+  const lines = [tr(L, "Here is what I'll do:")];
+  const reg = d.region ? tr(L, " (region: {region})", { region: d.region }) : "";
+  if (d.operator.kind === "new") lines.push(tr(L, "• Create operator “{text}”{reg}", { text: d.operatorText, reg }));
+  else if (d.operator.kind === "alias_of") lines.push(tr(L, "• Use operator {name} and remember “{text}” as another name", { name: d.operator.name, text: d.operatorText }));
+  else if (d.operator.kind === "existing") lines.push(d.region ? tr(L, "• Operator: {name}, set region to {region}", { name: d.operator.name, region: d.region }) : tr(L, "• Operator: {name}", { name: d.operator.name }));
+  if (d.aircraft.kind === "new") lines.push(tr(L, "• Create aircraft {what}{type}{distinct}", { what: d.tail || tr(L, "without a tail number yet"), type: d.typeLabel ? ` (${d.typeLabel})` : "", distinct: d.aircraft.distinct && d.tail ? tr(L, " as a different aircraft from the existing one") : "" }));
+  else if (d.aircraft.kind === "existing") lines.push(tr(L, "• Use the existing aircraft {label}, and update the details you gave", { label: d.aircraft.label }));
+  else if (d.typeLabel) lines.push(tr(L, "• No tail number: photos will represent the {label} type", { label: d.typeLabel }));
+  const facts = [
+    d.yom && tr(L, "YOM {n}", { n: d.yom }),
+    d.yor && tr(L, "YOR {n}", { n: d.yor }),
+    d.capacity && tr(L, "{n} seats", { n: d.capacity }),
+    d.wifi !== "unknown" && tr(L, "WIFI {status}", { status: `${trWifi(L, d.wifi)}${d.wifiDetail ? `, ${d.wifiDetail}` : ""}` }),
+    d.notes && tr(L, "notes “{text}”", { text: d.notes }),
+  ].filter(Boolean);
+  if (facts.length && d.aircraft.kind === "new") lines.push(tr(L, "• Details: {facts}", { facts: facts.join(", ") }));
+  else if (facts.length && d.aircraft.kind === "existing") lines.push(tr(L, "• Details to save on it: {facts} (anything you didn't mention stays as it is)", { facts: facts.join(", ") }));
+  if (d.photos.length && d.aircraft.kind !== "existing" && d.aircraft.kind !== "new" && !d.typeId) lines.push(tr(L, "• These photos have no aircraft or type to attach to, so they stay in Review"));
+  if (d.photos.length) lines.push(tr(L, "• Approve {n} photo{s}: {list}", { n: d.photos.length, s: plural(d.photos.length), list: d.photos.map((p) => `${p.name} (${trClassification(L, p.classification, CLASSIFICATION_LABEL[p.classification])})`).join(", ") }));
   return lines;
 }

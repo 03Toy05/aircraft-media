@@ -130,6 +130,22 @@ const CATEGORY_WORDS: Record<AircraftCategory, string[]> = {
   helicopter: ["helicopter", "heli"],
   other: [],
 };
+// Traditional and Simplified Chinese names, added to the English ones.
+const CATEGORY_ZH_WORDS: Record<AircraftCategory, string[]> = {
+  very_light_jet: ["超輕型噴射機", "超轻型喷射机", "超輕型", "超轻型"],
+  light_jet: ["輕型噴射機", "轻型喷射机", "輕型", "轻型"],
+  midsize_jet: ["中型噴射機", "中型喷射机", "中型"],
+  super_midsize_jet: ["超中型噴射機", "超中型喷射机", "超中型"],
+  heavy_jet: ["大型噴射機", "大型喷射机", "大型", "重型"],
+  ultra_long_range_jet: ["超遠程", "超远程"],
+  executive_airliner: ["行政客機", "行政客机"],
+  turboprop: ["渦輪螺旋槳", "涡轮螺旋桨", "螺旋槳", "螺旋桨"],
+  helicopter: ["直升機", "直升机"],
+  other: [],
+};
+const hasCjk = (t: string) => /[\u3400-\u9fff]/.test(t);
+/** A name from your data inside the sentence: spaces matter for Latin names, not for Chinese ones. */
+const mentionsName = (w: string, name: string) => (hasCjk(name) ? w.includes(name.toLowerCase()) : w.includes(` ${words(name).trim()} `));
 
 export interface ParsedFleetQuery { query: FleetQuery; understood: string[] }
 
@@ -145,12 +161,12 @@ export function parseFleetQuery(message: string, data: Pick<FleetData, "orgs" | 
 
   const region = [...new Set(data.orgs.map((o) => o.region).filter((r): r is string => !!r))]
     .sort((a, b) => b.length - a.length)
-    .find((r) => w.includes(` ${words(r).trim()} `) || normalizeKey(w).includes(normalizeKey(r)) && normalizeKey(r).length >= 4);
+    .find((r) => mentionsName(w, r) || (normalizeKey(w).includes(normalizeKey(r)) && normalizeKey(r).length >= (hasCjk(r) ? 2 : 4)));
   if (region) { query.region = region; understood.push(`region: ${region}`); }
-  else if (/\b(no region|without (?:a )?region|region not set)\b/i.test(message)) { query.region = "__none"; understood.push("no region set"); }
+  else if (/\b(no region|without (?:a )?region|region not set)\b|沒有地區|没有地区|未設定地區|未设定地区/i.test(message)) { query.region = "__none"; understood.push("no region set"); }
 
   // "very light jet" also contains "light jet", so when several categories match textually the most specific (longest) wins.
-  const formsOf = (c: AircraftCategory) => [...CATEGORY_WORDS[c], words(AIRCRAFT_CATEGORY_LABEL[c].replace(/\s*\(.*\)/, "")).trim()].filter(Boolean);
+  const formsOf = (c: AircraftCategory) => [...CATEGORY_WORDS[c], ...CATEGORY_ZH_WORDS[c], words(AIRCRAFT_CATEGORY_LABEL[c].replace(/\s*\(.*\)/, "")).trim()].filter(Boolean);
   const hits = AIRCRAFT_CATEGORIES.filter((c) => formsOf(c).some((f) => new RegExp(`(?<![a-z-])${f}s?(?![a-z])`, "i").test(w.trim())));
   if (hits.length) {
     const best = [...hits].sort((x, y) => Math.max(...formsOf(y).map((f) => f.length)) - Math.max(...formsOf(x).map((f) => f.length)))[0];
@@ -158,16 +174,18 @@ export function parseFleetQuery(message: string, data: Pick<FleetData, "orgs" | 
     understood.push(`category: ${AIRCRAFT_CATEGORY_LABEL[best]}`);
   }
 
-  if (/\b(floating|no fixed base)\b/i.test(message)) { query.base = "Floating"; understood.push("base: Floating"); }
-  else if (/\b(base not recorded|no base|without (?:a )?base)\b/i.test(message)) { query.base = "__none"; understood.push("base not recorded"); }
+  if (/\b(floating|no fixed base)\b|浮動|浮动|無固定基地|无固定基地/i.test(message)) { query.base = "Floating"; understood.push("base: Floating"); }
+  else if (/\b(base not recorded|no base|without (?:a )?base)\b|沒有基地|没有基地|未記錄基地|未记录基地/i.test(message)) { query.base = "__none"; understood.push("base not recorded"); }
   else {
     const bases = [...new Set(data.rows.flatMap(basesOf))].filter((b) => b !== "Floating").sort((a, b) => b.length - a.length);
-    const base = bases.find((b) => w.includes(` ${words(b).trim()} `));
+    const base = bases.find((b) => mentionsName(w, b));
     if (base && base !== query.region) { query.base = base; understood.push(`base: ${base}`); }
   }
 
-  if (/\b(without|no|lacking|doesn'?t have|don'?t have)\s+wi-?\s?fi\b|\bwi-?\s?fi\s*(?:is\s*)?(?:no|not available)\b/i.test(message)) { query.wifi = "no"; understood.push("WIFI: No"); }
-  else if (/\b(?:with|has|have|having|that have|wifi\s*(?:is\s*)?yes)\b[^.?!]*\bwi-?\s?fi\b|\bwi-?\s?fi\s*(?:is\s*)?(?:yes|available|equipped)\b|\bwi-?\s?fi (?:aircraft|jets?|planes?)\b/i.test(message)) { query.wifi = "yes"; understood.push("WIFI: Yes"); }
+  const zhWifiNo = /(?:無|无|沒有|没有|冇|不帶|不带)\s*(?:wi-?\s?fi|無線網絡|无线网络)/i.test(message);
+  const zhWifiYes = !zhWifiNo && /(?:有|提供|附帶|附带|帶|带)\s*(?:wi-?\s?fi|無線網絡|无线网络)/i.test(message);
+  if (zhWifiNo || /\b(without|no|lacking|doesn'?t have|don'?t have)\s+wi-?\s?fi\b|\bwi-?\s?fi\s*(?:is\s*)?(?:no|not available)\b/i.test(message)) { query.wifi = "no"; understood.push("WIFI: No"); }
+  else if (zhWifiYes || /\b(?:with|has|have|having|that have|wifi\s*(?:is\s*)?yes)\b[^.?!]*\bwi-?\s?fi\b|\bwi-?\s?fi\s*(?:is\s*)?(?:yes|available|equipped)\b|\bwi-?\s?fi (?:aircraft|jets?|planes?)\b/i.test(message)) { query.wifi = "yes"; understood.push("WIFI: Yes"); }
   else if (/\bwi-?\s?fi\s*(?:is\s*)?tbc\b/i.test(message)) { query.wifi = "tbc"; understood.push("WIFI: TBC"); }
 
   // Sorting. "newest" / "oldest" mean YOM unless the sentence says refurbishment.
@@ -176,7 +194,18 @@ export function parseFleetQuery(message: string, data: Pick<FleetData, "orgs" | 
   const sw = words(sortWord);
   const has = (re: RegExp) => re.test(sw);
   let acsort: AcSort = "";
-  if (has(/\b(oldest|earliest)\b/) ) acsort = refurb ? "yor_old" : "yom_old";
+  // Chinese: 最新 / 最舊 / 座位最多 / 座位最少 / 翻新 / 按WIFI排序 / 按機型排序
+  const zhRefurb = /翻新|改裝|改装/.test(message);
+  if (/最舊|最旧|最老|舊到新|旧到新/.test(message)) acsort = zhRefurb ? "yor_old" : "yom_old";
+  else if (/最新|最近|新到舊|新到旧/.test(message)) acsort = zhRefurb ? "yor" : "yom";
+  else if (/(?:座位|載客|载客|人數|人数)(?:最少|由少到多|少到多)|最少(?:座位|載客|载客)/.test(message)) acsort = "seats_low";
+  else if (/(?:座位|載客|载客|人數|人数)(?:最多|由多到少|多到少)|最多(?:座位|載客|载客)/.test(message)) acsort = "seats";
+  else if (/(?:按|依|根據|根据)\s*(?:wi-?\s?fi|無線網絡|无线网络)\s*(?:排序|排列|整理)|wi-?\s?fi\s*排序/i.test(message)) acsort = "wifi";
+  else if (/(?:按|依|根據|根据)\s*(?:機型|机型|型號|型号)\s*(?:排序|排列|整理)/.test(message)) acsort = "type";
+  else if (/(?:按|依|根據|根据)\s*(?:翻新|改裝|改装)/.test(message)) acsort = "yor";
+  else if (/(?:按|依|根據|根据)\s*(?:出廠|出厂|年份|製造|制造)/.test(message)) acsort = "yom";
+  if (acsort) { /* set from the Chinese wording above */ }
+  else if (has(/\b(oldest|earliest)\b/) ) acsort = refurb ? "yor_old" : "yom_old";
   else if (has(/\b(newest|latest|most recent\w*)\b/)) acsort = refurb ? "yor" : "yom";
   else if (has(/\b(fewest|least|smallest|lowest)\b.*\b(seats?|capacity|pax)\b|\b(seats?|capacity|pax)\b.*\b(ascending|low to high|fewest|smallest)\b/)) acsort = "seats_low";
   else if (has(/\b(most|biggest|largest|highest|greatest)\b.*\b(seats?|capacity|pax)\b|\b(seats?|capacity|pax)\b/) && /\b(sort|order|rank|arrange|biggest|largest|most|highest|fewest)/i.test(message)) acsort = "seats";
@@ -189,8 +218,8 @@ export function parseFleetQuery(message: string, data: Pick<FleetData, "orgs" | 
     understood.push(`aircraft sorted by ${AC_SORTS.find((s) => s.id === acsort)!.label.toLowerCase()}`);
   }
 
-  if (/\b(sort|order|rank|arrange)\w*\s+(?:the\s+)?(?:operators?\s+)?by\s+region\b/i.test(message)) { query.sort = "region"; understood.push("operators sorted by region"); }
-  else if (/\bmost aircraft\b|\blargest fleets?\b|\bbiggest fleets?\b/i.test(message)) { query.sort = "aircraft"; understood.push("operators sorted by most aircraft"); }
+  if (/(?:按|依|根據|根据)\s*(?:地區|地区|區域|区域)\s*(?:排序|排列|整理)/.test(message) || /\b(sort|order|rank|arrange)\w*\s+(?:the\s+)?(?:operators?\s+)?by\s+region\b/i.test(message)) { query.sort = "region"; understood.push("operators sorted by region"); }
+  else if (/\bmost aircraft\b|\blargest fleets?\b|\bbiggest fleets?\b|飛機最多|飞机最多|機隊最大|机队最大/i.test(message)) { query.sort = "aircraft"; understood.push("operators sorted by most aircraft"); }
   else if (/\b(sort|order)\w*\s+(?:the\s+)?(?:operators?\s+)?(?:by|alphabetically)\s*(?:name)?\b/i.test(message) && /\b(name|alphabet)/i.test(message)) { query.sort = "name"; understood.push("operators sorted by name"); }
 
   return { query, understood };
@@ -200,5 +229,8 @@ export function parseFleetQuery(message: string, data: Pick<FleetData, "orgs" | 
 export function looksLikeFleetRequest(message: string, parsed: ParsedFleetQuery) {
   if (parsed.understood.length > 0) return true;
   // With nothing to filter on, only a plain "show all operators" counts, so "what aircraft does Zebra have?" never lists everything.
-  return /^(?:please\s+|can you\s+|could you\s+)?(?:show|list|give)\s+(?:me\s+)?(?:my\s+|the\s+)?(?:all\s+)?(?:operators?|aircraft|fleet|planes?)(?:\s+and\s+(?:operators?|aircraft|planes?))?\s*[?.!]*$/i.test(message.trim());
+  return (
+    /^(?:please\s+|can you\s+|could you\s+)?(?:show|list|give)\s+(?:me\s+)?(?:my\s+|the\s+)?(?:all\s+)?(?:operators?|aircraft|fleet|planes?)(?:\s+and\s+(?:operators?|aircraft|planes?))?\s*[?.!]*$/i.test(message.trim()) ||
+    /^(?:請|请)?(?:幫我|帮我)?(?:顯示|显示|列出|睇|看|給我看|给我看)(?:所有|全部|我嘅|我的)?(?:營運商|运营商|運營商|飛機|飞机|機隊|机队)[。！？?!]*$/.test(message.trim())
+  );
 }

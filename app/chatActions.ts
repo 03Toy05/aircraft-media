@@ -11,6 +11,7 @@ import { DomainError } from "@/domain/errors";
 import { ingestPdf } from "@/domain/intake";
 import { ingestUpload } from "@/domain/media";
 import { applyChatProposal, suggestClassification, type ApplyResult } from "@/domain/chat";
+import { parseChatLang, tr, trStep } from "@/domain/chocksText";
 import { converse, emptyDraft, type ChocksReply, type Draft, type DraftPhoto } from "@/domain/chocks";
 
 export interface TurnResult {
@@ -41,6 +42,8 @@ export async function chocksTurnAction(fd: FormData): Promise<TurnResult> {
   } catch {
     draft = emptyDraft(randomUUID());
   }
+  const L = parseChatLang(fd.get("lang"));
+  draft.lang = L;
   const message = String(fd.get("text") ?? "");
   const photos: DraftPhoto[] = [];
   const failures: string[] = [];
@@ -87,6 +90,6 @@ export async function chocksTurnAction(fd: FormData): Promise<TurnResult> {
     evidenceText: d.evidence.join("\n") || null,
   });
   revalidatePath("/", "layout");
-  const say = ["Done.", ...applied.steps, ...applied.photos.map((p) => `Photo: ${p.detail}`)];
-  return { draft: emptyDraft(randomUUID()), reply: { say, chips: [], ready: false, done: true }, failures, applied };
+  const say = [tr(L, "Done."), ...applied.steps.map((x) => trStep(L, x)), ...applied.photos.map((p) => tr(L, "Photo: {detail}", { detail: trStep(L, p.detail) }))];
+  return { draft: { ...emptyDraft(randomUUID()), lang: L }, reply: { say, chips: [], ready: false, done: true }, failures, applied };
 }

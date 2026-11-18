@@ -3,7 +3,8 @@ import type { Db } from "../db/client";
 import { aircraftTypes, organisationAliases, organisations } from "../db/schema";
 import { fleetLink, looksLikeFleetRequest, parseFleetQuery, runFleetQuery, sortAircraft } from "./fleetQuery";
 import { getCatalogue } from "./catalogue";
-import { normalizeKey, normalizeRegistration } from "./constants";
+import { AIRCRAFT_CATEGORIES, AIRCRAFT_CATEGORY_LABEL, normalizeKey, normalizeRegistration } from "./constants";
+import { isChinese, plural, tr, trUnderstood, trWifi, type ChatLang } from "./chocksText";
 import { getAircraftCard } from "./directory";
 import { getLineup } from "./media";
 import { buildQuote } from "./quote";
@@ -13,7 +14,13 @@ import { getQuoteTemplates } from "./quoteTemplates";
 export function isLookupQuestion(message: string): boolean {
   const m = message.trim();
   if (!m || /\r?\n/.test(m)) return false;
-  return /\?\s*$/.test(m) || /^(?:please\s+|can you\s+|could you\s+)?(?:show|list|tell me|what|which|how many|give me|find|look up|sort|order|filter|arrange|rank|group|do (?:i|we) have)\b/i.test(m);
+  return (
+    /[?？]\s*$/.test(m) ||
+    /^(?:please\s+|can you\s+|could you\s+)?(?:show|list|tell me|what|which|how many|give me|find|look up|sort|order|filter|arrange|rank|group|do (?:i|we) have)\b/i.test(m) ||
+    /^(?:請|请)?(?:幫我|帮我)?(?:顯示|显示|列出|查詢|查询|查|睇|看|搜尋|搜索|排序|篩選|筛选|整理|給我看|给我看|有咩|有什麼|有什么|哪些|邊啲|边啲)/.test(m) ||
+    /(有咩|有什麼|有什么|有哪些|有幾架|有几架|幾多架|几多架|多少架)/.test(m) ||
+    /(?:相片|照片|圖片|图片)[。！？?!]*$/.test(m)
+  );
 }
 
 function distance(a: string, b: string) {
@@ -43,10 +50,10 @@ export interface LookupAnswer {
   link?: { href: string; label: string };
 }
 
-const WANTS_PHOTOS = /\b(photos?|pictures?|pics?|images?)\b/i;
+const WANTS_PHOTOS = /\b(photos?|pictures?|pics?|images?)\b|相片|照片|圖片|图片/i;
 
 /** Answers a lookup question from the directory. Returns null when nothing in the message matches anything you have. */
-export async function answerLookup(db: Db, tenantId: string, message: string): Promise<LookupAnswer | null> {
+export async function answerLookup(db: Db, tenantId: string, message: string, lang?: ChatLang): Promise<LookupAnswer | null> {
   const sentence = normalizeKey(message);
   const rows = await getCatalogue(db, tenantId);
   const wantsPhotos = WANTS_PHOTOS.test(message);
@@ -61,35 +68,36 @@ export async function answerLookup(db: Db, tenantId: string, message: string): P
     const card = await getAircraftCard(db, r.aircraftId);
     const lineup = await getLineup(db, { aircraftId: r.aircraftId, aircraftTypeId: r.aircraftTypeId });
     if (wantsPhotos) for (const l of lineup.slice(0, maxPhotos)) photos.push({ id: l.contentVersionId, label: `${r.tail ?? r.aircraft} ${l.label}` });
-    const facts = [card?.yom != null && `YOM ${card.yom}`, card?.yor != null && `YOR ${card.yor}`, card?.capacity != null && `${card.capacity} seats`, r.base && `Base: ${r.base}`, wordsFor(lineup.length, "approved photo", "approved photos")].filter(Boolean);
-    return `• ${r.aircraft} · ${r.tail ?? "no tail number yet"} · ${facts.join(" · ")}`;
+    const facts = [card?.yom != null && tr(lang, "YOM {n}", { n: card.yom }), card?.yor != null && tr(lang, "YOR {n}", { n: card.yor }), card?.capacity != null && tr(lang, "{n} seats", { n: card.capacity }), r.base && tr(lang, "Base: {x}", { x: r.base }), tr(lang, "{n} approved photo{s}", { n: lineup.length, s: plural(lineup.length) })].filter(Boolean);
+    return `• ${r.aircraft} · ${r.tail ?? tr(lang, "no tail number yet")} · ${facts.join(" · ")}`;
   };
 
   if (hit.length) {
     for (const o of hit.slice(0, 3)) {
       const mine = rows.filter((r) => r.operatorId === o.id);
-      lines.push(`${o.canonicalName}${o.region ? ` (${o.region})` : ""} has ${wordsFor(mine.length, "aircraft", "aircraft")}${mine.length ? ":" : "."}`);
+      lines.push(tr(lang, mine.length ? "{name}{region} has {n} aircraft:" : "{name}{region} has {n} aircraft.", { name: o.canonicalName, region: o.region ? ` (${o.region})` : "", n: mine.length }));
       for (const r of mine) lines.push(await describe(r, 4));
     }
-    return { say: lines, photos: photos.slice(0, 12), link: { href: `/organisations/${hit[0].id}`, label: `Open ${hit[0].canonicalName}` } };
+    return { say: lines, photos: photos.slice(0, 12), link: { href: `/organisations/${hit[0].id}`, label: tr(lang, "Open {name}", { name: hit[0].canonicalName }) } };
   }
 
   // A tail number anywhere in the sentence, with or without a hyphen or space: "what does B-KXX have", "t7 lxx photos".
   const byTail = rows.filter((r) => r.tail && normalizeRegistration(r.tail).length >= 3 && sentence.includes(normalizeRegistration(r.tail).toLowerCase()));
   if (byTail.length) {
     for (const r of byTail) lines.push(`${r.operator ? r.operator + " · " : ""}${(await describe(r, 12)).slice(2)}`);
-    return { say: lines, photos: photos.slice(0, 12), link: { href: `/aircraft/${byTail[0].aircraftId}`, label: "Open this aircraft" } };
+    return { say: lines, photos: photos.slice(0, 12), link: { href: `/aircraft/${byTail[0].aircraftId}`, label: tr(lang, "Open this aircraft") } };
   }
   return null;
 }
 
-const WIFI_LABEL: Record<string, string> = { yes: "WIFI yes", no: "WIFI no", tbc: "WIFI TBC" };
+const WIFI_WORD: Record<string, string> = { yes: "yes", no: "no", tbc: "TBC" };
+const categoryKeyOf = (englishLabel: string) => AIRCRAFT_CATEGORIES.find((c) => AIRCRAFT_CATEGORY_LABEL[c] === englishLabel) ?? null;
 
 /**
  * "Show heavy jets based in Hong Kong with wifi, newest first": the same filters and sorting as the
  * Operators & aircraft page. Returns what was found and a link that opens the page set up the same way.
  */
-export async function answerFleet(db: Db, tenantId: string, message: string): Promise<{ say: string[]; link: { href: string; label: string } } | null> {
+export async function answerFleet(db: Db, tenantId: string, message: string, lang?: ChatLang): Promise<{ say: string[]; link: { href: string; label: string } } | null> {
   const orgs = await db.select().from(organisations).where(eq(organisations.tenantId, tenantId));
   const rows = await getCatalogue(db, tenantId);
   const types = await db.select().from(aircraftTypes).where(eq(aircraftTypes.tenantId, tenantId));
@@ -102,17 +110,19 @@ export async function answerFleet(db: Db, tenantId: string, message: string): Pr
 
   const line = (r: (typeof rows)[number]) => {
     const c = cards.get(r.aircraftId);
-    const facts = [c?.yom != null && `YOM ${c.yom}`, c?.yor != null && `YOR ${c.yor}`, c?.capacity != null && `${c.capacity} seats`, c && WIFI_LABEL[c.wifi], r.base && `Base: ${r.base}`].filter(Boolean);
-    return `• ${r.aircraft} · ${r.tail ?? "no tail number yet"}${facts.length ? " · " + facts.join(" · ") : ""}`;
+    const wifi = c && WIFI_WORD[c.wifi] ? tr(lang, "WIFI {status}", { status: isChinese(lang) ? trWifi(lang, c.wifi) : WIFI_WORD[c.wifi] }) : null;
+    const facts = [c?.yom != null && tr(lang, "YOM {n}", { n: c.yom }), c?.yor != null && tr(lang, "YOR {n}", { n: c.yor }), c?.capacity != null && tr(lang, "{n} seats", { n: c.capacity }), wifi, r.base && tr(lang, "Base: {x}", { x: r.base })].filter(Boolean);
+    return `• ${r.aircraft} · ${r.tail ?? tr(lang, "no tail number yet")}${facts.length ? " · " + facts.join(" · ") : ""}`;
   };
   const shownGroups = result.groups.filter((g) => g.aircraft.length > 0 || !result.filtering);
   const total = shownGroups.reduce((n, g) => n + g.aircraft.length, 0) + result.unassigned.length;
-  const how = parsed.understood.length ? ` (${parsed.understood.join("; ")})` : "";
+  const notes = parsed.understood.map((u) => trUnderstood(lang, u, categoryKeyOf));
+  const how = notes.length ? (isChinese(lang) ? `（${notes.join("；")}）` : ` (${notes.join("; ")})`) : "";
   const say: string[] = [];
   if (shownGroups.length === 0 && result.unassigned.length === 0) {
-    say.push(`Nothing matches${how}. Try fewer filters.`);
+    say.push(tr(lang, "Nothing matches{how}. Try fewer filters.", { how }));
   } else {
-    say.push(`${wordsFor(shownGroups.length, "operator", "operators")}, ${wordsFor(total, "aircraft", "aircraft")}${how}:`);
+    say.push(tr(lang, "{ops} operator{ops_s}, {n} aircraft{how}:", { ops: shownGroups.length, ops_s: plural(shownGroups.length), n: total, how }));
     const CAP = 25;
     if (parsed.query.acsort) {
       // Sorting by year, seats or WIFI is asked across everything, so the answer is one list with the operator on each line.
@@ -126,11 +136,11 @@ export async function answerFleet(db: Db, tenantId: string, message: string): Pr
         shown += body.length;
         say.push([`${g.org.canonicalName}${g.org.region ? ` (${g.org.region})` : ""}`, ...body.map(line)].join("\n"));
       }
-      if (result.unassigned.length && shown < CAP) say.push(["No operator", ...result.unassigned.slice(0, CAP - shown).map(line)].join("\n"));
+      if (result.unassigned.length && shown < CAP) say.push([tr(lang, "No operator"), ...result.unassigned.slice(0, CAP - shown).map(line)].join("\n"));
     }
-    if (total > CAP) say.push(`…and ${total - CAP} more. Open the page to see them all.`);
+    if (total > CAP) say.push(tr(lang, "…and {n} more. Open the page to see them all.", { n: total - CAP }));
   }
-  return { say, link: { href: fleetLink(parsed.query), label: "Open this view on Operators & aircraft" } };
+  return { say, link: { href: fleetLink(parsed.query), label: tr(lang, "Open this view on Operators & aircraft") } };
 }
 
 /** Just enough of the directory to read a sentence's filters (regions, bases). */
@@ -140,10 +150,10 @@ export async function fleetBasics(db: Db, tenantId: string) {
 }
 
 /**
- * The quotation message (in your saved English wording) and a few photos for each chosen aircraft,
+ * The quotation message (in your saved wording, in the chat language) and a few photos for each chosen aircraft,
  * so Chocks can show "template and photos" right in the chat.
  */
-export async function quotePreview(db: Db, tenantId: string, ids: string[]): Promise<{ text: string; photos: { id: string; label: string }[] }> {
+export async function quotePreview(db: Db, tenantId: string, ids: string[], lang?: ChatLang): Promise<{ text: string; photos: { id: string; label: string }[] }> {
   const rows = await getCatalogue(db, tenantId);
   const templates = await getQuoteTemplates(db, tenantId);
   const items = [];
@@ -156,5 +166,6 @@ export async function quotePreview(db: Db, tenantId: string, ids: string[]): Pro
     const lineup = await getLineup(db, { aircraftId: id, aircraftTypeId: r.aircraftTypeId });
     for (const l of lineup.slice(0, 4)) photos.push({ id: l.contentVersionId, label: `${card.aircraft} ${l.label}` });
   }
-  return { text: buildQuote(items, { language: "en", template: templates.en ?? null, greeting: true }), photos };
+  const language = lang === "zh-Hant" || lang === "zh-Hans" ? lang : "en";
+  return { text: buildQuote(items, { language, template: templates[language] ?? null, greeting: true }), photos };
 }

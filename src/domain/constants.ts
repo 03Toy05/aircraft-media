@@ -97,8 +97,22 @@ export function guessClassificationFromFilename(filename: string): Classificatio
   return null;
 }
 
+/** Chinese names for the views, Traditional and Simplified. */
+const CLASSIFICATION_ZH_ALIASES: [RegExp, Classification][] = [
+  [/外觀|外观|機身|机身/, "exterior"],
+  [/客艙|客舱|機艙|机舱|內部|内部|室內|室内/, "cabin"],
+  [/座椅|座位/, "seating"],
+  [/臥室|卧室|睡房|床/, "sleeping"],
+  [/廚房|厨房|廚艙|厨舱/, "galley"],
+  [/洗手間|洗手间|廁所|厕所/, "lavatory"],
+  [/駕駛艙|驾驶舱/, "flight_deck"],
+  [/行李艙|行李舱/, "baggage"],
+  [/平面圖|平面图|佈局|布局/, "floor_plan"],
+];
+
 /** Parse a user-typed view name ("Floor Plan", "FLOOR PLAN", "interior") into a canonical classification. */
 export function parseClassification(text: string): Classification | null {
+  for (const [re, c] of CLASSIFICATION_ZH_ALIASES) if (re.test(text)) return c;
   const key = text.toLowerCase().replace(/[^a-z]/g, "");
   return CLASSIFICATION_ALIASES[key] ?? null;
 }
