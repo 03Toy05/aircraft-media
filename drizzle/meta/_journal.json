@@ -22,6 +22,34 @@
       "when": 1794918583251,
       "tag": "0002_sparkling_vertigo",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1794974436204,
+      "tag": "0003_right_glorian",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1794976534797,
+      "tag": "0004_sticky_talisman",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1794981069567,
+      "tag": "0005_flowery_stardust",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1794981700877,
+      "tag": "0006_thin_cobalt_man",
+      "breakpoints": true
     }
   ]
 }

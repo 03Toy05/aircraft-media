@@ -4,12 +4,37 @@ import Link from "next/link";
 import { useEffect, useRef, useState, useTransition } from "react";
 import { chocksTurnAction, type TurnResult } from "../chatActions";
 import type { Draft } from "@/domain/chocks";
+import { prepareShareAction, type SharePayload } from "../shareActions";
+import { ShareBox } from "./ShareBox";
 
-const TEMPLATE = "Operator: \nAircraft type: \nTail number: \nYOM: \nCapacity: ";
+/** "Copy message": puts the quotation text Chocks just showed on the clipboard. */
+function CopyButton({ text }: { text: string }) {
+  const [done, setDone] = useState<string | null>(null);
+  return (
+    <p style={{ margin: "6px 0" }}>
+      <button type="button" onClick={async () => {
+        try { await navigator.clipboard.writeText(text); setDone("Copied. Paste it into your chat or email."); }
+        catch { setDone("Could not copy automatically. Select the message above and copy it."); }
+      }}>Copy message</button>
+      {done && <span className="small muted"> {done}</span>}
+    </p>
+  );
+}
+
+/** The Send panel Chocks shows after "send the G280 to Mr Chan". */
+function SharePanel({ aircraftId, contactId }: { aircraftId: string; contactId: string }) {
+  const [p, setP] = useState<SharePayload | null | undefined>(undefined);
+  useEffect(() => { prepareShareAction(aircraftId, contactId).then(setP, () => setP(null)); }, [aircraftId, contactId]);
+  if (p === undefined) return <p className="muted small">Preparing…</p>;
+  if (p === null) return <p className="small">I couldn't prepare that one. Try again.</p>;
+  return <div style={{ marginTop: 6 }}><ShareBox aircraftId={p.aircraftId} tail={p.tail} cardText={p.cardText} items={p.items} contact={p.contact} /></div>;
+}
+
+const TEMPLATE = "Operator: \nRegion: \nAircraft type: \nTail number: \nYOM: \nCapacity: ";
 
 type Msg =
   | { id: string; role: "user"; text: string; files: string[] }
-  | { id: string; role: "chocks"; say: string[]; chips: { label: string; send: string }[]; draft: Draft; done?: boolean; aircraftId?: string | null; failures: string[] };
+  | { id: string; role: "chocks"; say: string[]; chips: { label: string; send: string }[]; draft: Draft; done?: boolean; aircraftId?: string | null; failures: string[]; share?: { aircraftId: string; contactId: string }; link?: { href: string; label: string }; photos?: { id: string; label: string }[]; copy?: string };
 
 // Browser speech APIs (Chrome, Edge, Safari). Typed minimally because they are not in the standard DOM typings.
 interface Recognition {
@@ -44,6 +69,7 @@ export default function ChatClient() {
   const [voiceMsg, setVoiceMsg] = useState<string | null>(null);
   const rec = useRef<Recognition | null>(null);
   const sendRef = useRef<(t: string) => void>(() => {});
+  const autoSendRef = useRef(false);
 
   useEffect(() => { setCanListen(!!getRecognition()); }, []);
   useEffect(() => { endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" }); }, [msgs]);
@@ -68,7 +94,7 @@ export default function ChatClient() {
         return;
       }
       setDraft(JSON.stringify(r.draft));
-      setMsgs((m) => [...m, { id: crypto.randomUUID(), role: "chocks", say: r.reply.say, chips: r.reply.chips, draft: r.draft, done: r.reply.done, aircraftId: r.applied?.aircraftId, failures: r.failures }]);
+      setMsgs((m) => [...m, { id: crypto.randomUUID(), role: "chocks", say: r.reply.say, chips: r.reply.chips, draft: r.draft, done: r.reply.done, aircraftId: r.applied?.aircraftId, failures: r.failures, share: r.reply.share, link: r.reply.link, photos: r.reply.photos, copy: r.reply.copy }]);
       if (speak && "speechSynthesis" in window) {
         window.speechSynthesis.cancel();
         const u = new SpeechSynthesisUtterance(r.reply.say.join(" ").replace(/[•“”]/g, ""));
@@ -78,30 +104,67 @@ export default function ChatClient() {
     });
   };
   sendRef.current = (t) => send({ text: t });
+  autoSendRef.current = autoSend;
 
-  const toggleMic = () => {
-    if (listening) { rec.current?.stop(); return; }
+  // Voice: keeps listening through pauses until you press Stop (the browser ends a session after a short silence,
+  // so it is restarted and the words are joined together). With "Send when I stop speaking", a quiet spell of 3 seconds sends.
+  const wantListening = useRef(false);
+  const committed = useRef("");
+  const baseText = useRef("");
+  const silenceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const emptyRuns = useRef(0);
+
+  const stopListening = (sendAfter: boolean) => {
+    wantListening.current = false;
+    if (silenceTimer.current) clearTimeout(silenceTimer.current);
+    rec.current?.stop();
+    setListening(false);
+    const spoken = (baseText.current + committed.current).trim();
+    if (sendAfter && spoken) setTimeout(() => sendRef.current(spoken), 0);
+  };
+
+  const startSession = () => {
     const Ctor = getRecognition();
-    if (!Ctor) return;
-    setVoiceMsg(null);
+    if (!Ctor || !wantListening.current) return;
     const r = new Ctor();
     r.lang = lang;
     r.interimResults = true;
-    r.continuous = false;
-    const base = textRef.current ? textRef.current.replace(/\s*$/, " ") : "";
-    let heard = "";
+    r.continuous = true;
+    let sessionText = "";
     r.onresult = (e) => {
-      heard = Array.from(e.results).map((x) => x[0].transcript).join(" ").trim();
-      setText(base + heard);
+      sessionText = Array.from(e.results).map((x) => x[0].transcript).join(" ").trim();
+      emptyRuns.current = 0;
+      setText((baseText.current + committed.current + sessionText).replace(/\s+/g, " "));
+      if (silenceTimer.current) clearTimeout(silenceTimer.current);
+      if (autoSendRef.current) silenceTimer.current = setTimeout(() => { committed.current += sessionText + " "; sessionText = ""; stopListening(true); }, 3000);
     };
-    r.onerror = (e) => setVoiceMsg(e.error === "not-allowed" ? "The microphone is blocked. Allow it in the browser's address bar." : e.error === "no-speech" ? "I didn't hear anything." : `Voice input stopped (${e.error}).`);
+    r.onerror = (e) => {
+      if (e.error === "no-speech" || e.error === "aborted") return; // quiet spell: onend restarts
+      wantListening.current = false;
+      setVoiceMsg(e.error === "not-allowed" ? "The microphone is blocked. Allow it in the browser's address bar." : `Voice input stopped (${e.error}).`);
+    };
     r.onend = () => {
+      if (sessionText) committed.current += sessionText + " ";
+      else emptyRuns.current += 1;
+      if (wantListening.current && emptyRuns.current < 4) { setTimeout(startSession, 150); return; }
+      if (wantListening.current) setVoiceMsg("I stopped listening because I heard nothing for a while.");
+      wantListening.current = false;
       setListening(false);
-      if (autoSend && heard) setTimeout(() => sendRef.current(base + heard), 0);
     };
     rec.current = r;
+    try { r.start(); } catch { /* already started */ }
+  };
+
+  const toggleMic = () => {
+    if (listening) { stopListening(false); return; }
+    if (!getRecognition()) return;
+    setVoiceMsg(null);
+    wantListening.current = true;
+    committed.current = "";
+    emptyRuns.current = 0;
+    baseText.current = textRef.current ? textRef.current.replace(/\s*$/, " ") : "";
     setListening(true);
-    r.start();
+    startSession();
   };
 
   const lastChocks = [...msgs].reverse().find((m) => m.role === "chocks");
@@ -135,7 +198,20 @@ export default function ChatClient() {
                 ))}
               </div>
             )}
-            {m.done && (
+            {m.photos && m.photos.length > 0 && (
+              <div className="thumbs" style={{ margin: "8px 0" }}>
+                {m.photos.map((p) => (
+                  <a key={p.id} href={`/api/media/${p.id}`} target="_blank" title={p.label}>
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={`/api/media/${p.id}`} alt={p.label} style={{ width: 110, height: 80 }} />
+                  </a>
+                ))}
+              </div>
+            )}
+            {m.copy && <CopyButton text={m.copy} />}
+            {m.link && <p className="small"><Link href={m.link.href}>{m.link.label} →</Link></p>}
+            {m.share && <SharePanel aircraftId={m.share.aircraftId} contactId={m.share.contactId} />}
+            {m.done && !m.share && (
               <p className="small">
                 {m.aircraftId && <><Link href={`/aircraft/${m.aircraftId}`}>Open the aircraft →</Link>{" "}</>}
                 <Link href="/review">Review queue →</Link>
@@ -172,7 +248,7 @@ export default function ChatClient() {
           <div style={{ flex: "0 0 auto" }}><button type="button" className="secondary" onClick={() => setText((v) => (v.trim() ? v : TEMPLATE))}>Template</button></div>
           {canListen && (
             <div style={{ flex: "0 0 auto" }}>
-              <button type="button" className={listening ? "danger" : "secondary"} onClick={toggleMic} aria-pressed={listening}>{listening ? "Stop" : "Speak"}</button>
+              <button type="button" className={listening ? "danger" : "secondary"} onClick={toggleMic} aria-pressed={listening}>{listening ? "Stop listening" : "Speak"}</button>
             </div>
           )}
           <div style={{ flex: "0 0 auto" }}><button type="button" onClick={() => send()} disabled={pending || (!text.trim() && files.length === 0)}>Send</button></div>
@@ -188,7 +264,7 @@ export default function ChatClient() {
             )}
           </div>
         )}
-        {listening && <p className="small muted">Listening… say something like “Operator Advanced Aviation, aircraft type G280, capacity 10”.</p>}
+        {listening && <p className="small muted">Listening… keep talking, pauses are fine. Press Stop listening when you are done (or tick “Send when I stop speaking”). Say something like “Operator Advanced Aviation, aircraft type G280, capacity 10”.</p>}
         {voiceMsg && <p className="small" style={{ color: "var(--warn)" }}>{voiceMsg}</p>}
         {!canListen && <p className="small muted">Voice input isn't available in this browser. Chrome or Edge work best.</p>}
         {files.length > 0 && <p className="small muted">{files.length} file(s) attached</p>}

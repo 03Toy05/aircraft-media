@@ -75,13 +75,14 @@ export async function chocksTurnAction(fd: FormData): Promise<TurnResult> {
     classifications: Object.fromEntries(d.photos.map((p) => [p.mediaId, p.classification])),
     operatorId: d.operator.kind === "existing" || d.operator.kind === "alias_of" ? d.operator.id : null,
     newOperatorName: d.operator.kind === "new" ? d.operatorText : null,
+    region: d.region || null,
     aliasOf: d.operator.kind === "alias_of" ? { organisationId: d.operator.id, alias: d.operatorText } : null,
     aircraftTypeId: d.typeId,
     aircraft:
       d.aircraft.kind === "existing" ? { mode: "existing", aircraftId: d.aircraft.id }
       : d.aircraft.kind === "new" ? { mode: "new", registration: d.tail, distinct: d.aircraft.distinct }
       : { mode: "none" },
-    info: { yom: d.yom, yor: d.yor, capacity: d.capacity, wifiStatus: d.wifi, notes: d.notes || null },
+    info: { yom: d.yom, yor: d.yor, capacity: d.capacity, wifiStatus: d.wifi, wifiDetail: d.wifiDetail || null, notes: d.notes || null },
     base: d.base ?? undefined,
     evidenceText: d.evidence.join("\n") || null,
   });

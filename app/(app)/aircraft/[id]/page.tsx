@@ -40,7 +40,7 @@ export default async function AircraftDetail({ params, searchParams }: { params:
 
   return (
     <>
-      <p className="small"><Link href="/aircraft">← Aircraft</Link></p>
+      <p className="small"><Link href="/fleet">← Operators &amp; aircraft</Link></p>
       <h1>{card.tailNumber ?? "No tail number yet"} — {card.aircraft}</h1>
       <Flash error={one(sp.error)} ok={one(sp.ok)} />
       <div className="grid g2">
@@ -60,6 +60,7 @@ export default async function AircraftDetail({ params, searchParams }: { params:
                 <div><label>Capacity</label><input name="capacity" type="number" defaultValue={current?.capacity ?? ""} /></div>
                 <div><label>WIFI</label><select name="wifiStatus" defaultValue={current?.wifiStatus ?? "unknown"}><option value="yes">Yes</option><option value="no">No</option><option value="tbc">TBC</option><option value="unknown">Unknown</option></select></div>
               </div>
+              <label>WIFI details (optional, shown in quotes)</label><input name="wifiDetail" defaultValue={current?.wifiDetail ?? ""} placeholder="e.g. at USD 10/MB" />
               <label>Notes</label><input name="notes" defaultValue={current?.notes ?? ""} />
               <label>Effective / observed date (optional)</label><input name="effectiveDate" type="date" />
               <p><button type="submit">Save new version</button></p>
@@ -124,6 +125,7 @@ export default async function AircraftDetail({ params, searchParams }: { params:
 
           <div className="card">
             <h3>Send to a client</h3>
+            <p className="small"><Link href={`/quote?ids=${id}`}>Write a quote message for this aircraft →</Link></p>
             <ShareBox
               aircraftId={id}
               tail={card.tailNumber ?? "aircraft"}

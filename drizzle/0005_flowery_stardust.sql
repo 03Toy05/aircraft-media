@@ -1,0 +1,1 @@
+ALTER TABLE "aircraft_information_versions" ADD COLUMN "wifi_detail" text;

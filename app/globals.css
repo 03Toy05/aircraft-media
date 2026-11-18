@@ -34,3 +34,16 @@ pre.cardtext { background: var(--bg); border: 1px solid var(--line); padding: 10
 img.preview { max-width: 100%; max-height: 520px; border-radius: 8px; border: 1px solid var(--line); background: repeating-conic-gradient(#8883 0 25%, transparent 0 50%) 0 0/16px 16px; }
 .thumbs { display: flex; flex-wrap: wrap; gap: 8px; } .thumbs a { display: block; } .thumbs img { width: 120px; height: 90px; object-fit: cover; border-radius: 6px; border: 1px solid var(--line); }
 [dir=rtl] { text-align: right; }
+
+/* Dashboard: Chocks on the left, quick actions and recent photos on the right; stacked on narrow screens. */
+.dash { display: grid; gap: 14px; grid-template-columns: minmax(0, 2fr) minmax(260px, 1fr); align-items: start; }
+@media (max-width: 800px) { .dash { grid-template-columns: 1fr; } }
+
+/* Icons */
+.ico { vertical-align: -3px; margin-right: 6px; flex: 0 0 auto; }
+nav.top a, button, .btn { display: inline-flex; align-items: center; }
+.btn.block, .dash .btn { justify-content: flex-start; }
+.apps { display: flex; flex-wrap: wrap; gap: 8px; }
+.apps .app { display: inline-flex; align-items: center; gap: 6px; padding: 6px 10px; border: 1px solid var(--line); border-radius: 999px; background: var(--card); color: var(--text); font: inherit; cursor: pointer; }
+.apps .app:hover { background: var(--bg); text-decoration: none; }
+.apps .dot { width: 20px; height: 20px; border-radius: 50%; color: #fff; font-size: 11px; font-weight: 700; display: inline-flex; align-items: center; justify-content: center; }

@@ -5,12 +5,13 @@ import type { WifiStatus } from "./constants";
  * Canonical field keys are stored once; only the visible labels vary by language.
  * English is implemented now; further languages are added to CARD_LABELS in phase 4.
  */
-export const CARD_FIELDS = ["operator", "aircraft", "tail", "base", "yom", "yor", "capacity", "wifi", "notes"] as const;
+export const CARD_FIELDS = ["operator", "region", "aircraft", "tail", "base", "yom", "yor", "capacity", "wifi", "notes"] as const;
 export type CardField = (typeof CARD_FIELDS)[number];
 
 export const CARD_LABELS: Record<string, Record<CardField, string[]>> = {
   en: {
     operator: ["operator", "operated by"],
+    region: ["region", "operator region"],
     aircraft: ["aircraft type", "aircraft", "type", "model"],
     tail: ["tail number", "tail", "registration"],
     base: ["base"],
@@ -25,6 +26,7 @@ export const CARD_LABELS: Record<string, Record<CardField, string[]>> = {
 export const CARD_DISPLAY_LABELS: Record<string, Record<CardField, string>> = {
   en: {
     operator: "Operator",
+    region: "Region",
     aircraft: "Aircraft",
     tail: "Tail number",
     base: "Base",
@@ -38,6 +40,8 @@ export const CARD_DISPLAY_LABELS: Record<string, Record<CardField, string>> = {
 
 export interface ParsedCard {
   operator?: string;
+  /** The operator's region (a property of the operator, not of the aircraft). */
+  region?: string;
   aircraft?: string;
   tail?: string;
   base?: { mode: "based" | "floating"; locations: string[] };
@@ -45,6 +49,8 @@ export interface ParsedCard {
   yor?: number | null;
   capacity?: number | null;
   wifi?: WifiStatus;
+  /** What follows Yes/No on the WIFI line: "WIFI: Yes, at USD 10/MB" -> "at USD 10/MB". */
+  wifiDetail?: string;
   notes?: string;
   /** Lines that were not recognised, kept so nothing is silently dropped. */
   unrecognised: string[];
@@ -56,6 +62,12 @@ export interface ParsedCard {
 
 /** Unlabelled lines: "10 seats" -> capacity; a bare year -> YOM (then YOR); a hyphenated or N-number tail. */
 function interpretLooseLine(line: string, out: ParsedCard): string | null {
+  // A line starting with * is a note, for example: *subject to owner's approval
+  const star = line.match(/^\*+\s*(.+)$/);
+  if (star && !out.notes) {
+    out.notes = star[1].trim();
+    return `"${line}" read as Notes`;
+  }
   // Value first, label after: "2013 YOM", "2020 YOR", "16 capacity".
   const rev = line.match(/^(\d{1,4})\s*(yom|yor|capacity)$/i);
   if (rev) {
@@ -103,8 +115,24 @@ export function splitInlineLabels(text: string, lang = "en"): string {
   return [lead, ...parts].filter(Boolean).join("\n");
 }
 
+/**
+ * Turns a spoken or casually typed sentence into labelled form, so the label splitter can read it:
+ *   "add new operator Vietstar Aviation bass in Ho Chi Minh aircraft Legacy 600 13 seats"
+ *   -> "operator Vietstar Aviation base Ho Chi Minh aircraft Legacy 600 capacity 13"
+ * Only single-line text is touched. "bass in" is how dictation often writes "base in".
+ */
+export function normalizeSpoken(text: string): string {
+  if (/\r?\n/.test(text)) return text;
+  let t = text.trim();
+  t = t.replace(/^(?:please\s+|can you\s+|could you\s+)?(?:(?:add|create|register|make|set up|enter)\s+)?(?:(?:a|an|the)\s+)?(?:new\s+)?(?=(?:operator|aircraft|plane)\b)/i, "");
+  t = t.replace(/\b(?:based|base|bass)\s+(?:in|at|is)\s+/gi, "base ");
+  t = t.replace(/\b(?:built|manufactured|made)\s+in\s+(?=\d{4}\b)/gi, "yom ");
+  t = t.replace(/\b(\d{1,3})[- ]?(?:seats?|seater|passengers?|pax)\b/gi, "capacity $1");
+  return t;
+}
+
 export function parseAircraftCard(text: string, lang = "en"): ParsedCard {
-  text = splitInlineLabels(text, lang);
+  text = splitInlineLabels(normalizeSpoken(text), lang);
   const labels = CARD_LABELS[lang] ?? CARD_LABELS.en;
   const lookup = new Map<string, CardField>();
   for (const f of CARD_FIELDS) for (const l of labels[f]) lookup.set(l.toLowerCase(), f);
@@ -132,6 +160,7 @@ export function parseAircraftCard(text: string, lang = "en"): ParsedCard {
     if (value === "") continue; // omitted is not "No" and not "0": leave the field unset
     switch (field) {
       case "operator":
+      case "region":
       case "aircraft":
       case "tail":
       case "notes":
@@ -152,9 +181,11 @@ export function parseAircraftCard(text: string, lang = "en"): ParsedCard {
         break;
       }
       case "wifi": {
-        const v = value.toLowerCase();
-        if (v === "yes" || v === "no" || v === "tbc" || v === "unknown") out.wifi = v;
-        else out.problems.push(`WIFI must be Yes, No, TBC or Unknown: ${value}`);
+        const w = value.match(/^(yes|no|tbc|unknown)\b[\s,;:\-–—]*(.*)$/i);
+        if (w) {
+          out.wifi = w[1].toLowerCase() as WifiStatus;
+          if (w[2].trim()) out.wifiDetail = w[2].trim();
+        } else out.problems.push(`WIFI must start with Yes, No, TBC or Unknown: ${value}`);
         break;
       }
     }
@@ -173,6 +204,7 @@ export function formatAircraftCard(
     yor: number | null;
     capacity: number | null;
     wifi: WifiStatus;
+    wifiDetail?: string | null;
     notes: string | null;
   },
   lang = "en",
@@ -187,7 +219,7 @@ export function formatAircraftCard(
     `${L.yom}: ${card.yom ?? ""}`,
     `${L.yor}: ${card.yor ?? ""}`,
     `${L.capacity}: ${card.capacity ?? ""}`,
-    `${L.wifi}: ${wifi}`,
+    `${L.wifi}: ${wifi}${card.wifiDetail && card.wifi !== "unknown" ? `, ${card.wifiDetail}` : ""}`,
     `${L.notes}: ${card.notes ?? ""}`,
   ].join("\n");
 }

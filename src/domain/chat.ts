@@ -4,7 +4,7 @@ import { aircraftMedia, aircraftTypes, organisationAircraftRelationships } from 
 import type { Actor } from "./action";
 import type { ParsedCard } from "./card";
 import { guessClassificationFromFilename, CLASSIFICATIONS, type Classification, type WifiStatus } from "./constants";
-import { addInformationVersion, addOrganisationAlias, createAircraft, createOrganisation, findAircraftByTail, getAircraftCard, resolveAircraftTypes, resolveOrganisations, setBases, setOperator } from "./directory";
+import { addInformationVersion, addOrganisationAlias, setOrganisationRegion, createAircraft, createOrganisation, findAircraftByTail, getAircraftCard, resolveAircraftTypes, resolveOrganisations, setBases, setOperator } from "./directory";
 import { DomainError } from "./errors";
 import { approveMedia, setMediaAssociation, updateMediaMetadata } from "./media";
 
@@ -41,7 +41,7 @@ export async function matchCard(db: Q, tenantId: string, parsed: ParsedCard): Pr
     }
     r.leftover.push(line);
   }
-  if (!r.operatorText && r.leftover.length === 1) { r.operatorText = r.leftover[0]; r.operatorLoose = true; r.leftover = []; }
+  if (!r.operatorText && r.leftover.length >= 1) { r.operatorText = r.leftover[0]; r.operatorLoose = true; r.leftover = r.leftover.slice(1); }
   return r;
 }
 
@@ -51,11 +51,13 @@ export interface ApplyInput {
   classifications: Record<string, Classification>;
   operatorId?: string | null;
   newOperatorName?: string | null;
+  /** Saved on the operator (new or existing) when given. */
+  region?: string | null;
   aircraftTypeId?: string | null;
   /** The operator name was given as another name for this existing operator: remember it as an alias. */
   aliasOf?: { organisationId: string; alias: string } | null;
   aircraft: { mode: "existing"; aircraftId: string } | { mode: "new"; registration: string; serialNumber?: string | null; distinct?: boolean } | { mode: "none" };
-  info: { yom: number | null; yor: number | null; capacity: number | null; wifiStatus: WifiStatus; notes: string | null };
+  info: { yom: number | null; yor: number | null; capacity: number | null; wifiStatus: WifiStatus; wifiDetail?: string | null; notes: string | null };
   base?: { mode: "based" | "floating"; locations: string[] };
   evidenceText?: string | null;
 }
@@ -80,10 +82,19 @@ export async function applyChatProposal(db: Db, actor: Actor, key: string, input
   let operatorId = input.operatorId || null;
   if (!operatorId && input.newOperatorName?.trim()) {
     try {
-      operatorId = (await createOrganisation(db, actor, `${key}:operator`, { name: input.newOperatorName.trim(), roles: ["operator"], aliases: [] })).result.organisationId;
+      operatorId = (await createOrganisation(db, actor, `${key}:operator`, { name: input.newOperatorName.trim(), roles: ["operator"], aliases: [], region: input.region ?? null })).result.organisationId;
       out.steps.push(`Operator “${input.newOperatorName.trim()}” created`);
     } catch (e) {
       fail("Operator not created", e);
+    }
+  }
+
+  if (operatorId && input.region?.trim() && !input.newOperatorName?.trim()) {
+    try {
+      await setOrganisationRegion(db, actor, `${key}:region`, { organisationId: operatorId, region: input.region });
+      out.steps.push(`Region set to ${input.region.trim()}`);
+    } catch (e) {
+      fail("Region not saved", e);
     }
   }
 
@@ -175,13 +186,14 @@ async function updateExistingAircraft(db: Db, actor: Actor, key: string, aircraf
       yor: input.info.yor ?? card.yor,
       capacity: input.info.capacity ?? card.capacity,
       wifiStatus: input.info.wifiStatus !== "unknown" ? input.info.wifiStatus : card.wifi,
+      wifiDetail: input.info.wifiDetail ?? card.wifiDetail,
       notes: input.info.notes ?? card.notes,
     };
     const changed = [
       next.yom !== card.yom && "YOM",
       next.yor !== card.yor && "YOR",
       next.capacity !== card.capacity && "capacity",
-      next.wifiStatus !== card.wifi && "WIFI",
+      (next.wifiStatus !== card.wifi || next.wifiDetail !== card.wifiDetail) && "WIFI",
       next.notes !== card.notes && "notes",
     ].filter(Boolean) as string[];
     if (changed.length) {

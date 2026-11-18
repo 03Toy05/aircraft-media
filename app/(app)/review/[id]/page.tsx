@@ -3,15 +3,16 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { asc, eq } from "drizzle-orm";
 import { getDb } from "@/db/client";
-import { aircraft, aircraftTypes } from "@/db/schema";
+import { aircraft, aircraftTypes, organisations } from "@/db/schema";
 import { requireOwner } from "@/lib/session";
 import { getMediaDetail } from "@/domain/media";
-import { findAircraftByTail, getAircraftCard, resolveAircraftTypes, resolveOrganisations } from "@/domain/directory";
-import { CLASSIFICATIONS, CLASSIFICATION_LABEL, guessClassificationFromFilename } from "@/domain/constants";
+import { getAircraftCard } from "@/domain/directory";
+import { AIRCRAFT_CATEGORIES, AIRCRAFT_CATEGORY_LABEL, CLASSIFICATIONS, CLASSIFICATION_LABEL, guessClassificationFromFilename } from "@/domain/constants";
+import { getCatalogue } from "@/domain/catalogue";
 import { parseAircraftCard, type ParsedCard } from "@/domain/card";
 import { matchCard } from "@/domain/chat";
 import {
-  approveAction, createOperatorFromCardAction, cropAction, mediaAssociationAction, mediaMetadataAction, reopenAction, rejectAction, restoreAction, retireAction, useVersionAction,
+  approveAction, assignPhotoAction, cropAction, mediaAssociationAction, mediaMetadataAction, reopenAction, rejectAction, restoreAction, retireAction, useVersionAction,
 } from "../../../actions";
 import { Flash, Key, one, type SP } from "../../../_components/ui";
 import CropTool from "../../../_components/CropTool";
@@ -40,18 +41,21 @@ export default async function ReviewWorkspace({ params, searchParams }: { params
   const { tailMatches, opMatches, typeMatches, operatorText, operatorLoose, aircraftText, leftover } = parsed
     ? await matchCard(db, actor.tenantId, parsed)
     : { tailMatches: [] as string[], opMatches: [], typeMatches: [], operatorText: "", operatorLoose: false, aircraftText: "", leftover: [] as string[] };
-  const prefill = new URLSearchParams();
-  if (parsed?.tail) prefill.set("tail", parsed.tail);
-  if (opMatches.length === 1) prefill.set("operatorId", opMatches[0].id);
-  else if (opMatches.length === 0 && operatorText) prefill.set("newOperator", operatorText);
-  if (typeMatches.length === 1) prefill.set("typeId", typeMatches[0].id);
   const suggestedClass = media.primaryClassification === "unclassified" ? guessClassificationFromFilename(evidence?.originalFilename ?? "") : null;
-  if (parsed?.yom != null) prefill.set("yom", String(parsed.yom));
-  if (parsed?.yor != null) prefill.set("yor", String(parsed.yor));
-  if (parsed?.capacity != null) prefill.set("capacity", String(parsed.capacity));
-  if (parsed?.wifi) prefill.set("wifi", parsed.wifi);
-  if (parsed?.notes) prefill.set("notes", parsed.notes);
-  if (parsed?.base) { prefill.set("baseMode", parsed.base.mode); prefill.set("baseLocations", parsed.base.locations.join(", ")); }
+  const allOrgs = await db.select().from(organisations).where(eq(organisations.tenantId, actor.tenantId)).orderBy(asc(organisations.canonicalName));
+  const catalogueRows = await getCatalogue(db, actor.tenantId);
+  const operatorDefault = opMatches.length === 1 ? opMatches[0].id : opMatches.length === 0 && operatorText ? "new" : "";
+  const typeDefault = typeMatches.length === 1 ? typeMatches[0].id : "";
+  // Default aircraft: the one tail match, else the operator's only aircraft of that type (so a second photo joins it), else a new one.
+  const sameTypeAndOperator = opMatches.length === 1 && typeMatches.length === 1 ? catalogueRows.filter((r) => r.operatorId === opMatches[0].id && r.aircraftTypeId === typeMatches[0].id) : [];
+  const aircraftDefault = tailMatches.length === 1 ? tailMatches[0] : sameTypeAndOperator.length === 1 ? sameTypeAndOperator[0].aircraftId : association?.aircraftId ?? (parsed ? "new" : "none");
+  const typeGroups = [...AIRCRAFT_CATEGORIES, "none" as const]
+    .map((k) => ({
+      key: k,
+      label: k === "none" ? "No category" : AIRCRAFT_CATEGORY_LABEL[k],
+      items: types.filter((t) => (k === "none" ? !t.category || !(AIRCRAFT_CATEGORIES as readonly string[]).includes(t.category) : t.category === k)),
+    }))
+    .filter((g) => g.items.length > 0);
 
   const retired = media.lifecycleState === "retired";
   const canDecide = media.reviewState === "needs_review" && !retired;
@@ -113,39 +117,51 @@ export default async function ReviewWorkspace({ params, searchParams }: { params
         </div>
 
         <div>
-          {parsed && (
-            <div className="card">
-              <h3>Proposed from aircraft card <span className="badge">{cardProposal?.state ?? "proposed"}</span></h3>
-              <p className="muted small">Proposal only — not a fact until you confirm it through the forms below or on the Aircraft page.</p>
-              <table><tbody>
-                {operatorText && (
-                  <tr>
-                    <td>Operator{operatorLoose && <span className="small muted"><br />(unlabelled line)</span>}</td>
-                    <td>{operatorText}</td>
-                    <td className="small">
-                      {opMatches.length === 0 ? (
-                        <form action={createOperatorFromCardAction}>
-                          <Key /><input type="hidden" name="mediaId" value={media.id} /><input type="hidden" name="name" value={operatorText} />
-                          <span>no match </span><button className="secondary" type="submit">Create operator “{operatorText}”</button>
-                        </form>
-                      ) : opMatches.map((o) => o.canonicalName).join(" | ")}
-                    </td>
-                  </tr>
-                )}
-                {aircraftText && <tr><td>Aircraft</td><td>{aircraftText}</td><td className="small">{typeMatches.length === 0 ? "no match" : typeMatches.map((t) => `${t.manufacturer} ${t.model}`).join(" | ")}</td></tr>}
-                {parsed.tail && <tr><td>Tail number</td><td>{parsed.tail}</td><td className="small">{tailMatches.length === 0 ? "no current aircraft" : `${tailMatches.length} aircraft`}</td></tr>}
-                {parsed.base && <tr><td>Base</td><td>{parsed.base.mode === "floating" ? "Floating" : parsed.base.locations.join(" / ")}</td><td /></tr>}
-                {parsed.yom != null && <tr><td>YOM</td><td>{parsed.yom}</td><td /></tr>}
-                {parsed.yor != null && <tr><td>YOR</td><td>{parsed.yor}</td><td /></tr>}
-                {parsed.capacity != null && <tr><td>Capacity</td><td>{parsed.capacity}</td><td /></tr>}
-                {parsed.wifi && <tr><td>WIFI</td><td>{parsed.wifi}</td><td /></tr>}
-                {parsed.notes && <tr><td>Notes</td><td>{parsed.notes}</td><td /></tr>}
-              </tbody></table>
-              {(parsed.assumed ?? []).map((a, i) => <p key={`a${i}`} className="small muted">Assumed: {a}</p>)}
-              {[...parsed.problems, ...leftover.map((u) => `Not recognised: ${u}`)].map((p, i) => <p key={i} className="small" style={{ color: "var(--warn)" }}>{p}</p>)}
-              <p className="small">{tailMatches.length === 0 && <Link href={`/aircraft?${prefill.toString()}#create`}>Create this aircraft from the card →</Link>}</p>
+          <form action={assignPhotoAction} className="card">
+            <h3>Assign this photo</h3>
+            <p className="muted small">
+              Choose the operator and aircraft, and the details to save. {parsed ? "I filled in what I read from this photo's card text." : "No card text was sent with this photo."} Nothing is saved until you press the button.
+            </p>
+            {(parsed?.assumed ?? []).map((a, i) => <p key={`a${i}`} className="small muted" style={{ margin: "2px 0" }}>Assumed: {a}</p>)}
+            {[...(parsed?.problems ?? []), ...leftover.map((u) => `Not recognised: ${u}`)].map((p, i) => <p key={i} className="small" style={{ color: "var(--warn)", margin: "2px 0" }}>{p}</p>)}
+            <Key /><input type="hidden" name="mediaId" value={media.id} />
+            <label>Operator</label>
+            <select name="operator" defaultValue={operatorDefault}>
+              <option value="">No operator</option>
+              {operatorText && opMatches.length === 0 && <option value="new">Create new operator: {operatorText}</option>}
+              {allOrgs.map((o) => <option key={o.id} value={o.id}>{o.canonicalName}</option>)}
+            </select>
+            <input type="hidden" name="newOperatorName" value={operatorText} />
+            <label>Aircraft</label>
+            <select name="aircraft" defaultValue={aircraftDefault}>
+              <option value="new">Create a new aircraft</option>
+              {catalogueRows.map((r) => <option key={r.aircraftId} value={r.aircraftId}>Use existing: {r.tail ?? "no tail yet"} — {r.aircraft}{r.operator ? ` — ${r.operator}` : ""}</option>)}
+              <option value="none">No aircraft (photo represents the aircraft type)</option>
+            </select>
+            <label>Aircraft type</label>
+            <select name="aircraftTypeId" defaultValue={typeDefault}>
+              <option value="">Not chosen</option>
+              {typeGroups.map((g) => (
+                <optgroup key={g.key} label={g.label}>{g.items.map((t) => <option key={t.id} value={t.id}>{t.manufacturer} {t.model}</option>)}</optgroup>
+              ))}
+            </select>
+            <div className="row">
+              <div><label>Tail number</label><input name="tail" defaultValue={parsed?.tail ?? ""} placeholder="Optional" /></div>
+              <div><label>View</label>
+                <select name="classification" defaultValue={suggestedClass ?? media.primaryClassification}>{CLASSIFICATIONS.map((c) => <option key={c} value={c}>{CLASSIFICATION_LABEL[c]}</option>)}</select></div>
             </div>
-          )}
+            <div className="row">
+              <div><label>YOM</label><input name="yom" type="number" defaultValue={parsed?.yom ?? ""} /></div>
+              <div><label>YOR</label><input name="yor" type="number" defaultValue={parsed?.yor ?? ""} /></div>
+              <div><label>Capacity</label><input name="capacity" type="number" defaultValue={parsed?.capacity ?? ""} /></div>
+              <div><label>WIFI</label>
+                <select name="wifiStatus" defaultValue={parsed?.wifi ?? "unknown"}><option value="yes">Yes</option><option value="no">No</option><option value="tbc">TBC</option><option value="unknown">Unknown</option></select></div>
+            </div>
+            <label>Notes</label><input name="notes" defaultValue={parsed?.notes ?? ""} />
+            <input type="hidden" name="baseMode" value={parsed?.base?.mode ?? ""} /><input type="hidden" name="baseLocations" value={parsed?.base?.locations.join(", ") ?? ""} />
+            <p className="muted small">Details are saved on a new aircraft, or added to the existing aircraft you choose (only the fields you fill in). The photo is approved when it has a view and an aircraft or type.</p>
+            <p><button type="submit" disabled={retired}>Assign and approve</button></p>
+          </form>
 
           <div className="card">
             <h3>Classification, order and rights</h3>

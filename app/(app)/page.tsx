@@ -3,66 +3,61 @@ import { and, count, desc, eq } from "drizzle-orm";
 import { getDb } from "@/db/client";
 import { aircraftMedia } from "@/db/schema";
 import { requireOwner } from "@/lib/session";
-import { getCatalogue } from "@/domain/catalogue";
-import { Badge } from "../_components/ui";
+import ChatClient from "../_components/ChatClient";
+import Icon from "../_components/Icon";
 
 export default async function Dashboard() {
   const { actor } = await requireOwner();
   const db = await getDb();
-  const n = async (state: (typeof aircraftMedia.$inferSelect)["reviewState"]) =>
-    (await db.select({ c: count() }).from(aircraftMedia).where(and(eq(aircraftMedia.tenantId, actor.tenantId), eq(aircraftMedia.reviewState, state), eq(aircraftMedia.lifecycleState, "active"))))[0].c;
-  const [needsReview, approved, failed, partial, processing] = await Promise.all([n("needs_review"), n("approved"), n("failed"), n("partially_processed"), n("processing")]);
+  const needsReview = (
+    await db
+      .select({ c: count() })
+      .from(aircraftMedia)
+      .where(and(eq(aircraftMedia.tenantId, actor.tenantId), eq(aircraftMedia.reviewState, "needs_review"), eq(aircraftMedia.lifecycleState, "active")))
+  )[0].c;
   const recent = await db
     .select()
     .from(aircraftMedia)
-    .where(and(eq(aircraftMedia.tenantId, actor.tenantId), eq(aircraftMedia.reviewState, "approved")))
+    .where(and(eq(aircraftMedia.tenantId, actor.tenantId), eq(aircraftMedia.reviewState, "approved"), eq(aircraftMedia.lifecycleState, "active")))
     .orderBy(desc(aircraftMedia.updatedAt))
-    .limit(8);
-  const cat = await getCatalogue(db, actor.tenantId);
-  const byStatus = new Map<string, number>();
-  for (const r of cat) byStatus.set(r.status, (byStatus.get(r.status) ?? 0) + 1);
+    .limit(4);
 
   return (
-    <>
-      <h1>Dashboard</h1>
-      <form action="/catalogue" className="card row">
-        <div>
-          <label htmlFor="q">Quick search — operator, aircraft, tail number or base</label>
-          <input id="q" name="q" placeholder="e.g. Metrojet, G650ER, B-KXX, Hong Kong" />
-        </div>
-        <div style={{ flex: "0 0 auto" }}><button type="submit">Search</button></div>
-      </form>
-      <div className="grid g4">
-        <Link href="/review" className="card stat"><b>{needsReview}</b>Needs review</Link>
-        <div className="card stat"><b>{processing}</b>Processing</div>
-        <div className="card stat"><b>{approved}</b>Approved photos</div>
-        <div className="card stat"><b>{failed + partial}</b>Failed / partial</div>
+    <div className="dash">
+      <div style={{ minWidth: 0 }}>
+        <h1>Chocks</h1>
+        <p className="muted small">Send photos and details and Chocks will file them. Nothing is saved until you confirm.</p>
+        <ChatClient />
       </div>
-      <div className="grid g2">
+      <aside style={{ minWidth: 0 }}>
         <div className="card">
-          <h3>Aircraft by availability</h3>
-          {cat.length === 0 ? <p className="muted">No aircraft yet. <Link href="/aircraft">Add one</Link>.</p> : (
-            <table><tbody>
-              {[...byStatus.entries()].map(([s, c]) => (
-                <tr key={s}><td><Badge status={s} /></td><td>{c}</td><td><Link href={`/catalogue?status=${s}`}>View</Link></td></tr>
-              ))}
-            </tbody></table>
-          )}
+          <h3>Quick actions</h3>
+          <div style={{ display: "grid", gap: 8 }}>
+            <Link className="btn" href="/review"><Icon name="review" />Review photos{needsReview > 0 ? ` (${needsReview})` : ""}</Link>
+            <Link className="btn" href="/intake"><Icon name="upload" />Upload photos</Link>
+            <Link className="btn" href="/quote"><Icon name="quote" />Quote for a client</Link>
+            <Link className="btn" href="/fleet?add=aircraft#add-aircraft"><Icon name="plane" />Add aircraft</Link>
+            <Link className="btn" href="/fleet?add=operator#add-operator"><Icon name="operator" />Add operator</Link>
+            <Link className="btn secondary" style={{ color: "var(--accent)", background: "transparent" }} href="/fleet"><Icon name="list" />View operators &amp; aircraft</Link>
+          </div>
         </div>
         <div className="card">
           <h3>Recently approved</h3>
           {recent.length === 0 ? <p className="muted">Nothing approved yet.</p> : (
-            <div className="thumbs">
-              {recent.map((m) => (
-                <Link key={m.id} href={`/review/${m.id}`}>
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={`/api/media/${m.currentContentVersionId}`} alt={m.primaryClassification} />
-                </Link>
-              ))}
-            </div>
+            <>
+              <div className="thumbs">
+                {recent.map((m) => (
+                  <Link key={m.id} href={`/review/${m.id}`}>
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={`/api/media/${m.currentContentVersionId}`} alt={m.primaryClassification} style={{ width: 110, height: 80 }} />
+                  </Link>
+                ))}
+              </div>
+              <p className="small" style={{ marginBottom: 0 }}><Link href="/photos"><Icon name="photos" />See all</Link></p>
+            </>
           )}
         </div>
-      </div>
-    </>
+      </aside>
+    </div>
   );
 }

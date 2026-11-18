@@ -111,12 +111,43 @@ export const organisations = pgTable(
     tenantId: uuid("tenant_id").notNull(),
     canonicalName: text("canonical_name").notNull(),
     normalizedName: text("normalized_name").notNull(),
+    region: text("region"),
+    /** The operator's usual base, free text ("Hong Kong, Singapore"). New aircraft for this operator start with it. */
+    base: text("base"),
     active: boolean("active").notNull().default(true),
     createdAt: created(),
     updatedAt: updated(),
   },
   (t) => [uniqueIndex("org_tenant_norm_uq").on(t.tenantId, t.normalizedName).where(sql`${t.active}`)],
 );
+
+/** The owner's own wording for the quotation message, one row per language (see src/domain/quote.ts). */
+export const quoteTemplates = pgTable(
+  "quote_templates",
+  {
+    id: pk(),
+    tenantId: uuid("tenant_id").notNull(),
+    language: text("language").notNull(),
+    /** JSON: only the parts the owner changed; everything else follows the built-in default. */
+    template: text("template").notNull(),
+    updatedAt: updated(),
+  },
+  (t) => [uniqueIndex("quote_template_uq").on(t.tenantId, t.language)],
+);
+
+/** People the owner sends aircraft cards to, with the messenger each one prefers. */
+export const contacts = pgTable("contacts", {
+  id: pk(),
+  tenantId: uuid("tenant_id").notNull(),
+  name: text("name").notNull(),
+  normalizedName: text("normalized_name").notNull(),
+  app: text("app").notNull(),
+  handle: text("handle"),
+  notes: text("notes"),
+  active: boolean("active").notNull().default(true),
+  createdAt: created(),
+  updatedAt: updated(),
+});
 
 export const organisationAliases = pgTable(
   "organisation_aliases",
@@ -220,6 +251,8 @@ export const aircraftInformationVersions = pgTable(
     yor: integer("yor"),
     capacity: integer("capacity"),
     wifiStatus: wifiEnum("wifi_status").notNull().default("unknown"),
+    /** Free text about the WIFI, e.g. "at USD 10/MB". Shown after Yes/No in the quote. */
+    wifiDetail: text("wifi_detail"),
     notes: text("notes"),
     sourceEvidenceId: uuid("source_evidence_id").references(() => sourceEvidence.id),
     effectiveDate: date("effective_date"),

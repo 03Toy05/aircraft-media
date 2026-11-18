@@ -50,6 +50,8 @@ export interface CreateOrganisationInput {
   name: string;
   roles?: OrgRole[];
   aliases?: string[];
+  region?: string | null;
+  base?: string | null;
 }
 
 export function createOrganisation(db: Db, actor: Actor, key: string, input: CreateOrganisationInput) {
@@ -72,7 +74,7 @@ export function createOrganisation(db: Db, actor: Actor, key: string, input: Cre
       const evidenceId = await recordManualEvidence(tx, actor);
       const [org] = await tx
         .insert(organisations)
-        .values({ tenantId: actor.tenantId, canonicalName: name, normalizedName: norm })
+        .values({ tenantId: actor.tenantId, canonicalName: name, normalizedName: norm, region: input.region?.trim() || null, base: input.base?.trim() || null })
         .returning({ id: organisations.id });
       for (const role of input.roles?.length ? input.roles : (["operator"] as OrgRole[])) {
         await tx.insert(organisationRoles).values({ organisationId: org.id, role, sourceEvidenceId: evidenceId });
@@ -81,6 +83,28 @@ export function createOrganisation(db: Db, actor: Actor, key: string, input: Cre
       return { organisationId: org.id };
     },
   });
+}
+
+export function setOrganisationRegion(db: Db, actor: Actor, key: string, input: { organisationId: string; region: string | null; base?: string | null }) {
+  return runAction({
+    db,
+    actor,
+    name: "organisation.setRegion",
+    idempotencyKey: key,
+    input,
+    handler: async (tx) => {
+      const [org] = await tx.select().from(organisations).where(and(eq(organisations.id, input.organisationId), eq(organisations.tenantId, actor.tenantId)));
+      if (!org) throw notFound("Organisation");
+      await tx.update(organisations).set({ region: input.region?.trim() || null, ...(input.base !== undefined ? { base: input.base?.trim() || null } : {}), updatedAt: new Date() }).where(eq(organisations.id, org.id));
+      return { organisationId: org.id };
+    },
+  });
+}
+
+/** The operator's usual base as a list of locations, for pre-filling a new aircraft. */
+export async function getOrganisationBase(db: Q, tenantId: string, organisationId: string): Promise<string[]> {
+  const [o] = await db.select({ base: organisations.base }).from(organisations).where(and(eq(organisations.id, organisationId), eq(organisations.tenantId, tenantId)));
+  return (o?.base ?? "").split(/[,;/]|\r?\n/).map((x) => x.trim()).filter(Boolean);
 }
 
 export function addOrganisationAlias(db: Db, actor: Actor, key: string, input: { organisationId: string; alias: string }) {
@@ -241,6 +265,7 @@ export interface InformationInput {
   yor?: number | null;
   capacity?: number | null;
   wifiStatus?: WifiStatus;
+  wifiDetail?: string | null;
   notes?: string | null;
 }
 
@@ -416,6 +441,7 @@ async function insertInformationVersion(
       yor: info.yor ?? null,
       capacity: info.capacity ?? null,
       wifiStatus: info.wifiStatus ?? "unknown",
+      wifiDetail: info.wifiDetail?.trim() || null,
       notes: info.notes?.trim() || null,
       sourceEvidenceId: evidenceId,
       effectiveDate,
@@ -581,6 +607,7 @@ export interface AircraftCard {
   yor: number | null;
   capacity: number | null;
   wifi: WifiStatus;
+  wifiDetail: string | null;
   notes: string | null;
   informationVersionId: string | null;
   informationVersion: number;
@@ -625,6 +652,7 @@ export async function getAircraftCard(db: Q, aircraftId: string): Promise<Aircra
     yor: info?.yor ?? null,
     capacity: info?.capacity ?? null,
     wifi: info?.wifiStatus ?? "unknown",
+    wifiDetail: info?.wifiDetail ?? null,
     notes: info?.notes ?? null,
     informationVersionId: info?.id ?? null,
     informationVersion: info?.versionNumber ?? 0,

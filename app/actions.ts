@@ -10,8 +10,11 @@ import { ingestPdf } from "@/domain/intake";
 import { requireOwner } from "@/lib/session";
 import { DomainError } from "@/domain/errors";
 import * as dir from "@/domain/directory";
+import * as contacts from "@/domain/contacts";
+import * as quoteTemplates from "@/domain/quoteTemplates";
 import * as media from "@/domain/media";
 import * as settings from "@/domain/settings";
+import { applyChatProposal } from "@/domain/chat";
 import { CLASSIFICATIONS, type Classification, type OrgRole, type RightsStatus, type WifiStatus } from "@/domain/constants";
 import { signOut } from "@/auth";
 
@@ -110,18 +113,65 @@ export async function driveImportAction(fd: FormData) {
 export async function createOrganisationAction(fd: FormData) {
   const { actor, db } = await ctx();
   const roles = fd.getAll("roles").map(String) as OrgRole[];
-  await run("/organisations", "Organisation created", () =>
-    dir.createOrganisation(db, actor, key(fd), { name: str(fd, "name"), roles, aliases: list(str(fd, "aliases")) }),
+  await run("/fleet?add=operator#add-operator", "Operator created", () =>
+    dir.createOrganisation(db, actor, key(fd), { name: str(fd, "name"), roles, aliases: list(str(fd, "aliases")), region: str(fd, "region"), base: str(fd, "base") }),
+  "/fleet");
+}
+
+/** "Create operator and add aircraft": the same as above, then straight to the aircraft form with this operator chosen. */
+export async function createOperatorThenAircraftAction(fd: FormData) {
+  const { actor, db } = await ctx();
+  const roles = fd.getAll("roles").map(String) as OrgRole[];
+  let newId = "";
+  let error: string | null = null;
+  try {
+    newId = (await dir.createOrganisation(db, actor, key(fd), { name: str(fd, "name"), roles, aliases: list(str(fd, "aliases")), region: str(fd, "region"), base: str(fd, "base") })).result.organisationId;
+  } catch (e) {
+    if (e instanceof DomainError) error = e.message;
+    else throw e;
+  }
+  revalidatePath("/", "layout");
+  if (error) redirect(withParam("/fleet?add=operator#add-operator", "error", error));
+  redirect(`/fleet?add=aircraft&operatorId=${newId}&ok=${encodeURIComponent("Operator created. Now add its aircraft")}#add-aircraft`);
+}
+
+export async function setOrgRegionAction(fd: FormData) {
+  const { actor, db } = await ctx();
+  const id = str(fd, "organisationId");
+  await run(str(fd, "returnTo") || "/fleet", "Region saved", () => dir.setOrganisationRegion(db, actor, key(fd), { organisationId: id, region: str(fd, "region") || null, base: str(fd, "base") })); 
+}
+
+export async function saveQuoteTemplateAction(fd: FormData) {
+  const { actor, db } = await ctx();
+  const language = str(fd, "language");
+  const raw = (k: string) => String(fd.get(k) ?? "");
+  await run(`/quote/template?lang=${encodeURIComponent(language)}`, "Template saved", () =>
+    quoteTemplates.saveQuoteTemplate(db, actor, key(fd), {
+      language,
+      template: { greeting: raw("greeting"), block: raw("block"), closing: raw("closing"), yes: raw("yes"), no: raw("no"), tbc: raw("tbc"), seats: raw("seats") },
+    }),
   );
 }
 
-/** One-click "create this operator" from a photo's card text; returns to the same photo so it now matches. */
-export async function createOperatorFromCardAction(fd: FormData) {
+export async function resetQuoteTemplateAction(fd: FormData) {
   const { actor, db } = await ctx();
-  const mediaId = str(fd, "mediaId");
-  await run(`/review/${mediaId}`, "Operator created", () =>
-    dir.createOrganisation(db, actor, key(fd), { name: str(fd, "name"), roles: ["operator"], aliases: [] }),
-  );
+  const language = str(fd, "language");
+  await run(`/quote/template?lang=${encodeURIComponent(language)}`, "Back to the standard wording", () => quoteTemplates.resetQuoteTemplate(db, actor, key(fd), { language }));
+}
+
+export async function createContactAction(fd: FormData) {
+  const { actor, db } = await ctx();
+  await run("/contacts", "Contact added", () => contacts.createContact(db, actor, key(fd), { name: str(fd, "name"), app: str(fd, "app"), handle: str(fd, "handle"), notes: str(fd, "notes") }));
+}
+
+export async function updateContactAction(fd: FormData) {
+  const { actor, db } = await ctx();
+  await run("/contacts", "Contact saved", () => contacts.updateContact(db, actor, key(fd), { contactId: str(fd, "contactId"), name: str(fd, "name"), app: str(fd, "app"), handle: str(fd, "handle"), notes: str(fd, "notes") }));
+}
+
+export async function retireContactAction(fd: FormData) {
+  const { actor, db } = await ctx();
+  await run("/contacts", "Contact removed", () => contacts.retireContact(db, actor, key(fd), { contactId: str(fd, "contactId") }));
 }
 
 export async function addOrgAliasAction(fd: FormData) {
@@ -132,7 +182,7 @@ export async function addOrgAliasAction(fd: FormData) {
 
 export async function createTypeAction(fd: FormData) {
   const { actor, db } = await ctx();
-  await run("/aircraft", "Aircraft type created", () =>
+  await run("/fleet", "Aircraft type created", () =>
     dir.createAircraftType(db, actor, key(fd), { manufacturer: str(fd, "manufacturer"), model: str(fd, "model"), aliases: list(str(fd, "aliases")), category: optStr(fd, "category") }),
   );
 }
@@ -142,17 +192,17 @@ export async function loadStandardTypesAction(fd: FormData) {
   const r = await dir.loadStandardAircraftTypes(db, actor, key(fd));
   revalidatePath("/", "layout");
   const x = r.result;
-  redirect(withParam("/aircraft", "ok", `Standard types loaded: ${x.added} added, ${x.categorised} given a category, ${x.skipped} already there`));
+  redirect(withParam("/fleet", "ok", `Standard types loaded: ${x.added} added, ${x.categorised} given a category, ${x.skipped} already there`));
 }
 
 export async function setTypeCategoryAction(fd: FormData) {
   const { actor, db } = await ctx();
-  await run("/aircraft", "Category saved", () => dir.setAircraftTypeCategory(db, actor, key(fd), { aircraftTypeId: str(fd, "aircraftTypeId"), category: optStr(fd, "category") }));
+  await run("/fleet", "Category saved", () => dir.setAircraftTypeCategory(db, actor, key(fd), { aircraftTypeId: str(fd, "aircraftTypeId"), category: optStr(fd, "category") }));
 }
 
 export async function addTypeAliasAction(fd: FormData) {
   const { actor, db } = await ctx();
-  await run("/aircraft", "Alias added", () => dir.addAircraftTypeAlias(db, actor, key(fd), { aircraftTypeId: str(fd, "aircraftTypeId"), alias: str(fd, "alias") }));
+  await run("/fleet", "Alias added", () => dir.addAircraftTypeAlias(db, actor, key(fd), { aircraftTypeId: str(fd, "aircraftTypeId"), alias: str(fd, "alias") }));
 }
 
 // ------------------------------------------------------------------ aircraft
@@ -163,6 +213,7 @@ function infoFrom(fd: FormData) {
     yor: optNum(fd, "yor"),
     capacity: optNum(fd, "capacity"),
     wifiStatus: (str(fd, "wifiStatus") || "unknown") as WifiStatus,
+    wifiDetail: optStr(fd, "wifiDetail"),
     notes: optStr(fd, "notes"),
   };
 }
@@ -186,12 +237,18 @@ export async function createAircraftAction(fd: FormData) {
     if (!operatorId && newOperator) {
       operatorId = (await dir.createOrganisation(db, actor, `${key(fd)}:operator`, { name: newOperator, roles: ["operator"], aliases: [] })).result.organisationId;
     }
+    // No base given: start from the operator's usual base, if it has one.
+    let base = baseFrom(fd);
+    if (!base && operatorId) {
+      const usual = await dir.getOrganisationBase(db, actor.tenantId, operatorId);
+      if (usual.length) base = { mode: "based" as const, locations: usual };
+    }
     const r = await dir.createAircraft(db, actor, key(fd), {
       aircraftTypeId: str(fd, "aircraftTypeId"),
       registration: str(fd, "registration"),
       serialNumber: optStr(fd, "serialNumber"),
       operatorId,
-      base: baseFrom(fd),
+      base,
       info: infoFrom(fd),
       tailResolution: existingTail ? "distinct_aircraft" : undefined,
       evidenceText: optStr(fd, "evidenceText"),
@@ -202,7 +259,7 @@ export async function createAircraftAction(fd: FormData) {
     else throw e;
   }
   revalidatePath("/", "layout");
-  if (error) redirect(withParam("/aircraft", "error", error));
+  if (error) redirect(withParam("/fleet", "error", error));
   redirect(`/aircraft/${newId}?ok=${encodeURIComponent("Aircraft created")}`);
 }
 
@@ -349,6 +406,40 @@ export async function cropAction(fd: FormData) {
     redirect(withParam(`/review/${newId}`, "ok", "Separated into a new photo for review"));
   }
   await run(`/review/${id}`, "Crop applied as a new version", () => media.recropMedia(db, store, actor, input));
+}
+
+/** Review page: assign one photo to an operator and aircraft (and save the details), then approve it. */
+export async function assignPhotoAction(fd: FormData) {
+  const { actor, db } = await ctx();
+  const mediaId = str(fd, "mediaId");
+  const operatorChoice = str(fd, "operator"); // "", "new" or an organisation id
+  const aircraftChoice = str(fd, "aircraft"); // "new", "none" or an aircraft id
+  const tail = str(fd, "tail");
+  const baseMode = str(fd, "baseMode");
+  const baseLocations = list(str(fd, "baseLocations"));
+  const cls = str(fd, "classification") as Classification;
+  let message = "";
+  let approved = false;
+  try {
+    const r = await applyChatProposal(db, actor, key(fd), {
+      mediaIds: [mediaId],
+      classifications: { [mediaId]: CLASSIFICATIONS.includes(cls) ? cls : "unclassified" },
+      operatorId: operatorChoice && operatorChoice !== "new" ? operatorChoice : null,
+      newOperatorName: operatorChoice === "new" ? str(fd, "newOperatorName") : null,
+      aircraftTypeId: optStr(fd, "aircraftTypeId"),
+      aircraft: aircraftChoice === "new" ? { mode: "new", registration: tail } : aircraftChoice === "none" || !aircraftChoice ? { mode: "none" } : { mode: "existing", aircraftId: aircraftChoice },
+      info: { yom: optNum(fd, "yom"), yor: optNum(fd, "yor"), capacity: optNum(fd, "capacity"), wifiStatus: (str(fd, "wifiStatus") || "unknown") as WifiStatus, notes: optStr(fd, "notes") },
+      base: baseMode === "floating" ? { mode: "floating", locations: [] } : baseMode === "based" && baseLocations.length ? { mode: "based", locations: baseLocations } : undefined,
+    });
+    message = [...r.steps, ...r.photos.map((p) => `Photo ${p.detail}`)].join(". ");
+    approved = r.photos.every((p) => p.outcome === "approved");
+  } catch (e) {
+    if (e instanceof DomainError) message = e.message;
+    else throw e;
+  }
+  revalidatePath("/", "layout");
+  if (approved) redirect(withParam("/review", "ok", message || "Photo assigned and approved"));
+  redirect(withParam(`/review/${mediaId}`, "error", message || "Nothing was saved"));
 }
 
 // ------------------------------------------------------------------ settings
