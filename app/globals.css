@@ -48,6 +48,7 @@ nav.top a, button, .btn { display: inline-flex; align-items: center; }
 .apps .app:hover { background: var(--bg); text-decoration: none; }
 .welcome-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
 .welcome-actions .btn, .welcome-actions button { display: inline-flex; align-items: center; gap: 6px; }
+.quote-ac { border: 1px solid var(--line); border-radius: 10px; padding: 10px; margin-bottom: 10px; }
 .chips { display: flex; flex-wrap: wrap; gap: 8px; }
 .chip { padding: 6px 12px; border: 1px solid var(--line); border-radius: 999px; background: var(--card); color: var(--text); font: inherit; cursor: pointer; }
 .chip.on { background: var(--accent); border-color: var(--accent); color: #fff; }

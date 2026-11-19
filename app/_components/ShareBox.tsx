@@ -78,12 +78,12 @@ export function ShareBox({ aircraftId, tail, cardText, items, contact }: { aircr
           return new File([blob], name, { type: i.mimeType });
         }),
       );
-      const data: ShareData = { files, text: cardText, title: `${tail}` };
       if (!navigator.canShare || !navigator.canShare({ files })) {
         setMsg("This browser cannot share photos directly. Use Download zip, or open this page on your phone.");
         return;
       }
-      await navigator.share(data);
+      // One send: photos and card together (WhatsApp shows the photos first, then the card).
+      await navigator.share({ files, text: cardText, title: tail });
       setMsg("Shared. If the card text did not come through, use Copy card.");
     } catch (e) {
       if ((e as Error).name !== "AbortError") setMsg((e as Error).message || "Sharing failed");
@@ -127,7 +127,7 @@ export function ShareBox({ aircraftId, tail, cardText, items, contact }: { aircr
       )}
       {!contact && (
         <>
-          <p className="small muted" style={{ marginBottom: 4 }}>Send the card to:</p>
+          <p className="small muted" style={{ marginBottom: 4 }}>Or send just the card to:</p>
           <div className="apps">
             {CONTACT_APPS.map((a) => (
               <button key={a.id} type="button" className="app" onClick={() => openApp(a)}>

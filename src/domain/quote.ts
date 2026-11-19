@@ -124,6 +124,8 @@ export interface QuoteAircraft {
   notes?: string | null;
   /** Typed by the broker for this quote; left blank to fill in later. */
   price?: string;
+  /** Extra lines the broker adds to this aircraft for this quote only. Added at the end of its block; never translated. */
+  extra?: string;
 }
 
 export interface QuoteOptions {
@@ -133,7 +135,10 @@ export interface QuoteOptions {
   includeTail?: boolean;
   includeBase?: boolean;
   includeNotes?: boolean;
+  /** The opening line. */
   greeting?: boolean;
+  /** The closing line. When not given, follows `greeting`. */
+  closing?: boolean;
   /** The owner's saved wording for this language; anything not set falls back to the built-in default. */
   template?: Partial<QuoteTemplate> | null;
 }
@@ -231,7 +236,7 @@ export function buildQuoteParts(items: QuoteAircraft[], opts: QuoteOptions): Quo
       notes: opts.includeNotes && a.notes ? a.notes : "",
       price: (a.price ?? "").trim(),
     };
-    return t.block
+    const lines = t.block
       .split(/\r?\n/)
       .map((line) => {
         const keys = [...line.matchAll(/\{([a-z_]+)\}/g)].map((m) => m[1]);
@@ -239,10 +244,12 @@ export function buildQuoteParts(items: QuoteAircraft[], opts: QuoteOptions): Quo
         if (keys.length > 0 && !keys.includes("price") && keys.every((k) => k === "n" || !values[k])) return null;
         return line.replace(/\{([a-z_]+)\}/g, (_m, k: string) => values[k] ?? "");
       })
-      .filter((x): x is string => x !== null)
-      .join("\n");
+      .filter((x): x is string => x !== null);
+    const extra = (a.extra ?? "").trim();
+    return [...lines, ...(extra ? [extra] : [])].join("\n");
   });
-  return { greeting: opts.greeting ? t.greeting : null, blocks, closing: opts.greeting ? t.closing : null };
+  const closing = opts.closing ?? opts.greeting;
+  return { greeting: opts.greeting ? t.greeting : null, blocks, closing: closing ? t.closing : null };
 }
 
 /**

@@ -587,3 +587,22 @@ describe("Renaming an operator", () => {
     expect(await resolveOrganisationsExact(t.db, t.actor.tenantId, "Deer Jet")).toEqual([]);
   });
 });
+
+describe("Quote pieces chosen per quote", () => {
+  const ac = { type: "Gulfstream G550", yom: 2013, yor: 2020, capacity: 13, wifi: "yes" as const };
+  it("adds the price and the broker's extra line, and keeps them in another language", () => {
+    const en = buildQuoteParts([{ ...ac, price: "USD 85,000", extra: "Available from 12 Dec" }], { language: "en" });
+    expect(en.blocks[0]).toMatch(/Price: USD 85,000\nAvailable from 12 Dec$/);
+    const zh = buildQuoteParts([{ ...ac, price: "USD 85,000", extra: "Available from 12 Dec" }], { language: "zh-Hant" });
+    expect(zh.blocks[0]).toContain("USD 85,000");
+    expect(zh.blocks[0]).toContain("Available from 12 Dec");
+  });
+  it("lets the opening and closing lines be switched on and off separately", () => {
+    const a = buildQuoteParts([ac], { language: "en", greeting: true, closing: false });
+    expect(a.greeting).toBeTruthy(); expect(a.closing).toBeNull();
+    const b = buildQuoteParts([ac], { language: "en", greeting: false, closing: true });
+    expect(b.greeting).toBeNull(); expect(b.closing).toBeTruthy();
+    const c = buildQuoteParts([ac], { language: "en", greeting: true });
+    expect(c.closing).toBeTruthy(); // follows the opening line when not given
+  });
+});

@@ -36,7 +36,10 @@ const EXT: Record<string, string> = { "image/jpeg": "jpg", "image/png": "png", "
 export default function QuoteBuilder({ aircraft, contacts, initialIds, templates }: { aircraft: QuoteAircraftOption[]; contacts: QuoteContact[]; initialIds: string[]; templates: SavedTemplates }) {
   const [ids, setIds] = useState<string[]>(initialIds);
   const [lang, setLang] = useState<QuoteLanguage>("en");
-  const [inc, setInc] = useState({ operator: false, tail: false, base: false, notes: false, greeting: true });
+  const [inc, setInc] = useState({ operator: false, tail: false, base: false, notes: false, greeting: true, closing: true });
+  // Typed for this quote, per aircraft. They are values, not text, so they survive changing the details or the language.
+  const [prices, setPrices] = useState<Record<string, string>>({});
+  const [extras, setExtras] = useState<Record<string, string>>({});
   const [filter, setFilter] = useState("");
   const [operatorFilter, setOperatorFilter] = useState("");
   const [typeFilter, setTypeFilter] = useState(() => {
@@ -51,8 +54,11 @@ export default function QuoteBuilder({ aircraft, contacts, initialIds, templates
 
   const chosen = useMemo(() => ids.map((id) => aircraft.find((a) => a.id === id)).filter((a): a is QuoteAircraftOption => !!a), [ids, aircraft]);
   const parts = useMemo(
-    () => buildQuoteParts(chosen, { language: lang, template: templates[lang] ?? null, includeOperator: inc.operator, includeTail: inc.tail, includeBase: inc.base, includeNotes: inc.notes, greeting: inc.greeting }),
-    [chosen, lang, inc, templates],
+    () => buildQuoteParts(
+      chosen.map((a) => ({ ...a, price: prices[a.id] ?? "", extra: extras[a.id] ?? "" })),
+      { language: lang, template: templates[lang] ?? null, includeOperator: inc.operator, includeTail: inc.tail, includeBase: inc.base, includeNotes: inc.notes, greeting: inc.greeting, closing: inc.closing },
+    ),
+    [chosen, lang, inc, templates, prices, extras],
   );
   const greeting = parts.greeting === null ? null : edits.greeting ?? parts.greeting;
   const closing = parts.closing === null ? null : edits.closing ?? parts.closing;
@@ -67,7 +73,8 @@ export default function QuoteBuilder({ aircraft, contacts, initialIds, templates
   const move = (id: string, d: -1 | 1) => setIds((cur) => { const i = cur.indexOf(id); const j = i + d; if (i < 0 || j < 0 || j >= cur.length) return cur; const n = [...cur]; [n[i], n[j]] = [n[j], n[i]]; return n; });
 
   const changeLang = (l: QuoteLanguage) => {
-    if (anyEdits && !window.confirm("Changing the language rewrites the message, so your hand edits will be lost. Continue?")) return;
+    // Prices and extra lines are kept. Only text rewritten by hand is in the old language, so only that is lost.
+    if (anyEdits && !window.confirm("Your prices and extra lines are kept. Text you rewrote by hand is in the old language and will be replaced. Continue?")) return;
     setEdits({});
     setLang(l);
   };
@@ -105,6 +112,7 @@ export default function QuoteBuilder({ aircraft, contacts, initialIds, templates
         return new File([blob], `Aircraft ${i + 1} - ${a.type} - ${p.label}${p.representative ? " (representative)" : ""}.${EXT[p.mimeType] ?? "jpg"}`, { type: p.mimeType });
       }));
       if (!navigator.canShare || !navigator.canShare({ files })) { setMsg("This browser cannot share photos directly. Open this page on your phone, or save the photos from each aircraft page."); return; }
+      // One send: photos and message together (WhatsApp shows the photos first, then the message).
       await navigator.share({ files, text });
       setMsg("Shared. If the message text did not come through, paste it from Copy message.");
     } catch (e) {
@@ -215,12 +223,13 @@ export default function QuoteBuilder({ aircraft, contacts, initialIds, templates
             The wording comes from your saved template for this language{templates[lang] ? " (you have customised it)" : " (standard wording)"}.{" "}
             <Link href={`/quote/template?lang=${lang}`}>Edit the wording →</Link> Aircraft names, tail numbers and notes are never translated.
           </p>
-          <label><input type="checkbox" checked={inc.greeting} onChange={(e) => setInc({ ...inc, greeting: e.target.checked })} /> Greeting and closing line</label>
+          <label><input type="checkbox" checked={inc.greeting} onChange={(e) => setInc({ ...inc, greeting: e.target.checked })} /> Opening line</label>
+          <label><input type="checkbox" checked={inc.closing} onChange={(e) => setInc({ ...inc, closing: e.target.checked })} /> Closing line</label>
           <label><input type="checkbox" checked={inc.operator} onChange={(e) => setInc({ ...inc, operator: e.target.checked })} /> Show the operator</label>
           <label><input type="checkbox" checked={inc.tail} onChange={(e) => setInc({ ...inc, tail: e.target.checked })} /> Show the tail number</label>
           <label><input type="checkbox" checked={inc.base} onChange={(e) => setInc({ ...inc, base: e.target.checked })} /> Show the base</label>
           <label><input type="checkbox" checked={inc.notes} onChange={(e) => setInc({ ...inc, notes: e.target.checked })} /> Show notes</label>
-          {editedBlocks && <p className="small muted">An aircraft you have edited by hand keeps your text when you change these. Press Reset on it to rebuild it.</p>}
+          {editedBlocks && <p className="small muted">An aircraft you rewrote by hand keeps your text when you change these. Press “Back to automatic” on it to follow them again.</p>}
         </div>
       </div>
 
@@ -228,16 +237,38 @@ export default function QuoteBuilder({ aircraft, contacts, initialIds, templates
         <div className="card">
           <h3>4. Check and edit the message</h3>
           {chosen.length === 0 && <p className="muted">Choose at least one aircraft on the left.</p>}
-          {greeting !== null && (
-            <Piece label="Greeting" dir={dir} value={greeting} rows={rows(greeting)} edited={"greeting" in edits} onChange={(v) => setEdit("greeting", v)} onReset={() => resetEdit("greeting")} />
+          {greeting !== null && chosen.length > 0 && (
+            <Piece label="Opening line" dir={dir} value={greeting} rows={rows(greeting)} edited={"greeting" in edits} onChange={(v) => setEdit("greeting", v)} onReset={() => resetEdit("greeting")} />
           )}
-          {chosen.map((a, i) => (
-            <Piece key={a.id} label={`${i + 1}. ${a.type}`} dir={dir} value={blocks[i]} rows={rows(blocks[i])} edited={`block:${a.id}` in edits} onChange={(v) => setEdit(`block:${a.id}`, v)} onReset={() => resetEdit(`block:${a.id}`)} />
-          ))}
+          {chosen.map((a, i) => {
+            const k = `block:${a.id}`;
+            const byHand = k in edits;
+            return (
+              <div key={a.id} className="quote-ac">
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+                  <b>{i + 1}. {a.type}{a.operator ? <span className="muted small"> · {a.operator}</span> : null}</b>
+                  {byHand
+                    ? <button type="button" className="secondary" style={{ padding: "0 8px" }} onClick={() => resetEdit(k)}>Back to automatic</button>
+                    : <button type="button" className="secondary" style={{ padding: "0 8px" }} onClick={() => setEdit(k, blocks[i])}>Rewrite by hand</button>}
+                </div>
+                {byHand
+                  ? <textarea dir={dir} rows={rows(blocks[i])} value={blocks[i]} onChange={(e) => setEdit(k, e.target.value)} style={{ width: "100%" }} />
+                  : <pre className="cardtext" dir={dir} style={{ margin: "6px 0" }}>{blocks[i]}</pre>}
+                {byHand
+                  ? <p className="small muted" style={{ margin: "4px 0 0" }}>Rewritten by hand: changes to the details, price or language no longer reach this aircraft.</p>
+                  : (
+                    <div className="row" style={{ alignItems: "end" }}>
+                      <div><label>Price</label><input dir={dir} value={prices[a.id] ?? ""} onChange={(e) => setPrices((p) => ({ ...p, [a.id]: e.target.value }))} placeholder="e.g. USD 85,000 + tax" /></div>
+                      <div><label>Extra line (this quote only)</label><textarea dir={dir} rows={1} value={extras[a.id] ?? ""} onChange={(e) => setExtras((p) => ({ ...p, [a.id]: e.target.value }))} placeholder="e.g. Available from 12 Dec" style={{ width: "100%" }} /></div>
+                    </div>
+                  )}
+              </div>
+            );
+          })}
           {closing !== null && chosen.length > 0 && (
-            <Piece label="Closing" dir={dir} value={closing} rows={rows(closing)} edited={"closing" in edits} onChange={(v) => setEdit("closing", v)} onReset={() => resetEdit("closing")} />
+            <Piece label="Closing line" dir={dir} value={closing} rows={rows(closing)} edited={"closing" in edits} onChange={(v) => setEdit("closing", v)} onReset={() => resetEdit("closing")} />
           )}
-          {chosen.length > 0 && <p className="small muted">Type the price on each “Price” line. You can change any wording here for this message only; your saved template stays as it is.</p>}
+          {chosen.length > 0 && <p className="small muted">The price and extra lines stay when you change the details or the language. Your saved template is not changed.</p>}
           <div className="row" style={{ marginTop: 8 }}>
             <div style={{ flex: "0 0 auto" }}><button type="button" onClick={copy} disabled={!text.trim()}><Icon name="copy" />Copy message</button></div>
             {anyEdits && <div style={{ flex: "0 0 auto" }}><button type="button" className="secondary" onClick={() => setEdits({})}>Reset all edits</button></div>}
@@ -259,7 +290,7 @@ export default function QuoteBuilder({ aircraft, contacts, initialIds, templates
           <div className="row">
             <div style={{ flex: "0 0 auto" }}><button type="button" onClick={sharePhotos} disabled={busy || photos.length === 0}><Icon name="share" />{busy ? "Preparing…" : `Share ${photos.length} photo${photos.length === 1 ? "" : "s"} + message…`}</button></div>
           </div>
-          <p className="small muted">Opens your phone's share sheet with the photos and the message. Choose WhatsApp, WeChat, LINE, Telegram, Mail or any other app, then the client.</p>
+          <p className="small muted">Opens your phone's share sheet with the photos and the message in one go. Choose WhatsApp, WeChat, LINE, Telegram, Mail or any other app, then the client.</p>
 
           <p className="small muted" style={{ margin: "10px 0 4px" }}>Or send just the message:</p>
           {contacts.length > 0 && (
