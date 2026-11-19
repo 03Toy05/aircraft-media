@@ -8,14 +8,15 @@ import { getAircraftCard, listInformationVersions, listRegistrationHistory } fro
 import { formatAircraftCard } from "@/domain/card";
 import { getLineup } from "@/domain/media";
 import { CLASSIFICATIONS, CLASSIFICATION_LABEL } from "@/domain/constants";
-import { addInfoVersionAction, addManagementAction, changeTailAction, setBasesAction, setOperatorAction } from "../../../actions";
+import { COMBINED_NEEDS, combinedSources, existingCombined } from "@/domain/combinedPhoto";
+import { addInfoVersionAction, addManagementAction, changeTailAction, makeCombinedAction, setBasesAction, setOperatorAction } from "../../../actions";
 import { Flash, Key, one, type SP } from "../../../_components/ui";
 import { ShareBox } from "../../../_components/ShareBox";
 
 export default async function AircraftDetail({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: SP }) {
   const { id } = await params;
   const sp = await searchParams;
-  const { actor } = await requireOwner();
+  const { actor, readOnly } = await requireOwner();
   const db = await getDb();
   if (!/^[0-9a-f-]{36}$/.test(id)) notFound();
   const [ac] = await db.select().from(aircraft).where(and(eq(aircraft.id, id), eq(aircraft.tenantId, actor.tenantId)));
@@ -35,6 +36,9 @@ export default async function AircraftDetail({ params, searchParams }: { params:
     .from(aircraftMedia)
     .innerJoin(mediaAssociations, and(eq(mediaAssociations.aircraftMediaId, aircraftMedia.id), eq(mediaAssociations.active, true), eq(mediaAssociations.aircraftId, id)))
     .where(and(eq(aircraftMedia.tenantId, actor.tenantId), eq(aircraftMedia.reviewState, "needs_review")));
+  const scope = { kind: "aircraft" as const, aircraftId: id, aircraftTypeId: ac.aircraftTypeId };
+  const ownCombined = await existingCombined(db, actor.tenantId, scope);
+  const canCombine = !!(await combinedSources(db, actor.tenantId, scope));
   const current = infos.find((i) => i.isCurrent);
   const tailInUse = (one(sp.error) ?? "").includes("another aircraft");
 
@@ -160,6 +164,24 @@ export default async function AircraftDetail({ params, searchParams }: { params:
                 </div>
               );
             })}
+            <div className="group" style={{ marginTop: 10 }}>
+              <div className="group-row" style={{ alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                <span className="small">
+                  <b>Combined photo</b>{" "}
+                  {ownCombined.length
+                    ? "made. Remake it after changing the photos."
+                    : canCombine
+                      ? "not made yet."
+                      : `needs ${COMBINED_NEEDS} of this aircraft, all approved.`}
+                </span>
+                {canCombine && (
+                  <form action={makeCombinedAction}>
+                    <input type="hidden" name="aircraftId" value={id} />
+                    <button type="submit" className="secondary small-btn" disabled={readOnly}>{ownCombined.length ? "Remake" : "Make it now"}</button>
+                  </form>
+                )}
+              </div>
+            </div>
             {pending.length > 0 && <p className="small">Awaiting review: {pending.map(({ m }) => <Link key={m.id} href={`/review/${m.id}`}>photo </Link>)}</p>}
           </div>
         </div>

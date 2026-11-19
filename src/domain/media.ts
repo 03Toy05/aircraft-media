@@ -51,6 +51,8 @@ export interface UploadInput {
   batchId?: string | null;
   /** How the set is named in Review, e.g. "Drive: Aircraft Media / Metrojet / B-KXX". */
   batchLabel?: string | null;
+  /** Pictures the app made itself (the combined photo): what it was made from. Kept with the source evidence. */
+  generated?: { kind: "combined"; fromContentVersionIds: string[] } | null;
 }
 
 export const ensureImageBytes = async (bytes: Uint8Array) => {
@@ -101,7 +103,7 @@ export async function ingestUpload(db: Db, store: FileStore, actor: Actor, input
           senderId: actor.id,
           originalText: input.cardText?.trim() || null,
           contentHash: hash,
-          metadata: { mime, uploadedVia: drive ? "drive-import" : "web", ...(input.batchId ? { batchId: input.batchId } : {}), ...(input.batchLabel ? { batchLabel: input.batchLabel } : {}), ...(view.reason ? { autoView: view.classification, autoViewReason: view.reason } : {}) },
+          metadata: { mime, uploadedVia: drive ? "drive-import" : input.generated ? "generated" : "web", ...(input.generated ? { generated: input.generated } : {}), ...(input.batchId ? { batchId: input.batchId } : {}), ...(input.batchLabel ? { batchLabel: input.batchLabel } : {}), ...(view.reason ? { autoView: view.classification, autoViewReason: view.reason } : {}) },
         })
         .returning({ id: sourceEvidence.id });
       const [media] = await tx
@@ -631,11 +633,15 @@ export async function getLineup(db: Q, opts: { aircraftId: string; aircraftTypeI
     .orderBy(asc(aircraftMedia.displayOrder), asc(aircraftMedia.createdAt));
   const counters = new Map<Classification, number>();
   const out: LineupItem[] = [];
+  const isActual = (r: (typeof rows)[number]) => r.a.associationStatus === "actual_aircraft" && r.a.aircraftId === opts.aircraftId;
+  // An aircraft's own combined photo replaces the type's: one combined picture per aircraft is enough.
+  const ownCombined = rows.some((r) => isActual(r) && r.m.primaryClassification === "combined");
   for (const r of rows) {
     if (r.m.rightsStatus === "restricted" || r.cv.unavailableAt) continue;
-    const actual = r.a.associationStatus === "actual_aircraft" && r.a.aircraftId === opts.aircraftId;
+    const actual = isActual(r);
     const repr = r.a.associationStatus === "representative_type" && r.a.aircraftTypeId === opts.aircraftTypeId;
     if (!actual && !repr) continue;
+    if (!actual && ownCombined && r.m.primaryClassification === "combined") continue;
     const n = (counters.get(r.m.primaryClassification) ?? 0) + 1;
     counters.set(r.m.primaryClassification, n);
     out.push({

@@ -57,7 +57,9 @@ export interface Draft {
 }
 
 export interface Chip { label: string; send: string }
-export interface ChocksReply { say: string[]; chips: Chip[]; ready: boolean; done?: boolean; link?: { href: string; label: string }; photos?: { id: string; label: string }[]; copy?: string; share?: { aircraftId: string; contactId: string } }
+/** A photo Chocks shows with a quote: which option (aircraft, from 0) it belongs to and what view it is. */
+export interface ChocksPhoto { id: string; label: string; classification?: Classification; option?: number }
+export interface ChocksReply { say: string[]; chips: Chip[]; ready: boolean; done?: boolean; link?: { href: string; label: string }; photos?: ChocksPhoto[]; copy?: string; options?: { title: string; text: string }[]; share?: { aircraftId: string; contactId: string } }
 
 export function emptyDraft(submitKey: string): Draft {
   return {
@@ -177,7 +179,7 @@ export async function converse(
       ? [[tr(L, "Here is the message and photos for:"), ...names.map((n) => `• ${n}`)].join(String.fromCharCode(10)), preview.text, tr(L, "Open the quote to add prices, change the language, edit the wording and send it with the photos.")]
       : [quoteReq.what.length ? tr(L, "I couldn't find {names}.", { names: missing.join(isChinese(L) ? "、" : " or ") }) : tr(L, "Open the Quote page to choose the aircraft.")];
     if (ids.length && missing.length) say.push(tr(L, "I couldn't find: {names}.", { names: missing.join(", ") }));
-    return { draft: d, reply: { say, chips: [], ready: false, photos: preview?.photos, copy: preview?.text, link: { href: ids.length ? `/quote?ids=${ids.join(",")}` : "/quote", label: tr(L, "Open the quote") } }, confirm: false };
+    return { draft: d, reply: { say, chips: [], ready: false, photos: preview?.photos, copy: preview?.text, options: preview?.options, link: { href: ids.length ? `/quote?ids=${ids.join(",")}` : "/quote", label: tr(L, "Open the quote") } }, confirm: false };
   }
 
   // A question about what you already have ("show me what aircraft Capa Jet has"): answer it, change nothing.

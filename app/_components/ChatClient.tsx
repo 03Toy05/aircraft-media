@@ -3,12 +3,13 @@
 import Link from "next/link";
 import { useEffect, useRef, useState, useTransition } from "react";
 import { chocksTurnAction, type TurnResult } from "../chatActions";
-import type { Draft } from "@/domain/chocks";
+import type { ChocksPhoto, Draft } from "@/domain/chocks";
+import { CLASSIFICATION_LABEL, type Classification } from "@/domain/constants";
 import { prepareShareAction, type SharePayload } from "../shareActions";
 import { ShareBox } from "./ShareBox";
 import { copyText } from "./copyText";
 import Icon from "./Icon";
-import { CHAT_LANGUAGES, parseChatLang, toHans, type ChatLang } from "@/domain/chocksText";
+import { CHAT_LANGUAGES, parseChatLang, toHans, trClassification, type ChatLang } from "@/domain/chocksText";
 
 /** The words on the chat itself. Chocks's own sentences come from the server in the chosen language. */
 const UI_EN = {
@@ -30,6 +31,16 @@ const UI_EN = {
   attached: "Attached:", copy: "Copy message", copied: "Copied. Paste it into your chat or email.",
   copyFail: "Could not copy automatically. Select the message above and copy it.",
   openAircraft: "Open the aircraft →", review: "Review queue →", view: "view?",
+  sharePhotos: "Share {n} photos + message", preparing: "Preparing…",
+  shared: "Shared. If the message text did not come through, paste it from Copy message.",
+  cannotShare: "This browser cannot share photos directly. Open the quote on your phone, or use Open the quote.",
+  photoFail: "A photo could not be loaded. Try again.",
+  sendKinds: "Photos to send:", sendOption: "Option {i} · {name}: {n} photo{s} + message",
+  allAtOnce: "Or everything at once: {n} photo{s}, then one message",
+  optionShared: "Option {i} shared. Now share option {j} to the same chat.", allShared: "All options shared.",
+  byOption: "Each button sends that option's photos, then its message. Pick the same chat each time.",
+  noCombined: "No combined photo yet for {names}: it is made once the aircraft has 1 exterior, 2 cabin and 1 floor plan photo.",
+  singlesInstead: "Its single photos are sent instead.",
 };
 type UI = typeof UI_EN;
 const UI_HANT: UI = {
@@ -51,6 +62,16 @@ const UI_HANT: UI = {
   attached: "附件：", copy: "複製訊息", copied: "已複製。請貼到你的聊天或電郵中。",
   copyFail: "無法自動複製。請選取上面的訊息再複製。",
   openAircraft: "打開飛機 →", review: "審核隊列 →", view: "角度？",
+  sharePhotos: "分享 {n} 張相片及訊息", preparing: "準備中…",
+  shared: "已分享。如訊息文字未有一併傳送，請用「複製訊息」再貼上。",
+  cannotShare: "此瀏覽器無法直接分享相片。請在手機上打開，或按「打開報價」。",
+  photoFail: "有相片未能載入，請再試一次。",
+  sendKinds: "要傳送的相片：", sendOption: "選項 {i} · {name}：{n} 張相片及訊息",
+  allAtOnce: "或一次過傳送：{n} 張相片，然後一段訊息",
+  optionShared: "已分享選項 {i}。請把選項 {j} 分享到同一個對話。", allShared: "所有選項已分享。",
+  byOption: "每個按鈕會先傳送該選項的相片，再傳送它的訊息。每次請選同一個對話。",
+  noCombined: "{names} 仍未有組合圖：飛機要有 1 張外觀、2 張客艙及 1 張平面圖才會製作。",
+  singlesInstead: "會改為傳送單張相片。",
 };
 const UI_HANS: UI = Object.fromEntries(Object.entries(UI_HANT).map(([k, v]) => [k, toHans(v)])) as UI;
 const uiFor = (l: ChatLang): UI => (l === "zh-Hant" ? UI_HANT : l === "zh-Hans" ? UI_HANS : UI_EN);
@@ -72,6 +93,106 @@ function CopyButton({ text, ui }: { text: string; ui: UI }) {
   );
 }
 
+const EXT: Record<string, string> = { "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp" };
+
+const fill = (s: string, v: Record<string, string | number>) => s.replace(/\{(\w+)\}/g, (_, k) => String(v[k] ?? ""));
+const KINDS: Classification[] = ["exterior", "cabin", "floor_plan", "combined"];
+
+/**
+ * The quote's photos with what to send: tick the kinds (EXT, CABIN, FLOOR PLAN, COMBINED), then share option by
+ * option (option 1's photos and message, then option 2's...), or everything at once.
+ */
+function QuoteSend({ photos, options, text, ui, lang }: { photos: ChocksPhoto[]; options: { title: string; text: string }[]; text?: string; ui: UI; lang: ChatLang }) {
+  const [kinds, setKinds] = useState<Set<string>>(new Set(["exterior", "cabin", "floor_plan", "unclassified"]));
+  const [busy, setBusy] = useState(false);
+  const [done, setDone] = useState<string | null>(null);
+  const [sent, setSent] = useState<Set<number>>(new Set());
+  const present = KINDS.filter((k) => photos.some((p) => p.classification === k));
+  /** An option's photos of the ticked kinds. If only Combined is ticked and it has none, its single photos go instead. */
+  const forOption = (i: number) => {
+    const mine = photos.filter((p) => p.option === i);
+    const picked = mine.filter((p) => kinds.has(p.classification ?? "unclassified"));
+    if (picked.length || !kinds.has("combined") || mine.some((p) => p.classification === "combined")) return picked;
+    return mine.filter((p) => p.classification !== "combined");
+  };
+  const all = options.flatMap((_, i) => forOption(i));
+  const lacksCombined = (i: number) => !photos.some((p) => p.option === i && p.classification === "combined");
+  const noCombined = kinds.has("combined") ? options.filter((_, i) => lacksCombined(i)).map((o) => o.title) : [];
+  // Only say "single photos instead" when that is what happens (no single kinds ticked).
+  const fallback = kinds.has("combined") && !KINDS.some((k) => k !== "combined" && kinds.has(k));
+
+  async function share(list: ChocksPhoto[], message: string | undefined, after: () => void) {
+    setBusy(true); setDone(null);
+    try {
+      const files = await Promise.all(list.map(async (p, i) => {
+        const res = await fetch(`/api/media/${p.id}`);
+        if (!res.ok) throw new Error(ui.photoFail);
+        const blob = await res.blob();
+        const name = `${String(i + 1).padStart(2, "0")} ${p.label}`.replace(/[\\/:*?"<>|]/g, "-");
+        return new File([blob], `${name}.${EXT[blob.type] ?? "jpg"}`, { type: blob.type || "image/jpeg" });
+      }));
+      if (files.length && (!navigator.canShare || !navigator.canShare({ files }))) { setDone(ui.cannotShare); return; }
+      // WhatsApp shows the photos first, then the message.
+      await navigator.share(files.length ? (message ? { files, text: message } : { files }) : { text: message ?? "" });
+      after();
+    } catch (e) {
+      if ((e as Error).name !== "AbortError") setDone((e as Error).message || ui.photoFail);
+    } finally { setBusy(false); }
+  }
+
+  return (
+    <div style={{ margin: "8px 0" }}>
+      <div className="thumbs" style={{ margin: "0 0 8px" }}>
+        {photos.map((p) => {
+          const on = all.includes(p);
+          return (
+            <a key={p.id} href={`/api/media/${p.id}`} target="_blank" title={p.label} style={on ? undefined : { opacity: 0.35 }}>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={`/api/media/${p.id}`} alt={p.label} style={{ width: 110, height: 80, objectFit: p.classification === "combined" ? "contain" : "cover", background: "#fff" }} />
+            </a>
+          );
+        })}
+      </div>
+      {present.length > 1 && (
+        <div className="chips" style={{ marginBottom: 6, alignItems: "center" }}>
+          <span className="small">{ui.sendKinds}</span>
+          {present.map((k) => {
+            const on = kinds.has(k);
+            return (
+              <button key={k} type="button" className={`chip small${on ? " on" : ""}`} aria-pressed={on}
+                onClick={() => setKinds((cur) => { const n = new Set(cur); if (n.has(k)) n.delete(k); else n.add(k); return n; })}>
+                {on ? "✓ " : ""}{trClassification(lang, k, CLASSIFICATION_LABEL[k])}
+              </button>
+            );
+          })}
+        </div>
+      )}
+      {noCombined.length > 0 && <p className="small muted" style={{ margin: "0 0 6px" }}>{fill(ui.noCombined, { names: noCombined.join(", ") })}{fallback ? ` ${ui.singlesInstead}` : ""}</p>}
+      {options.length > 1 ? (
+        <>
+          <div className="option-sends">
+            {options.map((o, i) => {
+              const n = forOption(i).length;
+              const next = !sent.has(i) && [...Array(i).keys()].every((j) => sent.has(j));
+              return (
+                <button key={i} type="button" className={next ? undefined : "secondary"} disabled={busy}
+                  onClick={() => share(forOption(i), o.text, () => { setSent((s) => new Set(s).add(i)); setDone(i < options.length - 1 ? fill(ui.optionShared, { i: i + 1, j: i + 2 }) : ui.allShared); })}>
+                  <Icon name="share" />{sent.has(i) ? "✓ " : ""}{fill(ui.sendOption, { i: i + 1, name: o.title, n, s: n === 1 ? "" : "s" })}
+                </button>
+              );
+            })}
+          </div>
+          <p className="small muted" style={{ margin: "4px 0" }}>{ui.byOption}</p>
+          <button type="button" className="secondary" disabled={busy || all.length === 0} onClick={() => share(all, text, () => setDone(ui.shared))}>{fill(ui.allAtOnce, { n: all.length, s: all.length === 1 ? "" : "s" })}</button>
+        </>
+      ) : (
+        <button type="button" onClick={() => share(all, text, () => setDone(ui.shared))} disabled={busy || all.length === 0}><Icon name="share" />{busy ? ui.preparing : ui.sharePhotos.replace("{n}", String(all.length))}</button>
+      )}
+      {done && <p className="small muted" style={{ margin: "4px 0 0" }}>{done}</p>}
+    </div>
+  );
+}
+
 /** The Send panel Chocks shows after "send the G280 to Mr Chan". */
 function SharePanel({ aircraftId, contactId }: { aircraftId: string; contactId: string }) {
   const [p, setP] = useState<SharePayload | null | undefined>(undefined);
@@ -83,7 +204,7 @@ function SharePanel({ aircraftId, contactId }: { aircraftId: string; contactId: 
 
 type Msg =
   | { id: string; role: "user"; text: string; files: string[] }
-  | { id: string; role: "chocks"; say: string[]; chips: { label: string; send: string }[]; draft: Draft; done?: boolean; aircraftId?: string | null; failures: string[]; share?: { aircraftId: string; contactId: string }; link?: { href: string; label: string }; photos?: { id: string; label: string }[]; copy?: string };
+  | { id: string; role: "chocks"; say: string[]; chips: { label: string; send: string }[]; draft: Draft; done?: boolean; aircraftId?: string | null; failures: string[]; share?: { aircraftId: string; contactId: string }; link?: { href: string; label: string }; photos?: ChocksPhoto[]; copy?: string; options?: { title: string; text: string }[] };
 
 // Browser speech APIs (Chrome, Edge, Safari). Typed minimally because they are not in the standard DOM typings.
 interface Recognition {
@@ -163,7 +284,7 @@ export default function ChatClient() {
         return;
       }
       setDraft(JSON.stringify(r.draft));
-      setMsgs((m) => [...m, { id: crypto.randomUUID(), role: "chocks", say: r.reply.say, chips: r.reply.chips, draft: r.draft, done: r.reply.done, aircraftId: r.applied?.aircraftId, failures: r.failures, share: r.reply.share, link: r.reply.link, photos: r.reply.photos, copy: r.reply.copy }]);
+      setMsgs((m) => [...m, { id: crypto.randomUUID(), role: "chocks", say: r.reply.say, chips: r.reply.chips, draft: r.draft, done: r.reply.done, aircraftId: r.applied?.aircraftId, failures: r.failures, share: r.reply.share, link: r.reply.link, photos: r.reply.photos, copy: r.reply.copy, options: r.reply.options }]);
       if (speak && "speechSynthesis" in window) {
         window.speechSynthesis.cancel();
         const u = new SpeechSynthesisUtterance(r.reply.say.join(" ").replace(/[•“”]/g, ""));
@@ -304,7 +425,8 @@ export default function ChatClient() {
                 ))}
               </div>
             )}
-            {m.photos && m.photos.length > 0 && (
+            {m.photos && m.photos.length > 0 && m.options && m.options.length > 0 && <QuoteSend photos={m.photos} options={m.options} text={m.copy} ui={ui} lang={chatLang} />}
+            {m.photos && m.photos.length > 0 && !(m.options && m.options.length > 0) && (
               <div className="thumbs" style={{ margin: "8px 0" }}>
                 {m.photos.map((p) => (
                   <a key={p.id} href={`/api/media/${p.id}`} target="_blank" title={p.label}>

@@ -12,7 +12,7 @@ import { contactApp, contactLink } from "@/domain/messengers";
 import { QUOTE_LANGUAGES, QUOTE_WORDS, buildQuoteParts, type QuoteLanguage, type QuoteTemplate } from "@/domain/quote";
 import { forOtherApps, parseStyled, readsMarkers } from "@/domain/textStyle";
 import { parseQuoteCommands, type QuoteCommand } from "@/domain/quoteCommands";
-import type { WifiStatus } from "@/domain/constants";
+import { COMBINED_NEEDS, type WifiStatus } from "@/domain/constants";
 import type { ShareItem } from "./ShareBox";
 
 export interface QuoteAircraftOption {
@@ -54,7 +54,7 @@ export default function QuoteBuilder({ aircraft, operators, preferred: preferred
   const [prices, setPrices] = useState<Record<string, string>>({});
   const [extras, setExtras] = useState<Record<string, string>>({});
   const [edits, setEdits] = useState<Record<string, string>>({}); // "greeting" | "closing" | "block:<aircraftId>" -> the broker's own text
-  const [classes, setClasses] = useState<Set<string> | null>(null); // null = every kind of photo
+  const [flip, setFlip] = useState<Set<string>>(new Set()); // photos ("<aircraftId>|<photo url>") ticked or unticked by hand, against their default
   const [contactId, setContactId] = useState("");
   const [msg, setMsg] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -130,9 +130,42 @@ export default function QuoteBuilder({ aircraft, operators, preferred: preferred
   };
 
   const allClasses = useMemo(() => [...new Map(chosen.flatMap((a) => a.photos).map((p) => [p.classification, p.classificationLabel])).entries()], [chosen]);
-  const useClass = (c: string) => !classes || classes.has(c);
-  const toggleClass = (c: string) => setClasses((cur) => { const n = new Set(cur ?? allClasses.map(([k]) => k)); if (n.has(c)) n.delete(c); else n.add(c); return n; });
-  const photos = chosen.flatMap((a, i) => a.photos.filter((p) => useClass(p.classification)).map((p) => ({ a, i, p })));
+  const photoKey = (a: QuoteAircraftOption, p: ShareItem) => `${a.id}|${p.url}`;
+  // Single photos start ticked; the combined photo starts unticked (it repeats them), so the broker sends one or the other.
+  const startsOn = (p: ShareItem) => p.classification !== "combined";
+  const isOn = (a: QuoteAircraftOption, p: ShareItem) => startsOn(p) !== flip.has(photoKey(a, p));
+  const setPhotos = (items: { a: QuoteAircraftOption; p: ShareItem }[], on: boolean) => setFlip((cur) => {
+    const n = new Set(cur);
+    for (const { a, p } of items) { const k = photoKey(a, p); if (on === startsOn(p)) n.delete(k); else n.add(k); }
+    return n;
+  });
+  const togglePhoto = (a: QuoteAircraftOption, p: ShareItem) => setPhotos([{ a, p }], !isOn(a, p));
+  const ofClass = (c: string) => chosen.flatMap((a) => a.photos.filter((p) => p.classification === c).map((p) => ({ a, p })));
+  // A kind of photo (Exterior, Cabin, Combined…) counts as chosen while any photo of that kind is ticked; tapping it ticks or unticks them all.
+  const useClass = (c: string) => ofClass(c).some(({ a, p }) => isOn(a, p));
+  const toggleClass = (c: string) => setPhotos(ofClass(c), !useClass(c));
+  /**
+   * Send every chosen aircraft as single photos, or as its combined photo. An aircraft with no combined photo yet
+   * always goes as single photos.
+   */
+  const sendAs = (mode: "single" | "combined") => setFlip((cur) => {
+    const n = new Set(cur);
+    for (const a of chosen) {
+      const hasCombined = a.photos.some((p) => p.classification === "combined");
+      for (const p of a.photos) {
+        const want = mode === "combined" && hasCombined ? p.classification === "combined" : p.classification !== "combined";
+        const k = photoKey(a, p);
+        if (want === startsOn(p)) n.delete(k); else n.add(k);
+      }
+    }
+    return n;
+  });
+  const isMode = (mode: "single" | "combined") => chosen.length > 0 && chosen.every((a) => {
+    const hasCombined = a.photos.some((p) => p.classification === "combined");
+    return a.photos.every((p) => isOn(a, p) === (mode === "combined" && hasCombined ? p.classification === "combined" : p.classification !== "combined"));
+  });
+  const photos = chosen.flatMap((a, i) => a.photos.filter((p) => isOn(a, p)).map((p) => ({ a, i, p })));
+  const withoutCombined = chosen.filter((a) => !a.photos.some((p) => p.classification === "combined"));
   const dir = lang === "ar" ? "rtl" : "ltr";
   const speech = SPEECH[lang];
 
@@ -142,19 +175,37 @@ export default function QuoteBuilder({ aircraft, operators, preferred: preferred
     return ok;
   }
 
-  async function sharePhotos() {
+  /** One option's message: its own block, with the opening line on the first option and the closing line on the last. */
+  const optionText = (i: number, mode: "whatsapp" | "other") => {
+    const t = [i === 0 ? greeting : null, blocks[i], i === chosen.length - 1 ? closing : null].filter((x): x is string => !!x && x.trim() !== "").join("\n\n");
+    return mode === "whatsapp" ? t : forOtherApps(t);
+  };
+  const [sentOptions, setSentOptions] = useState<Set<number>>(new Set());
+  useEffect(() => { setSentOptions(new Set()); }, [ids]);
+
+  /**
+   * Share through the phone's share sheet. option = null: every photo, then the whole message, in one send.
+   * option = i: that option's photos with that option's message, so the client sees option 1, then option 2...
+   */
+  async function sharePhotos(option: number | null = null) {
     setBusy(true); setMsg(null);
     try {
-      const files = await Promise.all(photos.map(async ({ a, i, p }) => {
+      const mine = option === null ? photos : photos.filter((x) => x.i === option);
+      const files = await Promise.all(mine.map(async ({ a, i, p }) => {
         const res = await fetch(p.url);
         if (!res.ok) throw new Error("A photo could not be loaded");
         const blob = await res.blob();
-        return new File([blob], `Aircraft ${i + 1} - ${a.type} - ${p.label}${p.representative ? " (representative)" : ""}.${EXT[p.mimeType] ?? "jpg"}`, { type: p.mimeType });
+        return new File([blob], `Option ${i + 1} - ${a.type} - ${p.label}${p.representative ? " (representative)" : ""}.${EXT[p.mimeType] ?? "jpg"}`, { type: p.mimeType });
       }));
-      if (!navigator.canShare || !navigator.canShare({ files })) { setMsg("This browser cannot share photos directly. Open this page on your phone, or save the photos from each aircraft page."); return; }
-      // One send: photos and message together (WhatsApp shows the photos first, then the message).
-      await navigator.share({ files, text: textFor(styleFor) });
-      setMsg("Shared. If the message text did not come through, paste it from Copy message.");
+      const message = option === null ? textFor(styleFor) : optionText(option, styleFor);
+      if (files.length && (!navigator.canShare || !navigator.canShare({ files }))) { setMsg("This browser cannot share photos directly. Open this page on your phone, or save the photos from each aircraft page."); return; }
+      // WhatsApp shows the photos first, then the message.
+      await navigator.share(files.length ? { files, text: message } : { text: message });
+      if (option === null) setMsg("Shared. If the message text did not come through, paste it from Copy message.");
+      else {
+        setSentOptions((s) => new Set(s).add(option));
+        setMsg(option < chosen.length - 1 ? `Option ${option + 1} shared. Now share option ${option + 2}, to the same chat.` : "All options shared.");
+      }
     } catch (e) {
       if ((e as Error).name !== "AbortError") setMsg((e as Error).message || "Sharing failed");
     } finally { setBusy(false); }
@@ -403,6 +454,12 @@ export default function QuoteBuilder({ aircraft, operators, preferred: preferred
                 {byHand
                   ? <TextBox dir={dir} speechLang={speech} rows={rows(blocks[i])} value={blocks[i]} onChange={(v) => setEdit(k, v)} ariaLabel={`Aircraft ${i + 1}`} />
                   : <pre className="cardtext" dir={dir} style={{ margin: "6px 0" }}><Styled text={blocks[i]} /></pre>}
+                <PhotoPicker
+                  photos={a.photos}
+                  isOn={(p) => isOn(a, p)}
+                  onToggle={(p) => togglePhoto(a, p)}
+                  onAll={(on) => setPhotos(a.photos.map((p) => ({ a, p })), on)}
+                />
                 {byHand
                   ? <p className="small muted" style={{ margin: "4px 0 0" }}>Rewritten by hand: changes to the details, price or language no longer reach this aircraft.</p>
                   : (
@@ -448,8 +505,48 @@ export default function QuoteBuilder({ aircraft, operators, preferred: preferred
               </div>
             </>
           )}
-          <button ref={shareBtn} type="button" className="block-btn" onClick={sharePhotos} disabled={busy || photos.length === 0}><Icon name="share" />{busy ? "Preparing…" : `Share ${photos.length} photo${photos.length === 1 ? "" : "s"} + message`}</button>
-          <p className="small muted" style={{ margin: "6px 0 0" }}>Opens your phone&apos;s share sheet with the photos and the message together. Choose the app, then the client.</p>
+          {chosen.length > 0 && (
+            <>
+              <div className="chips" style={{ marginBottom: 6 }}>
+                <button type="button" className={`chip small${isMode("single") ? " on" : ""}`} aria-pressed={isMode("single")} onClick={() => sendAs("single")}>Single photos</button>
+                <button type="button" className={`chip small${isMode("combined") ? " on" : ""}`} aria-pressed={isMode("combined")} onClick={() => sendAs("combined")} disabled={withoutCombined.length === chosen.length}>Combined photo</button>
+              </div>
+              {withoutCombined.length > 0 && (
+                <p className="small muted" style={{ margin: "0 0 8px" }}>
+                  No combined photo yet for {withoutCombined.map((a) => a.type).join(", ")}: it is made once the aircraft has {COMBINED_NEEDS}. {isMode("combined") ? "These go as single photos." : ""}
+                </p>
+              )}
+              <p className="small muted" style={{ margin: "0 0 8px" }}>Tick or untick single photos under each aircraft in step 4.</p>
+            </>
+          )}
+          {chosen.length > 1 ? (
+            <>
+              <div className="group-title">Send option by option</div>
+              <div className="option-sends">
+                {chosen.map((a, i) => {
+                  const n = photos.filter((x) => x.i === i).length;
+                  const done = sentOptions.has(i);
+                  const next = !done && [...Array(i).keys()].every((j) => sentOptions.has(j));
+                  return (
+                    <button key={a.id} type="button" className={`block-btn${next ? "" : " secondary"}`} onClick={() => sharePhotos(i)} disabled={busy}>
+                      <Icon name="share" />{done ? "✓ " : ""}Option {i + 1} · {a.type}: {n} photo{n === 1 ? "" : "s"} + message
+                    </button>
+                  );
+                })}
+              </div>
+              <p className="small muted" style={{ margin: "6px 0 0" }}>
+                Each button opens your phone&apos;s share sheet with that option&apos;s photos and its message, so the client gets option 1&apos;s photos and message, then option 2&apos;s. Pick the same chat each time.
+              </p>
+              <button ref={shareBtn} type="button" className="secondary" style={{ marginTop: 8 }} onClick={() => sharePhotos(null)} disabled={busy || photos.length === 0}>
+                Or everything at once: {photos.length} photo{photos.length === 1 ? "" : "s"}, then one message
+              </button>
+            </>
+          ) : (
+            <>
+              <button ref={shareBtn} type="button" className="block-btn" onClick={() => sharePhotos(null)} disabled={busy || photos.length === 0}><Icon name="share" />{busy ? "Preparing…" : `Share ${photos.length} photo${photos.length === 1 ? "" : "s"} + message`}</button>
+              <p className="small muted" style={{ margin: "6px 0 0" }}>Opens your phone&apos;s share sheet with the photos and the message together. Choose the app, then the client.</p>
+            </>
+          )}
           {styled && (
             <div className="group" style={{ marginTop: 10 }}>
               <label className="group-row">Bold and italics for
@@ -476,6 +573,38 @@ export default function QuoteBuilder({ aircraft, operators, preferred: preferred
           </details>
           {msg && <p className="small" role="status">{msg}</p>}
         </div>
+      </div>
+    </div>
+  );
+}
+
+/** One aircraft's photos (the combined photo among them) as tickable thumbnails: ticked photos are sent with the message. */
+function PhotoPicker({ photos, isOn, onToggle, onAll }: {
+  photos: ShareItem[]; isOn: (p: ShareItem) => boolean; onToggle: (p: ShareItem) => void; onAll: (on: boolean) => void;
+}) {
+  if (photos.length === 0) return <p className="small muted" style={{ margin: "6px 0" }}>No approved photos for this aircraft yet.</p>;
+  const n = photos.filter(isOn).length;
+  return (
+    <div className="photo-pick">
+      <div className="photo-pick-head">
+        <span className="small">Photos to send: <b>{n} of {photos.length}</b></span>
+        <span style={{ display: "flex", gap: 4 }}>
+          <button type="button" className="secondary small-btn" onClick={() => onAll(true)} disabled={n === photos.length}>All</button>
+          <button type="button" className="secondary small-btn" onClick={() => onAll(false)} disabled={n === 0}>None</button>
+        </span>
+      </div>
+      <div className="photo-pick-grid">
+        {photos.map((p) => {
+          const on = isOn(p);
+          return (
+            <button key={p.url} type="button" className={`photo-tile${on ? " on" : ""}${p.classification === "combined" ? " combined" : ""}`} aria-pressed={on} onClick={() => onToggle(p)} title={on ? "Tap to leave this photo out" : "Tap to send this photo"}>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={p.url} alt={p.label} loading="lazy" />
+              <span className="tick" aria-hidden>{on ? "✓" : ""}</span>
+              <span className="cap">{p.label}{p.representative ? " · rep." : ""}</span>
+            </button>
+          );
+        })}
       </div>
     </div>
   );

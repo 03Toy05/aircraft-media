@@ -3,11 +3,11 @@ import type { Db } from "../db/client";
 import { aircraftTypes, organisations } from "../db/schema";
 import { fleetLink, looksLikeFleetRequest, parseFleetQuery, runFleetQuery, sortAircraft } from "./fleetQuery";
 import { getCatalogue } from "./catalogue";
-import { AIRCRAFT_CATEGORIES, AIRCRAFT_CATEGORY_LABEL, normalizeKey, normalizeRegistration } from "./constants";
+import { AIRCRAFT_CATEGORIES, AIRCRAFT_CATEGORY_LABEL, normalizeKey, normalizeRegistration, type Classification } from "./constants";
 import { isChinese, plural, tr, trUnderstood, trWifi, type ChatLang } from "./chocksText";
 import { getAircraftCard, orgAliasesFor } from "./directory";
 import { getLineup } from "./media";
-import { buildQuote } from "./quote";
+import { buildQuote, buildQuoteParts } from "./quote";
 import { getQuoteTemplates } from "./quoteTemplates";
 
 /** "Can you show me what aircraft Capa Jet has?" / "what does B-KXX have" / "list Metrojet". Single-line questions only. */
@@ -153,19 +153,32 @@ export async function fleetBasics(db: Db, tenantId: string) {
  * The quotation message (in your saved wording, in the chat language) and a few photos for each chosen aircraft,
  * so Chocks can show "template and photos" right in the chat.
  */
-export async function quotePreview(db: Db, tenantId: string, ids: string[], lang?: ChatLang): Promise<{ text: string; photos: { id: string; label: string }[] }> {
+export async function quotePreview(db: Db, tenantId: string, ids: string[], lang?: ChatLang): Promise<{
+  text: string;
+  photos: { id: string; label: string; classification: Classification; option: number }[];
+  /** Each option's own message (opening line on the first, closing line on the last), to send option by option. */
+  options: { title: string; text: string }[];
+}> {
   const rows = await getCatalogue(db, tenantId);
   const templates = await getQuoteTemplates(db, tenantId);
   const items = [];
-  const photos: { id: string; label: string }[] = [];
+  const photos: { id: string; label: string; classification: Classification; option: number }[] = [];
   for (const id of ids) {
     const r = rows.find((x) => x.aircraftId === id);
     const card = await getAircraftCard(db, id);
     if (!r || !card) continue;
+    const option = items.length;
     items.push({ type: card.aircraft, yom: card.yom, yor: card.yor, capacity: card.capacity, wifi: card.wifi, wifiDetail: card.wifiDetail });
     const lineup = await getLineup(db, { aircraftId: id, aircraftTypeId: r.aircraftTypeId });
-    for (const l of lineup.slice(0, 4)) photos.push({ id: l.contentVersionId, label: `${card.aircraft} ${l.label}` });
+    // Every approved photo of each aircraft (the combined photo among them); the broker picks which kinds to send.
+    for (const l of lineup) photos.push({ id: l.contentVersionId, label: `${card.aircraft} ${l.label}`, classification: l.classification, option });
   }
   const language = lang === "zh-Hant" || lang === "zh-Hans" ? lang : "en";
-  return { text: buildQuote(items, { language, template: templates[language] ?? null, greeting: true }), photos };
+  const opts = { language, template: templates[language] ?? null, greeting: true } as const;
+  const parts = buildQuoteParts(items, opts);
+  const options = items.map((it, i) => ({
+    title: it.type,
+    text: [i === 0 ? parts.greeting : null, parts.blocks[i], i === items.length - 1 ? parts.closing : null].filter((x): x is string => !!x).join("\n\n"),
+  }));
+  return { text: buildQuote(items, opts), photos, options };
 }

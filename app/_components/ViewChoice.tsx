@@ -6,6 +6,7 @@ const VIEWS: { value: Classification; label: string }[] = [
   { value: "exterior", label: "Exterior" },
   { value: "cabin", label: "Cabin" },
   { value: "floor_plan", label: "Floor plan" },
+  { value: "combined", label: "Combined" },
 ];
 
 /** Three big buttons for a photo's view (radio buttons underneath, so the form works as usual). */

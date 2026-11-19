@@ -8,15 +8,23 @@ export const FIXED_TENANT_ID = "00000000-0000-0000-0000-000000000001"; // single
  * Floor plan) plus Unclassified. Brokers only need these three. "Interior"/"INT" is the Rulebook's import/search alias
  * for Cabin, not a separate classification. (Migration 0009 folded the older detailed views into one; 0010 names it cabin.)
  */
-export const CLASSIFICATIONS = ["exterior", "cabin", "floor_plan", "unclassified"] as const;
+export const CLASSIFICATIONS = ["exterior", "cabin", "floor_plan", "combined", "unclassified"] as const;
 export type Classification = (typeof CLASSIFICATIONS)[number];
 
+/**
+ * "Combined": one picture that already shows several views (exterior, cabin and floor plan together), as operators often
+ * send. Not a Rulebook view, so the CBOS export leaves it out; the Quote page can also build one from single photos.
+ */
 export const CLASSIFICATION_LABEL: Record<Classification, string> = {
   exterior: "EXT",
   cabin: "CABIN",
   floor_plan: "FLOOR PLAN",
+  combined: "COMBINED",
   unclassified: "UNCLASSIFIED",
 };
+
+/** What a combined photo is made from; it is made only when all of these are approved. */
+export const COMBINED_NEEDS = "at least 1 exterior, 2 cabin and 1 floor plan photo";
 
 /** Words for each view, in file names and typed replies (Rulebook aliases included). Every room inside the aircraft counts as cabin. */
 export const CLASSIFICATION_ALIASES: Record<string, Classification> = {
@@ -47,6 +55,11 @@ export const CLASSIFICATION_ALIASES: Record<string, Classification> = {
   fp: "floor_plan",
   plan: "floor_plan",
   seatmap: "floor_plan",
+  combined: "combined",
+  combo: "combined",
+  collage: "combined",
+  composite: "combined",
+  overview: "combined",
   unclassified: "unclassified",
 };
 
@@ -92,6 +105,7 @@ export function guessClassificationFromFilename(filename: string): Classificatio
 
 /** Chinese names for the views, Traditional and Simplified. */
 const CLASSIFICATION_ZH_ALIASES: [RegExp, Classification][] = [
+  [/合併|合并|組合圖|组合图|拼圖|拼图/, "combined"],
   [/平面圖|平面图|佈局|布局/, "floor_plan"],
   [/外觀|外观|機身|机身|外部/, "exterior"],
   [/內部|内部|客艙|客舱|機艙|机舱|室內|室内|座椅|座位|臥室|卧室|睡房|床|廚房|厨房|洗手間|洗手间|廁所|厕所|駕駛艙|驾驶舱|行李艙|行李舱/, "cabin"],

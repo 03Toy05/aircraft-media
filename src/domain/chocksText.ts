@@ -155,7 +155,7 @@ export function trCategory(lang: ChatLang | undefined, key: string, englishLabel
 }
 
 export const CLASSIFICATION_ZH: Record<Classification, string> = {
-  exterior: "外觀", cabin: "客艙", floor_plan: "平面圖", unclassified: "未分類",
+  exterior: "外觀", cabin: "客艙", floor_plan: "平面圖", combined: "組合圖", unclassified: "未分類",
 };
 export function trClassification(lang: ChatLang | undefined, c: Classification, englishLabel: string): string {
   if (!isChinese(lang)) return englishLabel;

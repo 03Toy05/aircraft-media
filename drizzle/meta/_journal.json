@@ -92,6 +92,13 @@
       "when": 1795100200000,
       "tag": "0012_cbos_export",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1795100300000,
+      "tag": "0013_combined_view",
+      "breakpoints": true
     }
   ]
 }

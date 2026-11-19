@@ -19,6 +19,9 @@ import * as quoteTemplates from "@/domain/quoteTemplates";
 import * as media from "@/domain/media";
 import * as settings from "@/domain/settings";
 import { applyChatProposal } from "@/domain/chat";
+import { makeCombinedPhoto } from "@/domain/combinedPhoto";
+import { and, eq } from "drizzle-orm";
+import { aircraft as aircraftTable } from "@/db/schema";
 import { CLASSIFICATIONS, type Classification, type OrgRole, type RightsStatus, type WifiStatus } from "@/domain/constants";
 import { signOut } from "@/auth";
 
@@ -632,6 +635,27 @@ export async function stopViewingAction() {
 // ------------------------------------------------------------------ CBOS export
 
 /** Approved photos page: bring the CBOS export folder in Drive up to date now. */
+/** Aircraft page: make (or remake) the aircraft's combined photo from its current photos. */
+export async function makeCombinedAction(fd: FormData) {
+  const { actor, db, store } = await ctx();
+  const aircraftId = str(fd, "aircraftId");
+  const back = `/aircraft/${aircraftId}`;
+  const [ac] = await db.select().from(aircraftTable).where(and(eq(aircraftTable.id, aircraftId), eq(aircraftTable.tenantId, actor.tenantId)));
+  if (!ac) redirect(withParam("/fleet", "error", "Aircraft not found"));
+  let error: string | null = null;
+  let ok = "";
+  try {
+    const r = await makeCombinedPhoto(db, store, actor, { kind: "aircraft", aircraftId, aircraftTypeId: ac.aircraftTypeId }, { replace: true });
+    if (r.made) ok = r.replaced ? "Combined photo remade. The old one was retired." : "Combined photo made and saved with the aircraft's photos.";
+    else error = `No combined photo made. ${r.reason}`;
+  } catch (e) {
+    error = `The combined photo could not be made: ${e instanceof Error ? e.message : "unknown error"}`;
+  }
+  revalidatePath("/", "layout");
+  if (!error) exportAfterResponse(await requireUser());
+  redirect(withParam(back, error ? "error" : "ok", error ?? ok));
+}
+
 export async function exportCbosAction() {
   await ctx(); // refuses read-only workspaces
   const s = await requireUser();
@@ -639,7 +663,7 @@ export async function exportCbosAction() {
   let ok = "";
   try {
     const r = await runExport(s);
-    ok = `Export to Drive “${r.root}” done: ${r.added} added, ${r.updated} refreshed, ${r.moved} renamed or moved, ${r.removed} removed, ${r.unchanged} unchanged${r.skipped ? `, ${r.skipped} without a view (not exported)` : ""}.`;
+    ok = `Export to Drive “${r.root}” done: ${r.added} added, ${r.updated} refreshed, ${r.moved} renamed or moved, ${r.removed} removed, ${r.unchanged} unchanged${r.skipped ? `, ${r.skipped} not exported (combined photos, or no view)` : ""}.`;
     if (r.failed.length) error = `${ok} ${r.failed.length} failed (${r.failed[0].error}). Press Export again to retry them.`;
   } catch (e) {
     error = `Export failed: ${e instanceof Error ? e.message : "unknown error"}`;
