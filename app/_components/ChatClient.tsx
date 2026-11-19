@@ -6,15 +6,19 @@ import { chocksTurnAction, type TurnResult } from "../chatActions";
 import type { Draft } from "@/domain/chocks";
 import { prepareShareAction, type SharePayload } from "../shareActions";
 import { ShareBox } from "./ShareBox";
+import { copyText } from "./copyText";
 import Icon from "./Icon";
 import { CHAT_LANGUAGES, parseChatLang, toHans, type ChatLang } from "@/domain/chocksText";
 
 /** The words on the chat itself. Chocks's own sentences come from the server in the chosen language. */
 const UI_EN = {
   hi: "Hi, I'm Chocks.",
-  intro: "Send me photos and details and I'll check what you already have, ask about anything unclear, and file it once you confirm.",
+  intro: "What can I do for you?",
+  doQuote: "Draft a quote", doAdd: "Add an aircraft or photos", doFind: "Find aircraft",
+  addHint: "Fill in what you know (leave the rest blank), attach photos if you have them, then press Send. Nothing is saved until you confirm.",
+  askHint: "Or just type or say what you need, e.g. “Give me CapaJet's G550 quote and photos”.",
   template: "Operator: \nRegion: \nAircraft type: \nTail number: \nYOM: \nCapacity: ",
-  placeholderNew: "Operator: \nAircraft type: \nYOM: \nCapacity: ",
+  placeholderNew: "Ask Chocks, or tap Template…",
   placeholderReply: "Reply to Chocks, or add more details…",
   templateBtn: "Template", speak: "Speak", stop: "Stop", send: "Send", attach: "Photos", voiceOptions: "Voice options",
   readAloud: "Chocks reads replies aloud", autoSend: "Send when I stop speaking", voiceLanguage: "Voice language", language: "Language",
@@ -30,9 +34,12 @@ const UI_EN = {
 type UI = typeof UI_EN;
 const UI_HANT: UI = {
   hi: "你好，我是 Chocks。",
-  intro: "傳相片和資料給我，我會核對你已有的內容，不清楚的地方會問你，確認後才會歸檔。",
+  intro: "有什麼可以幫你？",
+  doQuote: "草擬報價", doAdd: "新增飛機或相片", doFind: "搜尋飛機",
+  addHint: "填上你知道的資料（其餘留空），有相片可一併附上，然後按傳送。確認前不會儲存任何內容。",
+  askHint: "也可以直接輸入或說出你的需要，例如「給我 CapaJet 的 G550 報價和相片」。",
   template: "營運商：\n地區：\n機型：\n機尾號：\n出廠年份：\n載客量：",
-  placeholderNew: "營運商：\n機型：\n出廠年份：\n載客量：",
+  placeholderNew: "問 Chocks，或按「範本」…",
   placeholderReply: "回覆 Chocks，或補充更多資料…",
   templateBtn: "範本", speak: "語音輸入", stop: "停止", send: "傳送", attach: "相片", voiceOptions: "語音選項",
   readAloud: "由 Chocks 朗讀回覆", autoSend: "停止說話後自動傳送", voiceLanguage: "語音語言", language: "語言",
@@ -58,8 +65,7 @@ function CopyButton({ text, ui }: { text: string; ui: UI }) {
   return (
     <p style={{ margin: "6px 0" }}>
       <button type="button" onClick={async () => {
-        try { await navigator.clipboard.writeText(text); setDone(ui.copied); }
-        catch { setDone(ui.copyFail); }
+        setDone((await copyText(text)) ? ui.copied : ui.copyFail);
       }}>{ui.copy}</button>
       {done && <span className="small muted"> {done}</span>}
     </p>
@@ -99,6 +105,8 @@ export default function ChatClient() {
   const [draft, setDraft] = useState<string>("");
   const [pending, start] = useTransition();
   const fileRef = useRef<HTMLInputElement>(null);
+  const boxRef = useRef<HTMLTextAreaElement>(null);
+  const [adding, setAdding] = useState(false);
   const endRef = useRef<HTMLDivElement>(null);
   const textRef = useRef(text);
   textRef.current = text;
@@ -229,17 +237,28 @@ export default function ChatClient() {
   };
 
   const lastChocks = [...msgs].reverse().find((m) => m.role === "chocks");
+  /** "Add an aircraft or photos" / Template: put the labelled template in the box and focus it. */
+  const startAdd = () => {
+    setAdding(true);
+    setText((v) => (v.trim() ? v : ui.template));
+    setTimeout(() => boxRef.current?.focus(), 0);
+  };
 
   return (
     <div>
       <div className="card" style={{ marginBottom: 12 }}>
         <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "start" }}>
-          <p style={{ margin: 0 }}><b>{ui.hi}</b> {ui.intro}</p>
+          <p style={{ margin: 0 }}><b>{ui.hi}</b><br />{ui.intro}</p>
           <select value={chatLang} onChange={(e) => changeChatLang(e.target.value as ChatLang)} style={{ width: "auto", flex: "0 0 auto" }} aria-label={ui.language}>
             {CHAT_LANGUAGES.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
           </select>
         </div>
-        <pre className="cardtext" style={{ marginBottom: 0 }}>{ui.template}</pre>
+        <div className="welcome-actions">
+          <Link href="/quote" className="btn"><Icon name="quote" />{ui.doQuote}</Link>
+          <button type="button" className="secondary" onClick={startAdd} aria-pressed={adding}><Icon name="upload" />{ui.doAdd}</button>
+          <Link href="/fleet" className="btn secondary"><Icon name="search" />{ui.doFind}</Link>
+        </div>
+        <p className="small muted" style={{ margin: "8px 0 0" }}>{adding ? ui.addHint : ui.askHint}</p>
       </div>
 
       {msgs.map((m) =>
@@ -300,6 +319,7 @@ export default function ChatClient() {
 
       <div className="card composer">
         <textarea
+          ref={boxRef}
           value={text}
           onChange={(e) => setText(e.target.value)}
           onKeyDown={(e) => { if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); send(); } }}
@@ -310,7 +330,7 @@ export default function ChatClient() {
         <input ref={fileRef} type="file" hidden accept="image/jpeg,image/png,image/webp,application/pdf" multiple onChange={(e) => setFiles([...(e.target.files ?? [])])} />
         <div className="composer-bar">
           <button type="button" className="secondary" onClick={() => fileRef.current?.click()} aria-label={ui.attach}><Icon name="photos" />{files.length > 0 && <b>{files.length}</b>}<span className="lbl">{files.length > 0 ? "" : ui.attach}</span></button>
-          <button type="button" className="secondary" onClick={() => setText((v) => (v.trim() ? v : ui.template))}>{ui.templateBtn}</button>
+          <button type="button" className="secondary" onClick={startAdd}>{ui.templateBtn}</button>
           {canListen && <button type="button" className={listening ? "danger" : "secondary"} onClick={toggleMic} aria-pressed={listening}><Icon name="mic" /><span className="lbl">{listening ? ui.stop : ui.speak}</span></button>}
           <button type="button" className="send" onClick={() => send()} disabled={pending || (!text.trim() && files.length === 0)}><Icon name="send" />{ui.send}</button>
         </div>

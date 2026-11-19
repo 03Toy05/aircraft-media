@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import Icon from "./Icon";
+import { copyText, openAfterCopy, shareText } from "./copyText";
 import { CONTACT_APPS, contactApp, contactLink, type ContactApp } from "@/domain/messengers";
 
 export interface ShareItem {
@@ -35,14 +36,9 @@ export function ShareBox({ aircraftId, tail, cardText, items, contact }: { aircr
   const toggle = (c: string) => setPicked((p) => { const n = new Set(p); if (n.has(c)) n.delete(c); else n.add(c); return n; });
 
   async function copyCard() {
-    try {
-      await navigator.clipboard.writeText(cardText);
-      setMsg("Card copied.");
-      return true;
-    } catch {
-      setMsg("Could not copy automatically. Select the card text above and copy it.");
-      return false;
-    }
+    const ok = await copyText(cardText);
+    setMsg(ok ? "Card copied." : "Could not copy automatically. Select the card text above and copy it.");
+    return ok;
   }
 
   /** Open one messenger (for a specific person when `who` is given). */
@@ -50,11 +46,21 @@ export function ShareBox({ aircraftId, tail, cardText, items, contact }: { aircr
     const link = contactLink(app.id, who?.handle, cardText);
     const person = who ? who.name : "the chat";
     if (link.copyFirst) {
+      // Apps that cannot take text from a link: the phone's share sheet passes the card straight in.
+      const r = await shareText(cardText);
+      if (r === "shared") { setMsg(`Card sent to the share sheet${who ? `; pick ${who.name} in ${app.label}` : ""}. Use Share photos for the photos.`); return; }
+      if (r === "cancelled") { setMsg(null); return; }
       const ok = await copyCard();
-      setMsg(`${ok ? "Card copied. " : ""}Opening ${app.label}${who ? ` for ${who.name}` : ""}. ${ok ? "Paste the card into the chat, then press Send." : ""} Use Share photos for the photos.`);
-    } else {
-      setMsg(`${app.label} opened with the card ready for ${person}. Press Send there. Use Share photos for the photos.`);
+      if (!ok) {
+        // Do not open the app: the card would be lost. Let the owner copy it by hand first.
+        setMsg(`Could not copy the card automatically. Use Copy card (or select the text and copy it), then open ${app.label}.`);
+        return;
+      }
+      setMsg(`Card copied. Opening ${app.label}${who ? ` for ${who.name}` : ""}. Paste the card into the chat (long-press, Paste), then press Send. Use Share photos for the photos.`);
+      openAfterCopy(link.url, link.newTab);
+      return;
     }
+    setMsg(`${app.label} opened with the card ready for ${person}. Press Send there. Use Share photos for the photos.`);
     if (link.newTab) window.open(link.url, "_blank");
     else window.location.href = link.url;
   }
@@ -98,8 +104,8 @@ export function ShareBox({ aircraftId, tail, cardText, items, contact }: { aircr
           </button>
           <p className="small muted" style={{ margin: "4px 0 0" }}>
             {who.mode === "chat+text" && "Opens their chat with the card already typed. You press Send."}
-            {who.mode === "chat" && "Opens their chat. The card is copied first, so paste it and press Send."}
-            {who.mode === "app" && `${who.label} cannot open a person from a link. The card is copied and the app opens; find ${contact.name} and paste it.`}
+            {who.mode === "chat" && `Opens your phone's share sheet with the card. Choose ${who.label}, then ${contact.name}.`}
+            {who.mode === "app" && `Opens your phone's share sheet with the card. Choose ${who.label}, then ${contact.name}.`}
           </p>
         </div>
       )}

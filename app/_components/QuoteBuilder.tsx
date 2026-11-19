@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import Icon from "./Icon";
+import { copyText, openAfterCopy, shareText } from "./copyText";
 import { CONTACT_APPS, contactApp, contactLink } from "@/domain/messengers";
 import { QUOTE_LANGUAGES, QUOTE_WORDS, buildQuoteParts, type QuoteLanguage, type QuoteTemplate } from "@/domain/quote";
 import type { WifiStatus } from "@/domain/constants";
@@ -38,6 +39,10 @@ export default function QuoteBuilder({ aircraft, contacts, initialIds, templates
   const [inc, setInc] = useState({ operator: false, tail: false, base: false, notes: false, greeting: true });
   const [filter, setFilter] = useState("");
   const [operatorFilter, setOperatorFilter] = useState("");
+  const [typeFilter, setTypeFilter] = useState(() => {
+    const t = [...new Set(initialIds.map((id) => aircraft.find((a) => a.id === id)?.type).filter(Boolean))];
+    return t.length === 1 ? (t[0] as string) : "";
+  });
   const [edits, setEdits] = useState<Record<string, string>>({}); // "greeting" | "closing" | "block:<aircraftId>" -> the broker's own text
   const [classes, setClasses] = useState<Set<string> | null>(null); // null = every kind of photo
   const [contactId, setContactId] = useState("");
@@ -73,12 +78,21 @@ export default function QuoteBuilder({ aircraft, contacts, initialIds, templates
   const photos = chosen.flatMap((a, i) => a.photos.filter((p) => useClass(p.classification)).map((p) => ({ a, i, p })));
 
   const dir = lang === "ar" ? "rtl" : "ltr";
-  const operators = [...new Set(aircraft.map((a) => a.operator).filter((o): o is string => !!o))].sort((a, b) => a.localeCompare(b));
-  const shown = aircraft.filter((a) => (!operatorFilter || (operatorFilter === "__none" ? !a.operator : a.operator === operatorFilter)) && (!filter.trim() || `${a.type} ${a.tail ?? ""} ${a.operator ?? ""}`.toLowerCase().includes(filter.trim().toLowerCase())));
+  // Type first: the broker picks the aircraft type, which narrows the list of aircraft (and of operators) below.
+  const types = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const a of aircraft) m.set(a.type, (m.get(a.type) ?? 0) + 1);
+    return [...m.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+  }, [aircraft]);
+  const ofType = aircraft.filter((a) => !typeFilter || a.type === typeFilter);
+  const operators = [...new Set(ofType.map((a) => a.operator).filter((o): o is string => !!o))].sort((a, b) => a.localeCompare(b));
+  const shown = ofType.filter((a) => (!operatorFilter || (operatorFilter === "__none" ? !a.operator : a.operator === operatorFilter)) && (!filter.trim() || `${a.type} ${a.tail ?? ""} ${a.operator ?? ""}`.toLowerCase().includes(filter.trim().toLowerCase())));
+  const pickType = (t: string) => { setTypeFilter(t); setOperatorFilter(""); };
 
   async function copy() {
-    try { await navigator.clipboard.writeText(text); setMsg("Message copied. Paste it into your chat or email, then share the photos."); }
-    catch { setMsg("Could not copy automatically. Select the message and copy it."); }
+    const ok = await copyText(text);
+    setMsg(ok ? "Message copied. Paste it into your chat or email, then share the photos." : "Could not copy automatically. Select the message and copy it.");
+    return ok;
   }
 
   async function sharePhotos() {
@@ -100,8 +114,17 @@ export default function QuoteBuilder({ aircraft, contacts, initialIds, templates
 
   async function open(appId: string, handle: string | null, label: string) {
     const link = contactLink(appId, handle, text);
-    if (link.copyFirst) { await copy(); setMsg(`Message copied. Opening ${label}. Paste it into the chat, then share the photos.`); }
-    else setMsg(`${label} opened with the message ready. Press Send there, then share the photos.`);
+    if (link.copyFirst) {
+      // Apps that cannot take text from a link: the phone's share sheet passes the message straight in.
+      const r = await shareText(text);
+      if (r === "shared") { setMsg(`Message sent to the share sheet. If ${label} did not open, pick it there. Then share the photos.`); return; }
+      if (r === "cancelled") { setMsg(null); return; }
+      if (!(await copy())) { setMsg(`Could not copy the message automatically. Select it and copy it, then open ${label}.`); return; }
+      setMsg(`Message copied. Opening ${label}. Paste it into the chat (long-press, Paste), then share the photos.`);
+      openAfterCopy(link.url, link.newTab);
+      return;
+    }
+    setMsg(`${label} opened with the message ready. Press Send there, then share the photos.`);
     if (link.newTab) window.open(link.url, "_blank"); else window.location.href = link.url;
   }
 
@@ -113,29 +136,61 @@ export default function QuoteBuilder({ aircraft, contacts, initialIds, templates
     <div className="grid g2" style={{ alignItems: "start" }}>
       <div>
         <div className="card">
-          <h3>1. Choose aircraft</h3>
+          <h3>1. Aircraft type</h3>
+          {types.length === 0 && <p className="muted small">No aircraft yet.</p>}
+          <div className="chips" role="radiogroup" aria-label="Aircraft type">
+            {types.length > 1 && (
+              <button type="button" role="radio" aria-checked={!typeFilter} className={`chip${!typeFilter ? " on" : ""}`} onClick={() => pickType("")}>All types ({aircraft.length})</button>
+            )}
+            {types.map(([t, n]) => (
+              <button key={t} type="button" role="radio" aria-checked={typeFilter === t} className={`chip${typeFilter === t ? " on" : ""}`} onClick={() => pickType(t)}>
+                {t} ({n}){ids.some((id) => aircraft.find((a) => a.id === id)?.type === t) && <span aria-label="has chosen aircraft"> ✓</span>}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="card">
+          <h3>2. Aircraft{typeFilter ? ` · ${typeFilter}` : ""}</h3>
           <div className="row" style={{ alignItems: "end" }}>
-            <div><label>Operator</label>
-              <select value={operatorFilter} onChange={(e) => setOperatorFilter(e.target.value)}>
-                <option value="">All operators</option>
-                {operators.map((o) => <option key={o} value={o}>{o}</option>)}
-                {aircraft.some((a) => !a.operator) && <option value="__none">No operator</option>}
-              </select></div>
-            <div><label>Search</label><input placeholder="Type or tail" value={filter} onChange={(e) => setFilter(e.target.value)} /></div>
+            {operators.length > 1 && (
+              <div><label>Operator</label>
+                <select value={operatorFilter} onChange={(e) => setOperatorFilter(e.target.value)}>
+                  <option value="">All operators</option>
+                  {operators.map((o) => <option key={o} value={o}>{o}</option>)}
+                  {ofType.some((a) => !a.operator) && <option value="__none">No operator</option>}
+                </select></div>
+            )}
+            {ofType.length > 6 && <div><label>Search</label><input placeholder="Tail or operator" value={filter} onChange={(e) => setFilter(e.target.value)} /></div>}
+          </div>
+          <div className="ac-pick">
+            {shown.length === 0 && types.length > 0 && <p className="muted small">No aircraft match.</p>}
+            {shown.map((a) => {
+              const on = ids.includes(a.id);
+              const facts = [
+                a.yom ? `YOM ${a.yom}` : null,
+                a.yor ? `YOR ${a.yor}` : null,
+                a.capacity ? `${a.capacity} seats` : null,
+                a.wifi === "yes" ? `WIFI${a.wifiDetail ? ` (${a.wifiDetail})` : ""}` : a.wifi === "no" ? "No WIFI" : null,
+              ].filter(Boolean).join(" · ");
+              return (
+                <label key={a.id} className={`ac-card${on ? " on" : ""}`}>
+                  <input type="checkbox" checked={on} onChange={() => toggle(a.id)} />
+                  <span>
+                    <b>{a.operator ?? "No operator"}</b>{!typeFilter && <> · {a.type}</>}
+                    <span className="small muted" style={{ display: "block" }}>
+                      {[a.tail ?? "no tail yet", a.base].filter(Boolean).join(" · ")}{facts ? ` · ${facts}` : ""} · {a.photos.length} photo{a.photos.length === 1 ? "" : "s"}
+                    </span>
+                  </span>
+                </label>
+              );
+            })}
           </div>
           <div className="row" style={{ margin: "6px 0 0" }}>
             <div style={{ flex: "0 0 auto" }}><button type="button" className="secondary" onClick={() => setIds((cur) => [...cur, ...shown.map((a) => a.id).filter((id) => !cur.includes(id))])} disabled={shown.length === 0}>Select all shown ({shown.length})</button></div>
-            <div style={{ flex: "0 0 auto" }}><button type="button" className="secondary" onClick={() => setIds([])} disabled={ids.length === 0}>Clear</button></div>
+            <div style={{ flex: "0 0 auto" }}><button type="button" className="secondary" onClick={() => setIds([])} disabled={ids.length === 0}>Clear ({ids.length})</button></div>
           </div>
-          <div style={{ maxHeight: 260, overflow: "auto", marginTop: 8 }}>
-            {shown.length === 0 && <p className="muted small">No aircraft yet.</p>}
-            {shown.map((a) => (
-              <label key={a.id} style={{ display: "block", margin: "4px 0" }}>
-                <input type="checkbox" checked={ids.includes(a.id)} onChange={() => toggle(a.id)} /> <b>{a.type}</b>
-                <span className="muted small"> · {a.tail ?? "no tail yet"}{a.operator ? ` · ${a.operator}` : ""} · {a.photos.length} photo{a.photos.length === 1 ? "" : "s"}</span>
-              </label>
-            ))}
-          </div>
+          {typeFilter && types.length > 1 && <p className="small muted" style={{ margin: "6px 0 0" }}>To add another type, tap it above. Aircraft you ticked stay chosen.</p>}
           {chosen.length > 1 && (
             <>
               <p className="small muted" style={{ marginBottom: 4 }}>Order in the message:</p>
@@ -151,7 +206,7 @@ export default function QuoteBuilder({ aircraft, contacts, initialIds, templates
         </div>
 
         <div className="card">
-          <h3>2. Language and details</h3>
+          <h3>3. Language and details</h3>
           <label>Language of the message</label>
           <select value={lang} onChange={(e) => changeLang(e.target.value as QuoteLanguage)}>
             {QUOTE_LANGUAGES.map((l) => <option key={l} value={l}>{QUOTE_WORDS[l].name}{templates[l] ? " ●" : ""}</option>)}
@@ -171,7 +226,7 @@ export default function QuoteBuilder({ aircraft, contacts, initialIds, templates
 
       <div>
         <div className="card">
-          <h3>3. Check and edit the message</h3>
+          <h3>4. Check and edit the message</h3>
           {chosen.length === 0 && <p className="muted">Choose at least one aircraft on the left.</p>}
           {greeting !== null && (
             <Piece label="Greeting" dir={dir} value={greeting} rows={rows(greeting)} edited={"greeting" in edits} onChange={(v) => setEdit("greeting", v)} onReset={() => resetEdit("greeting")} />
@@ -190,7 +245,7 @@ export default function QuoteBuilder({ aircraft, contacts, initialIds, templates
         </div>
 
         <div className="card">
-          <h3>4. Send</h3>
+          <h3>5. Send</h3>
           {allClasses.length > 0 && (
             <>
               <p className="small muted" style={{ marginBottom: 4 }}>Photos to include ({photos.length}):</p>

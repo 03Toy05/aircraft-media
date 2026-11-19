@@ -26,7 +26,7 @@ export default async function Dashboard() {
     <div className="dash">
       <div style={{ minWidth: 0 }}>
         <h1>Chocks</h1>
-        <p className="muted small">Send photos and details and Chocks will file them. Nothing is saved until you confirm.</p>
+        <p className="muted small">Quotes, aircraft and photos. Nothing is saved until you confirm.</p>
         <ChatClient />
       </div>
       <aside style={{ minWidth: 0 }}>
