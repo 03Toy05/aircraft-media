@@ -28,7 +28,7 @@ export interface PdfIntakeResult {
  * Extraction does not establish identity, operator, rights or configuration: every photo starts
  * unclassified/unresolved in needs_review.
  */
-export async function ingestPdf(db: Db, store: FileStore, actor: Actor, input: { filename: string; bytes: Uint8Array; cardText?: string | null; drive?: DriveSource; batchId?: string | null }) {
+export async function ingestPdf(db: Db, store: FileStore, actor: Actor, input: { filename: string; bytes: Uint8Array; cardText?: string | null; drive?: DriveSource; batchId?: string | null; batchLabel?: string | null }) {
   const { bytes } = input;
   const drive = input.drive;
   if (bytes.byteLength === 0) throw invalid("The file is empty");
@@ -67,6 +67,7 @@ export async function ingestPdf(db: Db, store: FileStore, actor: Actor, input: {
           originalDriveVersion: drive?.revision ?? null,
           metadata: {
             ...(input.batchId ? { batchId: input.batchId } : {}),
+            ...(input.batchLabel ? { batchLabel: input.batchLabel } : {}),
             mime: "application/pdf",
             storageKind: drive ? "drive" : store.kind,
             storageRef: pdfRef,

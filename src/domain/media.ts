@@ -49,6 +49,8 @@ export interface UploadInput {
   drive?: DriveSource;
   /** Files sent together share one batch id, so the details given once can be applied to all of them. */
   batchId?: string | null;
+  /** How the set is named in Review, e.g. "Drive: Aircraft Media / Metrojet / B-KXX". */
+  batchLabel?: string | null;
 }
 
 export const ensureImageBytes = async (bytes: Uint8Array) => {
@@ -99,7 +101,7 @@ export async function ingestUpload(db: Db, store: FileStore, actor: Actor, input
           senderId: actor.id,
           originalText: input.cardText?.trim() || null,
           contentHash: hash,
-          metadata: { mime, uploadedVia: drive ? "drive-import" : "web", ...(input.batchId ? { batchId: input.batchId } : {}), ...(view.reason ? { autoView: view.classification, autoViewReason: view.reason } : {}) },
+          metadata: { mime, uploadedVia: drive ? "drive-import" : "web", ...(input.batchId ? { batchId: input.batchId } : {}), ...(input.batchLabel ? { batchLabel: input.batchLabel } : {}), ...(view.reason ? { autoView: view.classification, autoViewReason: view.reason } : {}) },
         })
         .returning({ id: sourceEvidence.id });
       const [media] = await tx
@@ -657,51 +659,81 @@ export interface SiblingPhoto {
   autoReason: string | null;
 }
 
+export interface WaitingGroup {
+  /** Stable while the group exists: the id of its first photo. */
+  key: string;
+  photos: (SiblingPhoto & { receivedAt: Date })[];
+  /** The card text sent with these photos (from the photo, or from the PDF it came out of). */
+  evidenceText: string | null;
+  /** The aircraft or type a photo in the group is already linked to, if any. */
+  associatedAircraftId: string | null;
+  /** Where the set came from, when known ("Drive: Aircraft Media / Metrojet"). */
+  label: string | null;
+}
+
 /**
- * Other photos still waiting in Review that came with this one: the same upload (or Chocks message), the same PDF,
- * or the same card text from the same person. They carry the same source evidence, so they can be assigned together.
+ * Every photo waiting in Review, grouped by how it arrived: the same upload (or Chocks message), the same PDF,
+ * or the same card text from the same person. A group carries one source evidence, so it is assigned in one go.
+ * Newest group first.
  */
-export async function findUploadSiblings(db: Q, tenantId: string, mediaId: string): Promise<SiblingPhoto[]> {
-  const [me] = await db
-    .select({ m: aircraftMedia, ev: sourceEvidence })
-    .from(aircraftMedia)
-    .innerJoin(sourceEvidence, eq(sourceEvidence.id, aircraftMedia.createdSourceEvidenceId))
-    .where(and(eq(aircraftMedia.id, mediaId), eq(aircraftMedia.tenantId, tenantId)));
-  if (!me) return [];
-  const batchId = (me.ev.metadata as { batchId?: string } | null)?.batchId ?? null;
-  const parent = me.ev.parentEvidenceId;
-  const text = me.ev.originalText?.trim() || null;
-  if (!batchId && !parent && !text) return [];
+export async function listWaitingGroups(db: Q, tenantId: string): Promise<WaitingGroup[]> {
   const rows = await db
-    .select({ m: aircraftMedia, ev: sourceEvidence })
+    .select({ m: aircraftMedia, ev: sourceEvidence, a: mediaAssociations })
     .from(aircraftMedia)
     .innerJoin(sourceEvidence, eq(sourceEvidence.id, aircraftMedia.createdSourceEvidenceId))
+    .leftJoin(mediaAssociations, and(eq(mediaAssociations.aircraftMediaId, aircraftMedia.id), eq(mediaAssociations.active, true)))
     .where(and(eq(aircraftMedia.tenantId, tenantId), eq(aircraftMedia.reviewState, "needs_review"), eq(aircraftMedia.lifecycleState, "active")))
     .orderBy(asc(aircraftMedia.createdAt));
-  // A PDF's photos point at the PDF's evidence, which carries the batch id.
-  const parentBatch = new Map<string, string | null>();
+  // A PDF's photos point at the PDF's evidence, which carries the batch id and the card text.
+  const parents = new Map<string, { batchId: string | null; text: string | null; label: string | null }>();
   for (const r of rows) {
-    if (r.ev.parentEvidenceId && !parentBatch.has(r.ev.parentEvidenceId)) {
-      const [p] = await db.select({ metadata: sourceEvidence.metadata }).from(sourceEvidence).where(and(eq(sourceEvidence.id, r.ev.parentEvidenceId), eq(sourceEvidence.tenantId, tenantId)));
-      parentBatch.set(r.ev.parentEvidenceId, (p?.metadata as { batchId?: string } | undefined)?.batchId ?? null);
+    const pid = r.ev.parentEvidenceId;
+    if (pid && !parents.has(pid)) {
+      const [p] = await db.select().from(sourceEvidence).where(and(eq(sourceEvidence.id, pid), eq(sourceEvidence.tenantId, tenantId)));
+      const meta = p?.metadata as { batchId?: string; batchLabel?: string } | undefined;
+      parents.set(pid, { batchId: meta?.batchId ?? null, text: p?.originalText?.trim() || null, label: meta?.batchLabel ?? null });
     }
   }
-  const batchOf = (ev: typeof sourceEvidence.$inferSelect) =>
-    (ev.metadata as { batchId?: string } | null)?.batchId ?? (ev.parentEvidenceId ? parentBatch.get(ev.parentEvidenceId) ?? null : null);
-  const myBatch = batchId ?? (parent ? parentBatch.get(parent) ?? null : null);
-  return rows
-    .filter((r) => r.m.id !== mediaId)
-    .filter(
-      (r) =>
-        (myBatch && batchOf(r.ev) === myBatch) ||
-        (parent && r.ev.parentEvidenceId === parent) ||
-        (text && r.ev.originalText?.trim() === text && r.ev.senderId === me.ev.senderId),
-    )
-    .map((r) => ({
+  // Join photos that share any key (union-find), so "same upload" and "same card text" both hold a group together.
+  const parent = rows.map((_, i) => i);
+  const find = (i: number): number => (parent[i] === i ? i : (parent[i] = find(parent[i])));
+  const seen = new Map<string, number>();
+  rows.forEach((r, i) => {
+    const pid = r.ev.parentEvidenceId;
+    const batch = (r.ev.metadata as { batchId?: string } | null)?.batchId ?? (pid ? parents.get(pid)?.batchId ?? null : null);
+    const text = r.ev.originalText?.trim() || null;
+    const keys = [batch && `b:${batch}`, pid && `p:${pid}`, text && `t:${r.ev.senderId}:${text}`].filter(Boolean) as string[];
+    for (const k of keys) {
+      const j = seen.get(k);
+      if (j === undefined) seen.set(k, i);
+      else parent[find(i)] = find(j);
+    }
+  });
+  const groups = new Map<number, WaitingGroup>();
+  rows.forEach((r, i) => {
+    const root = find(i);
+    let g = groups.get(root);
+    if (!g) {
+      g = { key: r.m.id, photos: [], evidenceText: null, associatedAircraftId: null, label: null };
+      groups.set(root, g);
+    }
+    g.photos.push({
       mediaId: r.m.id,
       contentVersionId: r.m.currentContentVersionId,
       filename: r.ev.originalFilename,
       classification: r.m.primaryClassification,
       autoReason: (r.ev.metadata as { autoViewReason?: string } | null)?.autoViewReason ?? null,
-    }));
+      receivedAt: r.m.createdAt,
+    });
+    g.evidenceText ??= r.ev.originalText?.trim() || (r.ev.parentEvidenceId ? parents.get(r.ev.parentEvidenceId)?.text ?? null : null);
+    g.associatedAircraftId ??= r.a?.aircraftId ?? null;
+    g.label ??= (r.ev.metadata as { batchLabel?: string } | null)?.batchLabel ?? (r.ev.parentEvidenceId ? parents.get(r.ev.parentEvidenceId)?.label ?? null : null);
+  });
+  return [...groups.values()].reverse();
+}
+
+/** Other photos still waiting in Review that came with this one (see listWaitingGroups). */
+export async function findUploadSiblings(db: Q, tenantId: string, mediaId: string): Promise<SiblingPhoto[]> {
+  const g = (await listWaitingGroups(db, tenantId)).find((x) => x.photos.some((p) => p.mediaId === mediaId));
+  return (g?.photos ?? []).filter((p) => p.mediaId !== mediaId).map(({ receivedAt: _r, ...p }) => p);
 }

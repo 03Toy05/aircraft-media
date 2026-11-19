@@ -9,7 +9,7 @@ import { StorageRouter } from "../src/storage";
 import { importDriveFolder, parseFolderRef } from "../src/domain/driveImport";
 import { aircraftMedia, driveSyncState, mediaContentVersions, sourceEvidence } from "../src/db/schema";
 import { createAircraft, createAircraftType } from "../src/domain/directory";
-import { approveMedia, readContentBytes, setMediaAssociation, updateMediaMetadata } from "../src/domain/media";
+import { approveMedia, listWaitingGroups, readContentBytes, setMediaAssociation, updateMediaMetadata } from "../src/domain/media";
 import { getCatalogue } from "../src/domain/catalogue";
 
 let t: Awaited<ReturnType<typeof setup>>;
@@ -101,6 +101,15 @@ describe("Drive import (mocked Drive API)", () => {
     expect(retry).toMatchObject({ imported: 1, alreadyImported: 3, failed: 0 });
     expect(drive.downloads.length - downloadsBefore).toBe(1);
     expect(await t.db.select().from(aircraftMedia)).toHaveLength(4);
+  });
+
+  it("puts each Drive folder's photos in Review as one named set", async () => {
+    const s = await importDriveFolder(t.db, drive.client(), store, t.actor, inbox);
+    const fromPdf = s.items.find((i) => i.name === "brochure.pdf")!.mediaIds!.length;
+    const groups = await listWaitingGroups(t.db, t.actor.tenantId);
+    const byLabel = Object.fromEntries(groups.map((g) => [g.label, g.photos.length]));
+    // Inbox: a.png, b.png and the brochure's photos; Inbox / Gulfstream: c.png.
+    expect(byLabel).toEqual({ "Drive: Inbox": 2 + fromPdf, "Drive: Inbox / Gulfstream": 1 });
   });
 
   it("refuses folders outside the Aircraft Media root and bad references", async () => {

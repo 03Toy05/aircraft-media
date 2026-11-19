@@ -68,7 +68,8 @@ export async function importDriveFolder(
   const summary: DriveImportSummary = { folderId, folderName: folder.name, imported: 0, alreadyImported: 0, unsupported: 0, failed: 0, truncated: false, items: [] };
   let handled = 0;
 
-  const walk = async (id: string, depth: number): Promise<void> => {
+  // Each Drive folder is one set in Review (photos of one aircraft usually sit in one folder).
+  const walk = async (id: string, depth: number, path: string): Promise<void> => {
     let children: DriveFile[];
     try {
       children = await client.listChildren(id);
@@ -80,7 +81,7 @@ export async function importDriveFolder(
     for (const f of children) {
       if (summary.truncated) return;
       if (f.mimeType === FOLDER_MIME) {
-        if (depth < MAX_DEPTH) await walk(f.id, depth + 1);
+        if (depth < MAX_DEPTH) await walk(f.id, depth + 1, `${path} / ${f.name}`);
         continue;
       }
       const isImage = (ALLOWED_IMAGE_MIME as readonly string[]).includes(f.mimeType);
@@ -108,12 +109,13 @@ export async function importDriveFolder(
       try {
         const bytes = await client.download(f.id);
         const drive = { fileId: f.id, revision };
+        const set = { batchId: `drive:${id}`, batchLabel: `Drive: ${path}` };
         if (isPdf) {
-          const r = await ingestPdf(db, store, actor, { filename: f.name, bytes, drive });
+          const r = await ingestPdf(db, store, actor, { filename: f.name, bytes, drive, ...set });
           summary.imported++;
           summary.items.push({ fileId: f.id, name: f.name, outcome: "imported", mediaIds: r.result.extracted.map((x) => x.mediaId), error: r.result.skipped.length ? `${r.result.skipped.length} embedded image(s) skipped` : r.result.status === "no_images" ? "no embedded photos found" : undefined });
         } else {
-          const r = await ingestUpload(db, store, actor, { filename: f.name, bytes, drive });
+          const r = await ingestUpload(db, store, actor, { filename: f.name, bytes, drive, ...set });
           summary.imported++;
           summary.items.push({ fileId: f.id, name: f.name, outcome: "imported", mediaIds: [r.result.mediaId] });
         }
@@ -123,7 +125,7 @@ export async function importDriveFolder(
       }
     }
   };
-  await walk(folderId, 0);
+  await walk(folderId, 0, folder.name);
 
   await db
     .insert(driveSyncState)

@@ -242,3 +242,16 @@ fieldset.views .sibling { grid-template-columns: 22px 56px minmax(0, 1fr) auto; 
   fieldset.views .view-btn { flex: 1; justify-content: center; }
   fieldset.views .view-btn span { width: 100%; justify-content: center; }
 }
+
+/* Review worksheet: one card per set of photos sent together */
+.sheet-group { scroll-margin-top: 12px; }
+.sheet-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.sheet-head h3 { margin: 0; }
+.sheet-group pre.cardtext { margin: 6px 0; max-height: 120px; overflow: auto; }
+.sheet-body { display: grid; gap: 4px 18px; grid-template-columns: minmax(0, 1fr); }
+@media (min-width: 900px) { .sheet-body { grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); align-items: start; } }
+.sheet-fields .row { gap: 8px; }
+.sheet-save { display: flex; justify-content: flex-end; margin-top: 10px; }
+.sheet-save button { min-width: 200px; }
+@media (max-width: 640px) { .sheet-save button { width: 100%; } }
+.saved-list ul { margin: 4px 0 0; padding-left: 18px; }

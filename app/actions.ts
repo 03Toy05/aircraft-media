@@ -5,12 +5,13 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { getDb } from "@/db/client";
 import { getDriveClient, getFileStore } from "@/storage";
-import { importDriveFolder } from "@/domain/driveImport";
+import { importDriveFolder, type DriveImportSummary } from "@/domain/driveImport";
 import { ingestPdf } from "@/domain/intake";
 import { cookies, headers } from "next/headers";
 import { VIEW_AS_COOKIE, requireAdmin, requireUser, requireWriter } from "@/lib/session";
 import * as accounts from "@/domain/accounts";
 import { DomainError } from "@/domain/errors";
+import type { Actor } from "@/domain/action";
 import * as dir from "@/domain/directory";
 import * as contacts from "@/domain/contacts";
 import * as quoteTemplates from "@/domain/quoteTemplates";
@@ -108,10 +109,10 @@ export async function uploadMediaAction(fd: FormData) {
     }
   }
   revalidatePath("/", "layout");
-  // All went in: go straight to the first photo, where the scanned views of the whole upload are waiting to be checked.
+  // All went in: go straight to the Review worksheet, where this upload is the newest set, its views already scanned.
   const fresh = results.filter((r) => r.status === "new" && r.mediaId);
   if (fresh.length && results.every((r) => r.status === "new" || r.status === "duplicate")) {
-    redirect(withParam(`/review/${fresh[0].mediaId}`, "ok", `${fresh.length} photo${fresh.length === 1 ? "" : "s"} uploaded and scanned. Check the views, choose the aircraft, then approve.`));
+    redirect(withParam("/review", "ok", `${fresh.length} photo${fresh.length === 1 ? "" : "s"} uploaded and scanned. Check the views and details of each set, then save it.`));
   }
   redirect(withParam("/intake", "r", JSON.stringify(results)));
 }
@@ -133,6 +134,12 @@ export async function driveImportAction(fd: FormData) {
   }
   revalidatePath("/", "layout");
   if (error) redirect(withParam("/intake", "error", error));
+  // New photos and nothing failed: go to Review, where each Drive folder is one set with its views already scanned.
+  const s = summary as DriveImportSummary;
+  if (s.imported > 0 && s.failed === 0) {
+    const more = s.truncated ? " More files remain: run the import again to continue." : "";
+    redirect(withParam("/review", "ok", `${s.imported} file${s.imported === 1 ? "" : "s"} imported from Drive (“${s.folderName ?? "folder"}”) and scanned. Each folder is one set below.${more}`));
+  }
   redirect(withParam("/intake", "d", JSON.stringify(summary)));
 }
 
@@ -444,9 +451,15 @@ export async function cropAction(fd: FormData) {
   await run(`/review/${id}`, "Crop applied as a new version", () => media.recropMedia(db, store, actor, input));
 }
 
-/** Review page: assign one photo to an operator and aircraft (and save the details), then approve it. */
-export async function assignPhotoAction(fd: FormData) {
-  const { actor, db } = await ctx();
+export interface AssignOutcome {
+  ok: boolean;
+  message: string;
+  /** Photos that were approved by this save. */
+  approvedIds: string[];
+}
+
+/** Shared by both Review pages: assign the ticked photos to an operator and aircraft, save the details, approve. */
+async function assignFromForm(actor: Actor, db: Awaited<ReturnType<typeof getDb>>, fd: FormData): Promise<AssignOutcome> {
   const mediaId = str(fd, "mediaId");
   const operatorChoice = str(fd, "operator"); // "", "new" or an organisation id
   const aircraftChoice = str(fd, "aircraft"); // "new", "none" or an aircraft id
@@ -456,13 +469,14 @@ export async function assignPhotoAction(fd: FormData) {
   const asClass = (v: string): Classification => (CLASSIFICATIONS.includes(v as Classification) ? (v as Classification) : "unclassified");
   // The other photos sent with this one (same source evidence) that the owner kept ticked, each with its own view.
   const also = [...new Set(fd.getAll("also").map(String).filter((x) => /^[0-9a-f-]{36}$/.test(x) && x !== mediaId))];
-  const classifications: Record<string, Classification> = { [mediaId]: asClass(str(fd, "classification")) };
+  const ids = [...(mediaId ? [mediaId] : []), ...also];
+  if (!ids.length) return { ok: false, message: "Tick at least one photo.", approvedIds: [] };
+  const classifications: Record<string, Classification> = {};
+  if (mediaId) classifications[mediaId] = asClass(str(fd, "classification"));
   for (const id of also) classifications[id] = asClass(str(fd, `cls_${id}`));
-  let message = "";
-  let approved = false;
   try {
     const r = await applyChatProposal(db, actor, key(fd), {
-      mediaIds: [mediaId, ...also],
+      mediaIds: ids,
       classifications,
       operatorId: operatorChoice && operatorChoice !== "new" ? operatorChoice : null,
       newOperatorName: operatorChoice === "new" ? str(fd, "newOperatorName") : null,
@@ -474,15 +488,36 @@ export async function assignPhotoAction(fd: FormData) {
     // One line per outcome ("3 photos approved as this aircraft"), not one per photo.
     const tally = new Map<string, number>();
     for (const p of r.photos) tally.set(p.detail, (tally.get(p.detail) ?? 0) + 1);
-    message = [...r.steps, ...[...tally].map(([detail, n]) => (n === 1 ? `Photo ${detail}` : `${n} photos ${detail}`))].join(". ");
-    approved = r.photos.every((p) => p.outcome === "approved");
+    const message = [...r.steps, ...[...tally].map(([detail, n]) => (n === 1 ? `Photo ${detail}` : `${n} photos ${detail}`))].join(". ");
+    const approvedIds = r.photos.filter((p) => p.outcome === "approved").map((p) => p.mediaId);
+    return { ok: approvedIds.length === ids.length, message: message || "Saved", approvedIds };
   } catch (e) {
-    if (e instanceof DomainError) message = e.message;
-    else throw e;
+    if (e instanceof DomainError) return { ok: false, message: e.message, approvedIds: [] };
+    throw e;
   }
+}
+
+/** Review page for one photo: assign it (and the ticked photos sent with it), then go back to the queue. */
+export async function assignPhotoAction(fd: FormData) {
+  const { actor, db } = await ctx();
+  const r = await assignFromForm(actor, db, fd);
   revalidatePath("/", "layout");
-  if (approved) redirect(withParam("/review", "ok", message || "Photo assigned and approved"));
-  redirect(withParam(`/review/${mediaId}`, "error", message || "Nothing was saved"));
+  if (r.ok) redirect(withParam("/review", "ok", r.message));
+  redirect(withParam(`/review/${str(fd, "mediaId")}`, "error", r.message || "Nothing was saved"));
+}
+
+/** Review worksheet: save one group and stay on the page. Returns what happened instead of navigating. */
+export async function assignGroupAction(fd: FormData): Promise<AssignOutcome> {
+  let actor: Actor;
+  try {
+    ({ actor } = await requireWriter());
+  } catch (e) {
+    if (e instanceof DomainError) return { ok: false, message: e.message, approvedIds: [] };
+    throw e;
+  }
+  const r = await assignFromForm(actor, await getDb(), fd);
+  revalidatePath("/", "layout");
+  return r;
 }
 
 // ------------------------------------------------------------------ settings
