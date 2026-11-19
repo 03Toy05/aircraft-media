@@ -6,7 +6,7 @@
   :root { --bg: #12161c; --card: #1a2029; --text: #e6eaf0; --muted: #98a4b3; --line: #2b3441; --accent: #6ea2f0; --ok: #5fc58a; --warn: #e0a24a; --bad: #f08a83; }
 }
 * { box-sizing: border-box; }
-body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
 a { color: var(--accent); text-decoration: none; } a:hover { text-decoration: underline; }
 nav.top { display: flex; gap: 4px; align-items: center; flex-wrap: wrap; padding: 10px 16px; background: var(--card); border-bottom: 1px solid var(--line); }
 nav.top a { padding: 6px 10px; border-radius: 6px; color: var(--text); }
@@ -14,15 +14,16 @@ nav.top a:hover { background: var(--bg); text-decoration: none; }
 nav.top .brand { font-weight: 700; margin-right: 12px; }
 nav.top .spacer { flex: 1; }
 main { max-width: 1180px; margin: 0 auto; padding: 20px 16px 60px; }
-h1 { font-size: 22px; margin: 0 0 14px; } h2 { font-size: 17px; margin: 22px 0 8px; } h3 { font-size: 15px; margin: 0 0 8px; }
+h1 { font-size: 20px; margin: 0 0 12px; } h2 { font-size: 16px; margin: 20px 0 8px; } h3 { font-size: 14px; margin: 0 0 8px; }
 .card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; margin-bottom: 14px; }
 .grid { display: grid; gap: 14px; } .g2 { grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); } .g4 { grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); }
 .stat b { font-size: 26px; display: block; } .muted { color: var(--muted); } .small { font-size: 13px; }
-label { display: block; font-size: 13px; color: var(--muted); margin: 8px 0 3px; }
-input, select, textarea { width: 100%; padding: 7px 9px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--text); font: inherit; }
+label { display: block; font-size: 12.5px; color: var(--muted); margin: 8px 0 3px; }
+input, select, textarea { width: 100%; padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--text); font: inherit; font-size: 14px; }
+input:not([type=checkbox]):not([type=radio]), select { min-height: 34px; }
 input[type=checkbox], input[type=radio] { width: auto; } textarea { min-height: 80px; }
 .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: end; } .row > * { flex: 1; min-width: 120px; }
-button, .btn { display: inline-block; padding: 7px 14px; border-radius: 6px; border: 1px solid var(--accent); background: var(--accent); color: #fff; font: inherit; cursor: pointer; }
+button, .btn { display: inline-block; padding: 6px 12px; border-radius: 6px; border: 1px solid var(--accent); background: var(--accent); color: #fff; font: inherit; cursor: pointer; }
 button.secondary, a.btn.secondary { background: transparent; color: var(--accent); } button.danger { background: var(--bad); border-color: var(--bad); }
 table { width: 100%; border-collapse: collapse; font-size: 14px; } th, td { padding: 7px 8px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
 th { color: var(--muted); font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: .03em; }
@@ -64,6 +65,8 @@ textarea { resize: vertical; max-width: 100%; }
 button.small-btn { padding: 2px 10px; flex: 0 0 auto; }
 button.linklike { background: none; border: 0; padding: 0; color: var(--accent); cursor: pointer; font: inherit; min-height: 0; display: inline; }
 .textbox { width: 100%; }
+textarea { min-height: 0; }
+.group-row.field textarea { min-height: 38px; }
 .textbox textarea, .textbox input { width: 100%; display: block; }
 .fmt-bar { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 6px; }
 .fmt-bar button { min-width: 36px; min-height: 34px; padding: 2px 10px; justify-content: center; background: var(--card); color: var(--text); border: 1px solid var(--line); }
@@ -85,6 +88,39 @@ button.linklike { background: none; border: 0; padding: 0; color: var(--accent);
 .voice-bubble { position: fixed; right: 16px; bottom: 86px; z-index: 36; width: min(360px, calc(100vw - 32px)); box-shadow: 0 8px 30px rgba(0, 0, 0, .25); }
 .apps .dot { width: 20px; height: 20px; border-radius: 50%; color: #fff; font-size: 11px; font-weight: 700; display: inline-flex; align-items: center; justify-content: center; }
 
+/* Grouped rows (like a phone's Settings app): one rounded box, a row per setting, switches on the right. */
+.group-title { font-size: 11px; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); margin: 12px 2px 4px; }
+.group { border: 1px solid var(--line); border-radius: 10px; background: var(--card); overflow: hidden; }
+.group-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 6px 12px; min-height: 42px; border-top: 1px solid var(--line); margin: 0; color: var(--text); font-size: inherit; }
+.group-row:first-child { border-top: 0; }
+.group-row > select { width: auto; max-width: 60%; border: 0; background: transparent; text-align: right; color: var(--muted); padding-right: 0; min-height: 0; }
+.group-row.field { display: grid; grid-template-columns: 92px minmax(0, 1fr); align-items: start; padding: 8px 12px; }
+.group-row.field > span { padding-top: 7px; color: var(--muted); font-size: 13px; }
+input.switch { appearance: none; -webkit-appearance: none; width: 40px !important; height: 24px !important; border-radius: 12px; background: var(--line); border: 0; position: relative; cursor: pointer; flex: 0 0 auto; padding: 0; margin: 0; transition: background .15s; }
+input.switch::after { content: ""; position: absolute; top: 3px; left: 3px; width: 18px; height: 18px; border-radius: 50%; background: #fff; transition: left .15s; box-shadow: 0 1px 2px rgba(0, 0, 0, .25); }
+input.switch:checked { background: var(--accent); }
+input.switch:checked::after { left: 19px; }
+button.block-btn { width: 100%; justify-content: center; min-height: 42px; font-weight: 600; }
+.chip.small { min-height: 0; padding: 4px 12px; font-size: 13px; }
+
+/* Quote: steps fold to a one-line summary; a bar at the bottom jumps to the message; on laptops the message stays in view. */
+.step > summary { list-style: none; cursor: pointer; display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.step > summary::-webkit-details-marker { display: none; }
+.step > summary h3 { margin: 0; }
+.step > summary .sum { color: var(--muted); font-size: 13px; text-align: right; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.step[open] > summary { margin-bottom: 8px; }
+.step > summary::after { content: "▾"; color: var(--muted); margin-left: 4px; }
+.step:not([open]) > summary::after { content: "▸"; }
+.quote-bar { display: none; }
+@media (min-width: 900px) {
+  .quote-right { position: sticky; top: 12px; max-height: calc(100vh - 24px); overflow: auto; }
+  /* Laptop forms: the label beside its field, controls on one left edge. */
+  :is(.card form, form.card):not(.row):has(> label + :is(input, select, textarea, .textbox)) { display: grid; grid-template-columns: 170px minmax(0, 1fr); gap: 8px 14px; align-items: center; }
+  :is(.card form, form.card):not(.row):has(> label + :is(input, select, textarea, .textbox)) > * { grid-column: 2; margin-top: 0; margin-bottom: 0; }
+  :is(.card form, form.card):not(.row):has(> label + :is(input, select, textarea, .textbox)) > label:has(+ :is(input, select, textarea, .textbox)) { grid-column: 1; text-align: right; }
+  :is(.card form, form.card):not(.row):has(> label + :is(input, select, textarea, .textbox)) > input[type=hidden] { display: none; }
+}
+
 /* ---------------------------------------------------------------- phones */
 .bottom-nav, .sheet, .sheet-backdrop { display: none; }
 .composer { position: sticky; bottom: 8px; z-index: 5; }
@@ -96,7 +132,7 @@ details.collapse > summary::-webkit-details-marker { display: none; }
 details.collapse[open] > summary { margin-bottom: 8px; }
 
 @media (max-width: 720px) {
-  body { font-size: 16px; padding-bottom: 0; }
+  body { font-size: 15px; padding-bottom: 0; }
   /* top bar: just the name; the bottom bar does the navigating */
   nav.top { padding: 8px 12px; flex-wrap: nowrap; position: sticky; top: 0; z-index: 20; padding-top: calc(8px + env(safe-area-inset-top)); }
   nav.top > a, nav.top > .spacer, nav.top > span.muted, nav.top > form { display: none; }
@@ -106,19 +142,34 @@ details.collapse[open] > summary { margin-bottom: 8px; }
   .card { padding: 12px; margin-bottom: 12px; }
   .dash { gap: 0; }
 
-  /* comfortable touch targets, and no zoom-on-focus on iPhones (inputs must be at least 16px) */
-  input, select, textarea { font-size: 16px; padding: 10px 10px; min-height: 44px; }
-  input[type=checkbox], input[type=radio] { min-height: 0; width: 20px; height: 20px; }
-  button, .btn { min-height: 44px; padding: 8px 14px; }
+  /* compact but still easy to tap (40px) */
+  input, select, textarea { font-size: 15px; padding: 8px 10px; }
+  input:not([type=checkbox]):not([type=radio]), select { min-height: 40px; }
+  input[type=checkbox], input[type=radio] { min-height: 0; width: 18px; height: 18px; }
+  button, .btn { min-height: 40px; padding: 6px 12px; }
   .row { gap: 8px; } .row > * { min-width: 140px; }
-  label { font-size: 14px; }
-  .apps .app { padding: 10px 12px; min-height: 44px; }
-  .chip { min-height: 44px; padding: 8px 14px; }
+  label { font-size: 13px; }
+  .apps .app { padding: 8px 12px; min-height: 40px; }
+  .chip { min-height: 36px; padding: 5px 12px; font-size: 14px; }
+  @supports (-webkit-touch-callout: none) { input, select, textarea { font-size: 16px; } } /* iPhones zoom into smaller boxes */
+  .qa-card { display: none; } /* the welcome buttons in Chocks already cover these */
+
+  /* tables become stacked rows; each value carries its column name (see TableLabels) */
+  table.stackable thead { display: none; }
+  table.stackable, table.stackable tbody, table.stackable tr { display: block; }
+  table.stackable tr { padding: 8px 0; border-bottom: 1px solid var(--line); }
+  table.stackable td { display: inline; border: 0; padding: 0 10px 0 0; }
+  table.stackable td[data-label]:not([data-label=""])::before { content: attr(data-label) " "; color: var(--muted); font-size: 12px; }
+  table.stackable td:first-child { display: block; font-weight: 600; padding-bottom: 2px; }
   .welcome-actions { display: grid; grid-template-columns: 1fr; }
   .welcome-actions .btn, .welcome-actions button { justify-content: center; min-height: 48px; }
   .ac-pick { max-height: none; }
-  .voice-fab { bottom: calc(76px + env(safe-area-inset-bottom)); right: 12px; }
-  .voice-bubble { bottom: calc(142px + env(safe-area-inset-bottom)); right: 12px; }
+  .voice-fab { display: none; } /* on phones the microphone sits in the middle of the bottom bar */
+  .voice-bubble { bottom: calc(72px + env(safe-area-inset-bottom)); right: 12px; left: 12px; width: auto; }
+  .bottom-nav .mic-tab { flex: 0 0 64px; }
+  .bottom-nav .mic-tab .mic-dot { width: 48px; height: 48px; border-radius: 50%; background: var(--accent); color: #fff; display: flex; align-items: center; justify-content: center; margin-top: -14px; box-shadow: 0 3px 10px rgba(0, 0, 0, .25); }
+  .bottom-nav .mic-tab.on .mic-dot { background: var(--bad); }
+  .quote-bar { display: flex; position: sticky; bottom: calc(66px + env(safe-area-inset-bottom)); z-index: 6; gap: 8px; align-items: center; justify-content: space-between; background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 8px 8px 8px 14px; box-shadow: 0 -2px 12px rgba(0, 0, 0, .12); margin: 0 0 12px; }
   .fmt-bar button { min-height: 40px; min-width: 42px; }
   .logo-app { width: 52px; height: 52px; }
   .op-row .op-name { min-height: 48px; align-items: center; }
@@ -129,7 +180,7 @@ details.collapse[open] > summary { margin-bottom: 8px; }
   /* photos: three to a row, whatever the screen */
   .thumbs { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); }
   .thumbs img { width: 100% !important; height: 84px !important; }
-  table { display: block; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  table:not(.stackable) { display: block; overflow-x: auto; -webkit-overflow-scrolling: touch; }
 
   /* the message box sits just above the bottom bar */
   .composer { bottom: calc(66px + env(safe-area-inset-bottom)); box-shadow: 0 -4px 14px rgba(0, 0, 0, .12); margin-bottom: 8px; }
@@ -155,3 +206,5 @@ details.collapse[open] > summary { margin-bottom: 8px; }
   .sheet a { display: flex; align-items: center; padding: 12px; border-radius: 10px; color: var(--text); min-height: 48px; }
   .sheet a:active { background: var(--bg); }
 }
+details.collapse > summary.small::after { content: "▸"; color: var(--muted); margin-left: 6px; }
+details.collapse[open] > summary.small::after { content: "▾"; }

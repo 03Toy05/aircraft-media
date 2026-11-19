@@ -30,7 +30,7 @@ export default async function Dashboard() {
         <ChatClient />
       </div>
       <aside style={{ minWidth: 0 }}>
-        <div className="card">
+        <div className="card qa-card">
           <h3>Quick actions</h3>
           <div className="qa" style={{ display: "grid", gap: 8 }}>
             <Link className="btn" href="/review"><Icon name="review" />Review photos{needsReview > 0 ? ` (${needsReview})` : ""}</Link>

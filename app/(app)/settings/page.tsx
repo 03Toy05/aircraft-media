@@ -76,8 +76,8 @@ export default async function Settings({ searchParams }: { searchParams: SP }) {
             <div style={{ flex: "0 0 auto" }}><button type="submit">Add</button></div>
           </form>
         </div>
-        <div className="card">
-          <h3>Action history</h3>
+        <details className="card collapse">
+          <summary>Advanced: action history</summary>
           <div style={{ maxHeight: 320, overflow: "auto" }}>
             <table>
               <thead><tr><th>When</th><th>Action</th><th>Result</th></tr></thead>
@@ -86,7 +86,7 @@ export default async function Settings({ searchParams }: { searchParams: SP }) {
               ))}</tbody>
             </table>
           </div>
-        </div>
+        </details>
       </div>
     </>
   );

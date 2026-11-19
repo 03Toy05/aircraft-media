@@ -7,6 +7,7 @@ import { signOutAction } from "../actions";
 import Icon from "../_components/Icon";
 import MobileNav from "../_components/MobileNav";
 import VoiceCommand from "../_components/VoiceCommand";
+import TableLabels from "../_components/TableLabels";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const { email, actor } = await requireOwner(); // redirects to /login unless the owner is signed in
@@ -34,6 +35,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       </nav>
       <main>{children}</main>
       <VoiceCommand />
+      <TableLabels />
       <MobileNav email={email} signOut={signOutAction} />
     </>
   );

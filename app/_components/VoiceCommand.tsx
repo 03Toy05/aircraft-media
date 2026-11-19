@@ -21,6 +21,15 @@ export default function VoiceCommand() {
   useEffect(() => setCan(!!getRecognition()), []);
   useEffect(() => { stop.current?.(); setState("idle"); }, [path]);
 
+  // The phone's bottom bar has the microphone button; it asks for this through an event.
+  const startRef = useRef<() => void>(() => {});
+  useEffect(() => {
+    const on = () => { if (path !== "/") startRef.current(); };
+    window.addEventListener("chocks:mic", on);
+    return () => window.removeEventListener("chocks:mic", on);
+  }, [path]);
+  useEffect(() => { window.dispatchEvent(new CustomEvent("chocks:listening", { detail: state === "listening" })); }, [state]);
+
   if (!can || path === "/") return null; // Chocks's own page has its microphone in the message box
 
   const run = (text: string) => {
@@ -38,6 +47,7 @@ export default function VoiceCommand() {
     stop.current = listen({ silenceMs: 2500, onText: setHeard, onEnd: (t) => { stop.current = null; run(t); }, onError: setErr });
   };
 
+  startRef.current = start;
   return (
     <>
       {state !== "idle" && (

@@ -72,6 +72,9 @@ export default function QuoteBuilder({ aircraft, operators, preferred: preferred
   const [withAircraft, setWithAircraft] = useState(true);
   const [starMsg, setStarMsg] = useState<string | null>(null);
   const shareBtn = useRef<HTMLButtonElement>(null);
+  const messageRef = useRef<HTMLDivElement>(null);
+  // Steps fold to a one-line summary. Steps 1 and 2 start folded when Chocks already chose the aircraft.
+  const [steps, setSteps] = useState({ op: initialIds.length === 0, ac: true, lang: false });
 
   const opById = useMemo(() => new Map(operators.map((o) => [o.id, o])), [operators]);
   const preferredOps = preferred.map((id) => opById.get(id)).filter((o): o is QuoteOperator => !!o);
@@ -227,43 +230,57 @@ export default function QuoteBuilder({ aircraft, operators, preferred: preferred
     </button>
   );
 
+  const stepProps = (k: keyof typeof steps) => ({
+    open: steps[k],
+    onToggle: (e: React.SyntheticEvent<HTMLDetailsElement>) => { const o = e.currentTarget.open; setSteps((s) => (s[k] === o ? s : { ...s, [k]: o })); },
+  });
+  const toMessage = () => {
+    setSteps({ op: false, ac: false, lang: false });
+    setTimeout(() => messageRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 50);
+  };
+  const shownToggles: [keyof typeof inc, string][] = [["operator", "Operator"], ["tail", "Tail"], ["base", "Base"], ["notes", "Notes"]];
+
   return (
     <div className="grid g2" style={{ alignItems: "start" }}>
       <div>
-        <div className="card">
-          <h3>1. Operator</h3>
+        <details className="card step" {...stepProps("op")}>
+          <summary><h3>1. Operator</h3><span className="sum">{opId ? opById.get(opId)?.name : "All operators"}</span></summary>
           <TextBox single styles={false} value={search} onChange={setSearch} placeholder="Search operator, type or tail" ariaLabel="Search operators and aircraft" />
           {preferredOps.length > 0 && (
             <>
-              <p className="small muted" style={{ margin: "10px 0 4px" }}>Preferred</p>
+              <div className="group-title">Preferred</div>
               <div className="chips">{preferredOps.map((o) => opChip(o, true))}</div>
             </>
           )}
           {recentOps.length > 0 && (
             <>
-              <p className="small muted" style={{ margin: "10px 0 4px" }}>Recently added</p>
+              <div className="group-title">Recently added</div>
               <div className="chips">{recentOps.map((o) => opChip(o, false))}</div>
             </>
           )}
           {opId && <p className="small" style={{ margin: "8px 0 0" }}>Showing {opById.get(opId)?.name}. <button type="button" className="linklike" onClick={() => setOpId("")}>Show all operators</button></p>}
           <details className="collapse" style={{ marginTop: 10 }} open={q.length > 0 || undefined}>
             <summary className="small">All operators ({browse.length}) · search, filter, sort</summary>
-            <div className="row" style={{ alignItems: "end" }}>
+            <div className="group">
               {regions.length > 0 && (
-                <div><label>Region</label>
+                <label className="group-row">Region
                   <select value={region} onChange={(e) => setRegion(e.target.value)}>
                     <option value="">All regions</option>
                     {regions.map((r) => <option key={r} value={r}>{r}</option>)}
-                  </select></div>
+                  </select>
+                </label>
               )}
-              <div><label>Sort</label>
+              <label className="group-row">Sort
                 <select value={sort} onChange={(e) => setSort(e.target.value as Sort)}>
                   <option value="name">Name A–Z</option>
                   <option value="aircraft">Most aircraft</option>
                   <option value="recent">Recently added</option>
-                </select></div>
+                </select>
+              </label>
+              <label className="group-row">Only operators with aircraft
+                <input type="checkbox" className="switch" checked={withAircraft} onChange={(e) => setWithAircraft(e.target.checked)} />
+              </label>
             </div>
-            <label style={{ marginTop: 8 }}><input type="checkbox" checked={withAircraft} onChange={(e) => setWithAircraft(e.target.checked)} /> Only operators with aircraft</label>
             <div className="op-list">
               {browse.length === 0 && <p className="muted small">No operators match.</p>}
               {browse.slice(0, 60).map((o) => (
@@ -280,10 +297,10 @@ export default function QuoteBuilder({ aircraft, operators, preferred: preferred
             {starMsg && <p className="small" style={{ color: "var(--warn)" }}>{starMsg}</p>}
             <p className="small muted" style={{ margin: "6px 0 0" }}>Tap ☆ to make an operator preferred (up to 5), or set them in <Link href="/settings#preferred">Settings</Link>.</p>
           </details>
-        </div>
+        </details>
 
-        <div className="card">
-          <h3>2. Aircraft{opId ? ` · ${opById.get(opId)?.name ?? ""}` : ""}</h3>
+        <details className="card step" {...stepProps("ac")}>
+          <summary><h3>2. Aircraft{opId ? ` · ${opById.get(opId)?.name ?? ""}` : ""}</h3><span className="sum">{ids.length ? `${ids.length} chosen` : "None chosen"}</span></summary>
           <div className="ac-pick">
             {aircraft.length === 0 && <p className="muted small">No aircraft yet.</p>}
             {shown.length === 0 && aircraft.length > 0 && <p className="muted small">No aircraft match.</p>}
@@ -312,45 +329,61 @@ export default function QuoteBuilder({ aircraft, operators, preferred: preferred
             <div style={{ flex: "0 0 auto" }}><button type="button" className="secondary" onClick={() => setIds((cur) => [...cur, ...shown.map((a) => a.id).filter((id) => !cur.includes(id))])} disabled={shown.length === 0}>Select all shown ({shown.length})</button></div>
             <div style={{ flex: "0 0 auto" }}><button type="button" className="secondary" onClick={() => setIds([])} disabled={ids.length === 0}>Clear ({ids.length})</button></div>
           </div>
-          {opId && <p className="small muted" style={{ margin: "6px 0 0" }}>To add another operator's aircraft, pick it above. Aircraft you ticked stay chosen.</p>}
+          {opId && <p className="small muted" style={{ margin: "6px 0 0" }}>To add another operator&apos;s aircraft, pick it above. Aircraft you ticked stay chosen.</p>}
           {chosen.length > 1 && (
             <>
-              <p className="small muted" style={{ marginBottom: 4 }}>Order in the message:</p>
-              {chosen.map((a, i) => (
-                <div key={a.id} className="small" style={{ display: "flex", gap: 6, alignItems: "center", margin: "2px 0" }}>
-                  <span>{i + 1}. {a.type}{a.operator ? ` · ${a.operator}` : ""}</span>
-                  <button type="button" className="secondary" style={{ padding: "0 8px" }} onClick={() => move(a.id, -1)} disabled={i === 0} aria-label="Move up">↑</button>
-                  <button type="button" className="secondary" style={{ padding: "0 8px" }} onClick={() => move(a.id, 1)} disabled={i === chosen.length - 1} aria-label="Move down">↓</button>
-                </div>
-              ))}
+              <div className="group-title">Order in the message</div>
+              <div className="group">
+                {chosen.map((a, i) => (
+                  <div key={a.id} className="group-row">
+                    <span className="small">{i + 1}. {a.type}{a.operator ? ` · ${a.operator}` : ""}</span>
+                    <span style={{ display: "flex", gap: 4 }}>
+                      <button type="button" className="secondary small-btn" onClick={() => move(a.id, -1)} disabled={i === 0} aria-label="Move up">↑</button>
+                      <button type="button" className="secondary small-btn" onClick={() => move(a.id, 1)} disabled={i === chosen.length - 1} aria-label="Move down">↓</button>
+                    </span>
+                  </div>
+                ))}
+              </div>
             </>
           )}
-        </div>
+        </details>
 
-        <div className="card">
-          <h3>3. Language and details</h3>
-          <label>Language of the message</label>
-          <select value={lang} onChange={(e) => changeLang(e.target.value as QuoteLanguage)}>
-            {QUOTE_LANGUAGES.map((l) => <option key={l} value={l}>{QUOTE_WORDS[l].name}{templates[l] ? " ●" : ""}</option>)}
-          </select>
-          <p className="small muted">
-            The wording comes from your saved template for this language{templates[lang] ? " (you have customised it)" : " (standard wording)"}.{" "}
-            <Link href={`/quote/template?lang=${lang}`}>Edit the wording →</Link> Aircraft names, tail numbers and notes are never translated.
+        <details className="card step" {...stepProps("lang")}>
+          <summary><h3>3. Language and details</h3><span className="sum">{QUOTE_WORDS[lang].name}</span></summary>
+          <div className="group-title">Message</div>
+          <div className="group">
+            <label className="group-row">Language
+              <select value={lang} onChange={(e) => changeLang(e.target.value as QuoteLanguage)}>
+                {QUOTE_LANGUAGES.map((l) => <option key={l} value={l}>{QUOTE_WORDS[l].name}{templates[l] ? " ●" : ""}</option>)}
+              </select>
+            </label>
+            <label className="group-row">Opening line<input type="checkbox" className="switch" checked={inc.greeting} onChange={(e) => setInc({ ...inc, greeting: e.target.checked })} /></label>
+            <label className="group-row">Closing line<input type="checkbox" className="switch" checked={inc.closing} onChange={(e) => setInc({ ...inc, closing: e.target.checked })} /></label>
+          </div>
+          <div className="group-title">Show in each aircraft</div>
+          <div className="chips">
+            {shownToggles.map(([k, label]) => (
+              <button key={k} type="button" className={`chip small${inc[k] ? " on" : ""}`} aria-pressed={!!inc[k]} onClick={() => setInc({ ...inc, [k]: !inc[k] })}>{inc[k] ? "✓ " : ""}{label}</button>
+            ))}
+          </div>
+          <p className="small muted" style={{ margin: "8px 0 0" }}>
+            Wording: {templates[lang] ? "your own" : "standard"}. <Link href={`/quote/template?lang=${lang}`}>Edit the wording →</Link> Aircraft names, tail numbers and notes are never translated.
           </p>
-          <label><input type="checkbox" checked={inc.greeting} onChange={(e) => setInc({ ...inc, greeting: e.target.checked })} /> Opening line</label>
-          <label><input type="checkbox" checked={inc.closing} onChange={(e) => setInc({ ...inc, closing: e.target.checked })} /> Closing line</label>
-          <label><input type="checkbox" checked={inc.operator} onChange={(e) => setInc({ ...inc, operator: e.target.checked })} /> Show the operator</label>
-          <label><input type="checkbox" checked={inc.tail} onChange={(e) => setInc({ ...inc, tail: e.target.checked })} /> Show the tail number</label>
-          <label><input type="checkbox" checked={inc.base} onChange={(e) => setInc({ ...inc, base: e.target.checked })} /> Show the base</label>
-          <label><input type="checkbox" checked={inc.notes} onChange={(e) => setInc({ ...inc, notes: e.target.checked })} /> Show notes</label>
           {editedBlocks && <p className="small muted">An aircraft you rewrote by hand keeps your text when you change these. Press “Back to automatic” on it to follow them again.</p>}
-        </div>
+        </details>
+
+        {ids.length > 0 && (
+          <div className="quote-bar">
+            <span className="small"><b>{ids.length}</b> aircraft · {photos.length} photo{photos.length === 1 ? "" : "s"}</span>
+            <button type="button" onClick={toMessage}>Edit message ↓</button>
+          </div>
+        )}
       </div>
 
-      <div>
-        <div className="card">
+      <div className="quote-right">
+        <div className="card" ref={messageRef} style={{ scrollMarginTop: 60 }}>
           <h3>4. Check and edit the message</h3>
-          {chosen.length === 0 && <p className="muted">Choose at least one aircraft on the left.</p>}
+          {chosen.length === 0 && <p className="muted">Choose at least one aircraft first.</p>}
           {greeting !== null && chosen.length > 0 && (
             <Piece label="Opening line" edited={"greeting" in edits} onReset={() => resetEdit("greeting")}>
               <TextBox dir={dir} speechLang={speech} rows={rows(greeting)} value={greeting} onChange={(v) => setEdit("greeting", v)} ariaLabel="Opening line" />
@@ -373,12 +406,14 @@ export default function QuoteBuilder({ aircraft, operators, preferred: preferred
                 {byHand
                   ? <p className="small muted" style={{ margin: "4px 0 0" }}>Rewritten by hand: changes to the details, price or language no longer reach this aircraft.</p>
                   : (
-                    <>
-                      <label>Price</label>
-                      <TextBox single dir={dir} speechLang={speech} value={prices[a.id] ?? ""} onChange={(v) => setPrices((p) => ({ ...p, [a.id]: v }))} placeholder="e.g. USD 85,000 + tax" ariaLabel="Price" />
-                      <label>Extra line (this quote only)</label>
-                      <TextBox dir={dir} speechLang={speech} rows={1} value={extras[a.id] ?? ""} onChange={(v) => setExtras((p) => ({ ...p, [a.id]: v }))} placeholder="e.g. Available from 12 Dec" ariaLabel="Extra line" />
-                    </>
+                    <div className="group">
+                      <div className="group-row field"><span>Price</span>
+                        <TextBox single dir={dir} speechLang={speech} value={prices[a.id] ?? ""} onChange={(v) => setPrices((p) => ({ ...p, [a.id]: v }))} placeholder="USD 85,000 + tax" ariaLabel="Price" />
+                      </div>
+                      <div className="group-row field"><span>Extra line</span>
+                        <TextBox dir={dir} speechLang={speech} rows={1} value={extras[a.id] ?? ""} onChange={(v) => setExtras((p) => ({ ...p, [a.id]: v }))} placeholder="From 12 Dec" ariaLabel="Extra line" />
+                      </div>
+                    </div>
                   )}
               </div>
             );
@@ -388,7 +423,7 @@ export default function QuoteBuilder({ aircraft, operators, preferred: preferred
               <TextBox dir={dir} speechLang={speech} rows={rows(closing)} value={closing} onChange={(v) => setEdit("closing", v)} ariaLabel="Closing line" />
             </Piece>
           )}
-          {chosen.length > 0 && <p className="small muted">Tap a box for Bold, Italic, Underline and the microphone. Prices and extra lines stay when you change the details or the language. Your saved template is not changed.</p>}
+          {chosen.length > 0 && <p className="small muted">Tap a box for Bold, Italic, Underline and the microphone. Prices and extra lines stay when you change the details or the language.</p>}
           {styled && (
             <details className="collapse" open>
               <summary className="small">Preview</summary>
@@ -396,7 +431,7 @@ export default function QuoteBuilder({ aircraft, operators, preferred: preferred
             </details>
           )}
           <div className="row" style={{ marginTop: 8 }}>
-            <div style={{ flex: "0 0 auto" }}><button type="button" onClick={() => copy()} disabled={!text.trim()}><Icon name="copy" />Copy message</button></div>
+            <div style={{ flex: "0 0 auto" }}><button type="button" className="secondary" onClick={() => copy()} disabled={!text.trim()}><Icon name="copy" />Copy message</button></div>
             {anyEdits && <div style={{ flex: "0 0 auto" }}><button type="button" className="secondary" onClick={() => setEdits({})}>Reset all edits</button></div>}
           </div>
         </div>
@@ -405,38 +440,40 @@ export default function QuoteBuilder({ aircraft, operators, preferred: preferred
           <h3>5. Send</h3>
           {allClasses.length > 0 && (
             <>
-              <p className="small muted" style={{ marginBottom: 4 }}>Photos to include ({photos.length}):</p>
-              <div className="row" style={{ marginBottom: 8 }}>
+              <div className="group-title">Photos to include ({photos.length})</div>
+              <div className="chips" style={{ marginBottom: 10 }}>
                 {allClasses.map(([c, label]) => (
-                  <label key={c} style={{ margin: 0, flex: "0 0 auto" }}><input type="checkbox" checked={useClass(c)} onChange={() => toggleClass(c)} /> {label}</label>
+                  <button key={c} type="button" className={`chip small${useClass(c) ? " on" : ""}`} aria-pressed={useClass(c)} onClick={() => toggleClass(c)}>{useClass(c) ? "✓ " : ""}{label}</button>
                 ))}
               </div>
             </>
           )}
+          <button ref={shareBtn} type="button" className="block-btn" onClick={sharePhotos} disabled={busy || photos.length === 0}><Icon name="share" />{busy ? "Preparing…" : `Share ${photos.length} photo${photos.length === 1 ? "" : "s"} + message`}</button>
+          <p className="small muted" style={{ margin: "6px 0 0" }}>Opens your phone&apos;s share sheet with the photos and the message together. Choose the app, then the client.</p>
           {styled && (
-            <div style={{ marginBottom: 8 }}>
-              <p className="small muted" style={{ margin: "0 0 4px" }}>Bold and italics for Share and Copy:</p>
-              <label style={{ margin: 0 }}><input type="radio" name="styleFor" checked={styleFor === "whatsapp"} onChange={() => setStyleFor("whatsapp")} /> WhatsApp (*bold*, _italic_)</label>
-              <label style={{ margin: 0 }}><input type="radio" name="styleFor" checked={styleFor === "other"} onChange={() => setStyleFor("other")} /> Other apps (WeChat, LINE, Telegram…). Chinese characters stay plain.</label>
+            <div className="group" style={{ marginTop: 10 }}>
+              <label className="group-row">Bold and italics for
+                <select value={styleFor} onChange={(e) => setStyleFor(e.target.value as "whatsapp" | "other")}>
+                  <option value="whatsapp">WhatsApp</option>
+                  <option value="other">Other apps</option>
+                </select>
+              </label>
             </div>
           )}
-          <div className="row">
-            <div style={{ flex: "0 0 auto" }}><button ref={shareBtn} type="button" onClick={sharePhotos} disabled={busy || photos.length === 0}><Icon name="share" />{busy ? "Preparing…" : `Share ${photos.length} photo${photos.length === 1 ? "" : "s"} + message…`}</button></div>
-          </div>
-          <p className="small muted">Opens your phone's share sheet with the photos and the message in one go. Choose the app, then the client.</p>
-
-          <p className="small muted" style={{ margin: "10px 0 4px" }}>Or send just the message:</p>
-          {contacts.length > 0 && (
-            <div className="row" style={{ alignItems: "end", marginBottom: 8 }}>
-              <div><label>To a saved contact</label>
-                <select value={contactId} onChange={(e) => setContactId(e.target.value)}>
-                  <option value="">Choose…</option>
-                  {contacts.map((c) => <option key={c.id} value={c.id}>{c.name} ({contactApp(c.app)?.label ?? c.app})</option>)}
-                </select></div>
-              <div style={{ flex: "0 0 auto" }}><button type="button" disabled={!contact || !text.trim()} onClick={() => contact && open(contact.app, contact.handle, contactApp(contact.app)?.label ?? contact.app)}><Icon name="send" />Send</button></div>
-            </div>
-          )}
-          <MessengerButtons disabled={!text.trim()} onPick={(id, label) => open(id, null, label)} onEmail={email} />
+          <details className="collapse" style={{ marginTop: 12 }}>
+            <summary className="small">More ways to send (message only)</summary>
+            {contacts.length > 0 && (
+              <div className="row" style={{ alignItems: "end", marginBottom: 10 }}>
+                <div><label>To a saved contact</label>
+                  <select value={contactId} onChange={(e) => setContactId(e.target.value)}>
+                    <option value="">Choose…</option>
+                    {contacts.map((c) => <option key={c.id} value={c.id}>{c.name} ({contactApp(c.app)?.label ?? c.app})</option>)}
+                  </select></div>
+                <div style={{ flex: "0 0 auto" }}><button type="button" className="secondary" disabled={!contact || !text.trim()} onClick={() => contact && open(contact.app, contact.handle, contactApp(contact.app)?.label ?? contact.app)}><Icon name="send" />Send</button></div>
+              </div>
+            )}
+            <MessengerButtons disabled={!text.trim()} onPick={(id, label) => open(id, null, label)} onEmail={email} />
+          </details>
           {msg && <p className="small" role="status">{msg}</p>}
         </div>
       </div>

@@ -247,6 +247,16 @@ export default function ChatClient() {
     startSession();
   };
 
+  // The microphone in the phone's bottom bar.
+  const toggleRef = useRef(toggleMic);
+  toggleRef.current = toggleMic;
+  useEffect(() => {
+    const on = () => toggleRef.current();
+    window.addEventListener("chocks:mic", on);
+    return () => window.removeEventListener("chocks:mic", on);
+  }, []);
+  useEffect(() => { window.dispatchEvent(new CustomEvent("chocks:listening", { detail: listening })); }, [listening]);
+
   const lastChocks = [...msgs].reverse().find((m) => m.role === "chocks");
   /** "Add an aircraft or photos" / Template: put the labelled template in the box and focus it. */
   const startAdd = () => {
