@@ -187,12 +187,12 @@ export async function converse(
       : tr(L, "Photos ticked: {kinds}.", { kinds: kinds.map((k) => trClassification(L, k, CLASSIFICATION_LABEL[k])).join(isChinese(L) ? "、" : ", ") });
     const say = preview
       ? [
-        [tr(L, "Here is the message and photos for:"), ...names.map((n) => `• ${n}`)].join(String.fromCharCode(10)),
+        [tr(L, priced ? "Your quote is ready, prices included, for:" : "Your quote is ready for:"), ...names.map((n) => `• ${n}`)].join(String.fromCharCode(10)),
         preview.text,
         ...(kindsLine ? [kindsLine] : []),
         priced
-          ? tr(L, "Prices are filled in. Tap Copy message to paste it into the chat, or share it with the photos below.")
-          : tr(L, "Tap Copy message, or share it with the photos below. To add prices, write them in the chat (e.g. “G280 USD 90,000”) or open the quote."),
+          ? tr(L, "Tap Copy message to paste it into the chat, or share it with the photos below. To view or change it, tap View the quote.")
+          : tr(L, "Tap Copy message, or share it with the photos below. To add prices, write them in the chat (e.g. “G280 USD 90,000”) or tap View the quote."),
       ]
       : [quoteReq.what.length ? tr(L, "I couldn't find {names}.", { names: missing.join(isChinese(L) ? "、" : " or ") }) : tr(L, "Open the Quote page to choose the aircraft.")];
     if (ids.length && missing.length) say.push(tr(L, "I couldn't find: {names}.", { names: missing.join(", ") }));
@@ -202,7 +202,7 @@ export async function converse(
     if (priced) q.set("prices", JSON.stringify(prices));
     if (kinds) q.set("photos", kinds.length ? kinds.join(",") : "none");
     const href = q.size ? `/quote?${q.toString().replace(/%2C/g, ",")}` : "/quote";
-    return { draft: d, reply: { say, chips: [], ready: false, photos: preview?.photos, copy: preview?.text, options: preview?.options, kinds, link: { href, label: tr(L, "Open the quote") } }, confirm: false };
+    return { draft: d, reply: { say, chips: [], ready: false, photos: preview?.photos, copy: preview?.text, options: preview?.options, kinds, link: { href, label: ids.length ? tr(L, "View the quote") : tr(L, "Open the quote") } }, confirm: false };
   }
 
   // A question about what you already have ("show me what aircraft Capa Jet has"): answer it, change nothing.

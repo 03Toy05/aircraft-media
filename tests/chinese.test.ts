@@ -140,7 +140,8 @@ describe("Chocks in Traditional and Simplified Chinese", () => {
         "如需更多資料或照片，請隨時告訴我。",
       ].join("\n\n"),
     );
-    expect(say(r)).toMatch(/以下是這些飛機的報價訊息和相片/);
+    expect(say(r)).toMatch(/報價已準備好/);
+    expect(r.reply.link?.label).toBe("查看報價");
     const s = await converse(t.db, t.actor.tenantId, withLang("zh-Hans"), "给我 CapacJet 的 G550 的模板", []);
     expect(s.reply.copy).toMatch(/^您好，以下是飞机选项：/);
     expect(s.reply.copy).toMatch(/出厂年份：2013/);

@@ -78,7 +78,7 @@ export default function PlacePicker({ name, kind, defaultValue, multiple = false
           else if (e.key === "Enter" && open && items[active]) { e.preventDefault(); pick(items[active].value); }
           else if (e.key === "Enter" && multiple) { e.preventDefault(); commitTyped(); }
           else if (e.key === "," && multiple) { e.preventDefault(); commitTyped(); }
-          else if (e.key === "Backspace" && multiple && !text && chosen.length) setChosen((c) => c.slice(0, -1));
+          // Backspace only edits the typing; a saved place is removed with its × only, so it is never lost by accident.
           else if (e.key === "Escape") setOpen(false);
         }}
         onBlur={() => setTimeout(commitTyped, 150)}
