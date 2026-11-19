@@ -9,19 +9,23 @@ import CollapseOnMobile from "../../_components/CollapseOnMobile";
 import { AC_SORTS, runFleetQuery, type AcSort, type OperatorSort } from "@/domain/fleetQuery";
 import { getCatalogue, type CatalogueRow } from "@/domain/catalogue";
 import { AIRCRAFT_CATEGORIES, AIRCRAFT_CATEGORY_LABEL } from "@/domain/constants";
-import { getAircraftCard, resolveAircraftTypes } from "@/domain/directory";
+import { getAircraftCard, resolveAircraftTypes, tidyExistingPlaces } from "@/domain/directory";
 import { getLineup } from "@/domain/media";
 import { STANDARD_AIRCRAFT_TYPES } from "@/domain/standardTypes";
 import {
   addTypeAliasAction, createAircraftAction, createOperatorThenAircraftAction, createOrganisationAction, createTypeAction, loadStandardTypesAction, setOrgRegionAction, setTypeCategoryAction,
 } from "../../actions";
 import { Flash, Key, one, type SP } from "../../_components/ui";
+import PlacePicker from "../../_components/PlacePicker";
+import SearchSelect from "../../_components/SearchSelect";
+import Choice, { WIFI_CHOICES } from "../../_components/Choice";
 
 /** Operators and their aircraft on one page: each aircraft shows its details and a few approved photos. */
 export default async function Fleet({ searchParams }: { searchParams: SP }) {
   const sp = await searchParams;
-  const { actor } = await requireOwner();
+  const { actor, readOnly } = await requireOwner();
   const db = await getDb();
+  if (!readOnly) await tidyExistingPlaces(db, actor.tenantId); // "HK" saved before the city list -> "Hong Kong"
   const orgs = await db.select().from(organisations).where(eq(organisations.tenantId, actor.tenantId)).orderBy(asc(organisations.canonicalName));
   const types = await db.select().from(aircraftTypes).where(eq(aircraftTypes.tenantId, actor.tenantId)).orderBy(asc(aircraftTypes.model));
   const rows = await getCatalogue(db, actor.tenantId);
@@ -96,28 +100,21 @@ export default async function Fleet({ searchParams }: { searchParams: SP }) {
         <form method="get" className="row filterbar" style={{ alignItems: "end" }}>
           <div><label>Search</label><input name="q" defaultValue={q} placeholder="Operator, tail or aircraft" /></div>
           <div><label>Region</label>
-            <select name="region" defaultValue={regionFilter}>
-              <option value="">All regions</option>
-              {regions.map((r) => <option key={r} value={r}>{r}</option>)}
-              <option value="__none">No region set</option>
-            </select></div>
+            <SearchSelect name="region" defaultValue={regionFilter} emptyLabel="All regions"
+              options={[...regions.map((r) => ({ value: r, label: r })), { value: "__none", label: "No region set" }]} /></div>
           <div><label>Aircraft category</label>
-            <select name="category" defaultValue={catFilter}>
-              <option value="">All categories</option>
-              {AIRCRAFT_CATEGORIES.map((c) => <option key={c} value={c}>{AIRCRAFT_CATEGORY_LABEL[c]}</option>)}
-            </select></div>
+            <SearchSelect name="category" defaultValue={catFilter} emptyLabel="All categories"
+              options={AIRCRAFT_CATEGORIES.map((c) => ({ value: c, label: AIRCRAFT_CATEGORY_LABEL[c] }))} /></div>
           <div><label>Base</label>
-            <select name="base" defaultValue={baseFilter}>
-              <option value="">All bases</option>
-              {baseOptions.map((b) => <option key={b} value={b}>{b}</option>)}
-              <option value="__none">Base not recorded</option>
-            </select></div>
+            <SearchSelect name="base" defaultValue={baseFilter} emptyLabel="All bases"
+              options={[...baseOptions.map((b) => ({ value: b, label: b })), { value: "__none", label: "Base not recorded" }]} /></div>
           <div><label>Sort operators by</label>
-            <select name="sort" defaultValue={sort}><option value="name">Name</option><option value="region">Region</option><option value="aircraft">Most aircraft</option></select></div>
+            <Choice name="sort" defaultValue={sort} ariaLabel="Sort operators by"
+              options={[{ value: "name", label: "Name" }, { value: "region", label: "Region" }, { value: "aircraft", label: "Most aircraft" }]} /></div>
           <div><label>WIFI</label>
-            <select name="wifi" defaultValue={wifiFilter}><option value="">Any</option><option value="yes">Yes</option><option value="no">No</option><option value="tbc">TBC</option><option value="unknown">Unknown</option></select></div>
+            <Choice name="wifi" defaultValue={wifiFilter} ariaLabel="WIFI" options={[{ value: "", label: "Any" }, ...WIFI_CHOICES]} /></div>
           <div><label>Sort aircraft by</label>
-            <select name="acsort" defaultValue={acSort}>{AC_SORTS.map((o) => <option key={o.id} value={o.id}>{o.label}</option>)}</select></div>
+            <SearchSelect name="acsort" defaultValue={acSort} options={AC_SORTS.map((o) => ({ value: o.id, label: o.label }))} /></div>
           <div style={{ flex: "0 0 auto" }}><button type="submit"><Icon name="search" />Apply</button> {filtering && <Link href="/fleet">Clear</Link>}</div>
         </form>
         </CollapseOnMobile>
@@ -152,10 +149,9 @@ export default async function Fleet({ searchParams }: { searchParams: SP }) {
             <label><input type="checkbox" name="roles" value="operator" defaultChecked /> Operator (flies the aircraft)</label>
             <label><input type="checkbox" name="roles" value="management_company" /> Management company</label>
             <label>Region (optional)</label>
-            <input name="region" list="regions" placeholder="e.g. Asia, Middle East, Europe" />
-            <datalist id="regions">{regions.map((r) => <option key={r} value={r} />)}</datalist>
+            <PlacePicker name="region" kind="region" placeholder="e.g. Asia, Middle East, Hong Kong" />
             <label>Base (optional)</label>
-            <input name="base" placeholder="Hong Kong, Singapore" />
+            <PlacePicker name="base" kind="base" multiple />
             <p className="muted small" style={{ margin: "2px 0 8px" }}>The operator's usual base. New aircraft for this operator start with it, and you can change it per aircraft.</p>
             <label>Other names (comma separated, optional)</label>
             <input name="aliases" placeholder="Metro Jet, MJ" />
@@ -172,32 +168,29 @@ export default async function Fleet({ searchParams }: { searchParams: SP }) {
           <form action={createAircraftAction}>
             <Key />
             <label>Aircraft type</label>
-            <select name="aircraftTypeId" required defaultValue={one(sp.typeId) ?? ""}>
-              <option value="" disabled>Choose…</option>
-              {groups.map((g) => (
-                <optgroup key={g.key} label={g.label}>{g.items.map((t) => <option key={t.id} value={t.id}>{t.manufacturer} {t.model}</option>)}</optgroup>
-              ))}
-            </select>
+            <SearchSelect name="aircraftTypeId" required defaultValue={one(sp.typeId) ?? ""} placeholder="Type a model, e.g. G650 or Challenger"
+              options={groups.flatMap((g) => g.items.map((t) => ({ value: t.id, label: `${t.manufacturer} ${t.model}`, group: g.label })))} />
             <div className="row">
               <div><label>Tail number</label><input name="registration" defaultValue={one(sp.tail)} placeholder="Optional. Add it later if unknown" /></div>
               <div><label>Serial number</label><input name="serialNumber" /></div>
             </div>
             <label>Operator</label>
-            <select name="operatorId" defaultValue={one(sp.operatorId) ?? ""}><option value="">Not recorded / new operator below</option>{orgs.map((o) => <option key={o.id} value={o.id}>{o.canonicalName}</option>)}</select>
+            <SearchSelect name="operatorId" defaultValue={one(sp.operatorId) ?? ""} emptyLabel="Not recorded / new operator below"
+              options={orgs.map((o) => ({ value: o.id, label: o.canonicalName, hint: o.region ?? undefined }))} />
             <label>…or add a new operator now (used only when none is chosen above)</label>
             <input name="newOperatorName" defaultValue={one(sp.newOperator)} placeholder="e.g. Jet Aviation Hong Kong" />
+            <label>Base</label>
+            <Choice name="baseMode" defaultValue={one(sp.baseMode) ?? ""} ariaLabel="Base"
+              options={[{ value: "", label: "Not recorded" }, { value: "based", label: "Based at…" }, { value: "floating", label: "Floating" }]} />
+            <label>Base locations (for “Based at”)</label>
+            <PlacePicker name="baseLocations" kind="base" multiple defaultValue={one(sp.baseLocations)} />
             <div className="row">
-              <div><label>Base</label>
-                <select name="baseMode" defaultValue={one(sp.baseMode) ?? ""}><option value="">Not recorded</option><option value="based">Based at…</option><option value="floating">Floating (no fixed base)</option></select></div>
-              <div><label>Locations (separate with commas)</label><input name="baseLocations" defaultValue={one(sp.baseLocations)} placeholder="Hong Kong, Singapore" /></div>
+              <div><label>YOM</label><input name="yom" type="number" inputMode="numeric" defaultValue={one(sp.yom)} /></div>
+              <div><label>YOR</label><input name="yor" type="number" inputMode="numeric" defaultValue={one(sp.yor)} /></div>
+              <div><label>Capacity</label><input name="capacity" type="number" inputMode="numeric" defaultValue={one(sp.capacity)} /></div>
             </div>
-            <div className="row">
-              <div><label>YOM</label><input name="yom" type="number" defaultValue={one(sp.yom)} /></div>
-              <div><label>YOR</label><input name="yor" type="number" defaultValue={one(sp.yor)} /></div>
-              <div><label>Capacity</label><input name="capacity" type="number" defaultValue={one(sp.capacity)} /></div>
-              <div><label>WIFI</label>
-                <select name="wifiStatus" defaultValue={one(sp.wifi) ?? "unknown"}><option value="yes">Yes</option><option value="no">No</option><option value="tbc">TBC</option><option value="unknown">Unknown</option></select></div>
-            </div>
+            <label>WIFI</label>
+            <Choice name="wifiStatus" defaultValue={one(sp.wifi) ?? "unknown"} options={WIFI_CHOICES} ariaLabel="WIFI" />
             <label>WIFI details (optional, shown in quotes)</label><input name="wifiDetail" placeholder="e.g. at USD 10/MB" />
             <label>Notes</label><input name="notes" defaultValue={one(sp.notes)} placeholder="Owner's approval required" />
             {tailInUse && <label style={{ color: "var(--warn)" }}><input type="checkbox" name="tailResolution" value="distinct_aircraft" /> This is a different aircraft that uses the same tail number</label>}
@@ -219,7 +212,8 @@ export default async function Fleet({ searchParams }: { searchParams: SP }) {
             <form action={setTypeCategoryAction} className="row">
               <Key /><input type="hidden" name="aircraftTypeId" value={t.id} />
               <div style={{ flex: "1 1 140px" }}>{t.manufacturer} {t.model}</div>
-              <div><select name="category" defaultValue={t.category ?? ""}><option value="">No category</option>{AIRCRAFT_CATEGORIES.map((c) => <option key={c} value={c}>{AIRCRAFT_CATEGORY_LABEL[c]}</option>)}</select></div>
+              <div><SearchSelect name="category" defaultValue={t.category ?? ""} emptyLabel="No category" ariaLabel="Category"
+                options={AIRCRAFT_CATEGORIES.map((c) => ({ value: c, label: AIRCRAFT_CATEGORY_LABEL[c] }))} /></div>
               <div style={{ flex: "0 0 auto" }}><button className="secondary" type="submit">Save</button></div>
             </form>
             <form action={addTypeAliasAction} className="row">
@@ -238,7 +232,8 @@ export default async function Fleet({ searchParams }: { searchParams: SP }) {
             <div><label>Model / variant</label><input name="model" required placeholder="G650ER" /></div>
           </div>
           <label>Category</label>
-          <select name="category" defaultValue=""><option value="">Not set</option>{AIRCRAFT_CATEGORIES.map((c) => <option key={c} value={c}>{AIRCRAFT_CATEGORY_LABEL[c]}</option>)}</select>
+          <SearchSelect name="category" defaultValue="" emptyLabel="Not set" ariaLabel="Category"
+            options={AIRCRAFT_CATEGORIES.map((c) => ({ value: c, label: AIRCRAFT_CATEGORY_LABEL[c] }))} />
           <label>Other names (comma separated, optional)</label><input name="aliases" placeholder="G650 ER, GVI" />
           <p><button type="submit">Create type</button></p>
         </form>

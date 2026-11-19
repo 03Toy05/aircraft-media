@@ -5,6 +5,7 @@ import { parseAircraftCard } from "./card";
 import { AIRCRAFT_CATEGORY_LABEL, CLASSIFICATION_LABEL, normalizeKey, parseClassification, type AircraftCategory, type Classification, type WifiStatus } from "./constants";
 import { isChinese, plural, tr, trCategory, trClassification, trLoose, trWifi, type ChatLang } from "./chocksText";
 import { parseShareRequest, parseQuoteRequest, findAircraftsForShare } from "./chocksShare";
+import { normalizeRegion } from "./places";
 import { answerFleet, answerLookup, fleetBasics, isLookupQuestion, quotePreview } from "./chocksLookup";
 import { parseFleetQuery } from "./fleetQuery";
 import { findContacts } from "./contacts";
@@ -306,7 +307,7 @@ export async function converse(
     if (c.wifi) { d.wifi = c.wifi; if (c.wifiDetail) d.wifiDetail = c.wifiDetail; }
     if (c.notes) d.notes = c.notes;
     if (c.base) d.base = c.base;
-    if (c.region) d.region = c.region;
+    if (c.region) d.region = normalizeRegion(c.region); // "HK" shows as "Hong Kong", as it will be saved
     // Lines with no label (the natural way to type: "Advance Aviation" then "G280"). Work out what each one is:
     // 1) exact matches against your operators and aircraft types, 2) a closer look for a type, 3) whatever is left is the operator name.
     let rest = [...c.unrecognised];

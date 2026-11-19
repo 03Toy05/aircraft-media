@@ -91,12 +91,17 @@ const isGenerated = (ev: { metadata: unknown } | null) => (ev?.metadata as { upl
  * or null when there are not enough.
  */
 export async function combinedSources(db: Db, tenantId: string, scope: CombinedScope) {
-  const rows = await scopePhotos(db, tenantId, scope);
-  const of = (c: string) => rows.filter((r) => r.m.primaryClassification === c).map((r) => r.cv.id);
+  const own = await scopePhotos(db, tenantId, scope);
+  // An aircraft uses its own photos first and fills a gap from its type's photos (often the floor plan is the
+  // type's). It needs at least one photo of its own: otherwise the type's combined photo already covers it.
+  const typeRows = scope.kind === "aircraft" ? await scopePhotos(db, tenantId, { kind: "type", aircraftTypeId: scope.aircraftTypeId }) : [];
+  const ownIds = new Set(own.map((r) => r.cv.id));
+  const of = (c: string) => [...own, ...typeRows].filter((r) => r.m.primaryClassification === c).map((r) => r.cv.id);
   const [ext] = of("exterior");
   const cabins = of("cabin").slice(0, 2);
   const [plan] = of("floor_plan");
   if (!ext || cabins.length < 2 || !plan) return null;
+  if (scope.kind === "aircraft" && ![ext, ...cabins, plan].some((id) => ownIds.has(id))) return null;
   return { exterior: ext, cabins: cabins as [string, string], floorPlan: plan };
 }
 

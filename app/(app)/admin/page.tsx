@@ -7,6 +7,7 @@ import {
   extendTrialAction, inviteUserAction, setBlockedAction, setPlanAction, viewAsAction, withdrawInviteAction,
 } from "../../actions";
 import { Flash, Key, one, type SP } from "../../_components/ui";
+import Choice from "../../_components/Choice";
 
 const day = (d: Date | null) => (d ? d.toISOString().slice(0, 10) : "–");
 
@@ -34,11 +35,8 @@ export default async function Admin({ searchParams }: { searchParams: SP }) {
           <input id="inv-email" name="email" type="email" required placeholder="name@company.com" />
           <label htmlFor="inv-name">Name (optional)</label>
           <input id="inv-name" name="name" />
-          <label htmlFor="inv-plan">Access</label>
-          <select id="inv-plan" name="plan" defaultValue="trial">
-            <option value="trial">{TRIAL_DAYS}-day trial</option>
-            <option value="full">Full (no time limit)</option>
-          </select>
+          <label>Access</label>
+          <Choice name="plan" defaultValue="trial" ariaLabel="Access" options={[{ value: "trial", label: `${TRIAL_DAYS}-day trial` }, { value: "full", label: "Full (no time limit)" }]} />
           <div style={{ marginTop: 10 }}><button type="submit">Invite</button></div>
         </form>
         <div className="card">
@@ -79,7 +77,7 @@ export default async function Admin({ searchParams }: { searchParams: SP }) {
                         {u.plan === "trial" && (
                           <form action={extendTrialAction} className="row" style={{ gap: 4 }}>
                             <Key /><input type="hidden" name="userId" value={u.id} />
-                            <select name="days" defaultValue="14" aria-label="Days to add" style={{ width: "auto" }}><option value="7">+7 days</option><option value="14">+14 days</option><option value="30">+30 days</option></select>
+                            <Choice name="days" defaultValue="14" ariaLabel="Days to add" options={[{ value: "7", label: "+7" }, { value: "14", label: "+14" }, { value: "30", label: "+30 days" }]} />
                             <button className="secondary small-btn" type="submit">Extend</button>
                           </form>
                         )}

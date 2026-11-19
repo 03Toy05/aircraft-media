@@ -17,6 +17,8 @@ import { Flash, Key, one, type SP } from "../../../_components/ui";
 import CropTool from "../../../_components/CropTool";
 import AircraftPicker from "../../../_components/AircraftPicker";
 import { SetRest, ViewChoice } from "../../../_components/ViewChoice";
+import SearchSelect from "../../../_components/SearchSelect";
+import Choice, { WIFI_CHOICES } from "../../../_components/Choice";
 
 export default async function ReviewWorkspace({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: SP }) {
   const { id } = await params;
@@ -163,12 +165,12 @@ export default async function ReviewWorkspace({ params, searchParams }: { params
             />
             <label>Tail number</label><input name="tail" defaultValue={parsed?.tail ?? ""} placeholder="Optional" />
             <div className="row">
-              <div><label>YOM</label><input name="yom" type="number" defaultValue={parsed?.yom ?? ""} /></div>
-              <div><label>YOR</label><input name="yor" type="number" defaultValue={parsed?.yor ?? ""} /></div>
-              <div><label>Capacity</label><input name="capacity" type="number" defaultValue={parsed?.capacity ?? ""} /></div>
-              <div><label>WIFI</label>
-                <select name="wifiStatus" defaultValue={parsed?.wifi ?? "unknown"}><option value="yes">Yes</option><option value="no">No</option><option value="tbc">TBC</option><option value="unknown">Unknown</option></select></div>
+              <div><label>YOM</label><input name="yom" type="number" inputMode="numeric" defaultValue={parsed?.yom ?? ""} /></div>
+              <div><label>YOR</label><input name="yor" type="number" inputMode="numeric" defaultValue={parsed?.yor ?? ""} /></div>
+              <div><label>Capacity</label><input name="capacity" type="number" inputMode="numeric" defaultValue={parsed?.capacity ?? ""} /></div>
             </div>
+            <label>WIFI</label>
+            <Choice name="wifiStatus" defaultValue={parsed?.wifi ?? "unknown"} options={WIFI_CHOICES} ariaLabel="WIFI" />
             <label>Notes</label><input name="notes" defaultValue={parsed?.notes ?? ""} />
             <input type="hidden" name="baseMode" value={parsed?.base?.mode ?? ""} /><input type="hidden" name="baseLocations" value={parsed?.base?.locations.join(", ") ?? ""} />
             <p className="muted small">Details are saved on a new aircraft, or added to the existing aircraft you choose (only the fields you fill in). Each photo is approved when it has a view and an aircraft or type.</p>
@@ -179,13 +181,13 @@ export default async function ReviewWorkspace({ params, searchParams }: { params
             <h3>Classification, order and rights</h3>
             <form action={mediaMetadataAction}>
               <Key /><input type="hidden" name="mediaId" value={media.id} /><input type="hidden" name="expectedVersion" value={media.version} />
-              <div className="row">
-                <div><label>Classification</label>
-                  <select name="classification" defaultValue={suggestedClass ?? media.primaryClassification}>{CLASSIFICATIONS.map((c) => <option key={c} value={c}>{CLASSIFICATION_LABEL[c]}</option>)}</select></div>
-                <div><label>Library order</label><input name="displayOrder" type="number" min={0} defaultValue={media.displayOrder} /></div>
-                <div><label>Rights</label>
-                  <select name="rightsStatus" defaultValue={media.rightsStatus}><option value="permitted">Permitted</option><option value="restricted">Restricted</option><option value="unknown">Unknown</option></select></div>
-              </div>
+              <label>View</label>
+              <Choice name="classification" defaultValue={suggestedClass ?? media.primaryClassification} ariaLabel="View"
+                options={CLASSIFICATIONS.map((c) => ({ value: c, label: CLASSIFICATION_LABEL[c] }))} />
+              <label>Rights</label>
+              <Choice name="rightsStatus" defaultValue={media.rightsStatus} ariaLabel="Rights"
+                options={[{ value: "permitted", label: "Permitted" }, { value: "restricted", label: "Restricted" }, { value: "unknown", label: "Unknown" }]} />
+              <label>Library order</label><input name="displayOrder" type="number" inputMode="numeric" min={0} defaultValue={media.displayOrder} style={{ maxWidth: 120 }} />
               {suggestedClass && <p className="small muted">Suggested “{CLASSIFICATION_LABEL[suggestedClass]}” from the file name “{evidence?.originalFilename}”. Click Save to accept it.</p>}
               <p><button type="submit" className="secondary">Save</button></p>
             </form>
@@ -197,15 +199,14 @@ export default async function ReviewWorkspace({ params, searchParams }: { params
             <form action={mediaAssociationAction}>
               <Key /><input type="hidden" name="mediaId" value={media.id} /><input type="hidden" name="expectedVersion" value={media.version} />
               <label>Status</label>
-              <select name="status" defaultValue={media.associationStatus}>
-                <option value="actual_aircraft">Actual aircraft (this exact aircraft)</option>
-                <option value="representative_type">Representative of the aircraft type</option>
-                <option value="unresolved">Unresolved</option>
-              </select>
-              <label>Aircraft (for actual)</label>
-              <select name="aircraftId" defaultValue={association?.aircraftId ?? tailMatches[0] ?? ""}><option value="">—</option>{aircraftOptions.map((o) => <option key={o.id} value={o.id}>{o.label}</option>)}</select>
-              <label>Aircraft type (for representative)</label>
-              <select name="aircraftTypeId" defaultValue={association?.aircraftTypeId ?? ""}><option value="">—</option>{types.map((t) => <option key={t.id} value={t.id}>{t.manufacturer} {t.model}</option>)}</select>
+              <Choice name="status" defaultValue={media.associationStatus} ariaLabel="Status"
+                options={[{ value: "actual_aircraft", label: "This exact aircraft" }, { value: "representative_type", label: "The aircraft type" }, { value: "unresolved", label: "Unresolved" }]} />
+              <label>Aircraft (for this exact aircraft)</label>
+              <SearchSelect name="aircraftId" defaultValue={association?.aircraftId ?? tailMatches[0] ?? ""} emptyLabel="—" placeholder="Type a tail or model"
+                options={aircraftOptions.map((o) => ({ value: o.id, label: o.label }))} />
+              <label>Aircraft type (for a photo of the type)</label>
+              <SearchSelect name="aircraftTypeId" defaultValue={association?.aircraftTypeId ?? ""} emptyLabel="—" placeholder="Type a model"
+                options={types.map((t) => ({ value: t.id, label: `${t.manufacturer} ${t.model}` }))} />
               <p><button type="submit" className="secondary">Save association</button></p>
             </form>
           </details>

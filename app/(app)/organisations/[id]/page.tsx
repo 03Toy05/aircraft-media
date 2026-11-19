@@ -10,6 +10,7 @@ import { getLineup } from "@/domain/media";
 import { AIRCRAFT_CATEGORY_LABEL, type AircraftCategory } from "@/domain/constants";
 import { addOrgAliasAction, renameOrgAction, setOrgRegionAction } from "../../../actions";
 import { Flash, Key, one, type SP } from "../../../_components/ui";
+import PlacePicker from "../../../_components/PlacePicker";
 
 export default async function OrganisationDetail({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: SP }) {
   const { id } = await params;
@@ -50,8 +51,8 @@ export default async function OrganisationDetail({ params, searchParams }: { par
       </details>
       <form action={setOrgRegionAction} className="row" style={{ marginBottom: 12, alignItems: "end" }}>
         <Key /><input type="hidden" name="organisationId" value={id} /><input type="hidden" name="returnTo" value={`/organisations/${id}`} />
-        <div style={{ maxWidth: 280 }}><label>Region</label><input name="region" defaultValue={org.region ?? ""} placeholder="e.g. Asia, Middle East, Europe" /></div>
-        <div style={{ maxWidth: 280 }}><label>Base</label><input name="base" defaultValue={org.base ?? ""} placeholder="Hong Kong, Singapore" /></div>
+        <div style={{ maxWidth: 320 }}><label>Region</label><PlacePicker name="region" kind="region" defaultValue={org.region ?? ""} /></div>
+        <div style={{ maxWidth: 320 }}><label>Base</label><PlacePicker name="base" kind="base" multiple defaultValue={org.base ?? ""} /></div>
         <div style={{ flex: "0 0 auto" }}><button className="secondary" type="submit">Save</button></div>
       </form>
 

@@ -12,6 +12,9 @@ import { COMBINED_NEEDS, combinedSources, existingCombined } from "@/domain/comb
 import { addInfoVersionAction, addManagementAction, changeTailAction, makeCombinedAction, setBasesAction, setOperatorAction } from "../../../actions";
 import { Flash, Key, one, type SP } from "../../../_components/ui";
 import { ShareBox } from "../../../_components/ShareBox";
+import PlacePicker from "../../../_components/PlacePicker";
+import SearchSelect from "../../../_components/SearchSelect";
+import Choice, { WIFI_CHOICES } from "../../../_components/Choice";
 
 export default async function AircraftDetail({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: SP }) {
   const { id } = await params;
@@ -59,11 +62,12 @@ export default async function AircraftDetail({ params, searchParams }: { params:
             <form action={addInfoVersionAction}>
               <Key /><input type="hidden" name="aircraftId" value={id} /><input type="hidden" name="expectedVersion" value={card.informationVersion} />
               <div className="row">
-                <div><label>YOM</label><input name="yom" type="number" defaultValue={current?.yom ?? ""} /></div>
-                <div><label>YOR</label><input name="yor" type="number" defaultValue={current?.yor ?? ""} /></div>
-                <div><label>Capacity</label><input name="capacity" type="number" defaultValue={current?.capacity ?? ""} /></div>
-                <div><label>WIFI</label><select name="wifiStatus" defaultValue={current?.wifiStatus ?? "unknown"}><option value="yes">Yes</option><option value="no">No</option><option value="tbc">TBC</option><option value="unknown">Unknown</option></select></div>
+                <div><label>YOM</label><input name="yom" type="number" inputMode="numeric" defaultValue={current?.yom ?? ""} /></div>
+                <div><label>YOR</label><input name="yor" type="number" inputMode="numeric" defaultValue={current?.yor ?? ""} /></div>
+                <div><label>Capacity</label><input name="capacity" type="number" inputMode="numeric" defaultValue={current?.capacity ?? ""} /></div>
               </div>
+              <label>WIFI</label>
+              <Choice name="wifiStatus" defaultValue={current?.wifiStatus ?? "unknown"} options={WIFI_CHOICES} ariaLabel="WIFI" />
               <label>WIFI details (optional, shown in quotes)</label><input name="wifiDetail" defaultValue={current?.wifiDetail ?? ""} placeholder="e.g. at USD 10/MB" />
               <label>Notes</label><input name="notes" defaultValue={current?.notes ?? ""} />
               <label>Effective / observed date (optional)</label><input name="effectiveDate" type="date" />
@@ -99,10 +103,10 @@ export default async function AircraftDetail({ params, searchParams }: { params:
             <h3>Base</h3>
             <form action={setBasesAction}>
               <Key /><input type="hidden" name="aircraftId" value={id} />
-              <div className="row">
-                <div><label>Mode</label><select name="baseMode" defaultValue={card.base === "Floating" ? "floating" : "based"}><option value="based">Based at…</option><option value="floating">Floating</option></select></div>
-                <div><label>Locations</label><input name="baseLocations" defaultValue={card.base && card.base !== "Floating" ? card.base : ""} placeholder="Hong Kong, Singapore" /></div>
-              </div>
+              <Choice name="baseMode" defaultValue={card.base === "Floating" ? "floating" : "based"} ariaLabel="Base"
+                options={[{ value: "based", label: "Based at…" }, { value: "floating", label: "Floating" }]} />
+              <label>Locations</label>
+              <PlacePicker name="baseLocations" kind="base" multiple defaultValue={card.base && card.base !== "Floating" ? card.base : ""} />
               <p><button type="submit" className="secondary">Save base</button></p>
             </form>
           </div>
@@ -113,7 +117,7 @@ export default async function AircraftDetail({ params, searchParams }: { params:
             <form action={setOperatorAction}>
               <Key /><input type="hidden" name="aircraftId" value={id} />
               <div className="row">
-                <div><label>Set current operator</label><select name="organisationId" required><option value="">Choose…</option>{orgs.map((o) => <option key={o.id} value={o.id}>{o.canonicalName}</option>)}</select></div>
+                <div><label>Set current operator</label><SearchSelect name="organisationId" required placeholder="Type an operator name" options={orgs.map((o) => ({ value: o.id, label: o.canonicalName, hint: o.region ?? undefined }))} /></div>
                 <div><label>From</label><input type="date" name="validFrom" /></div>
                 <div style={{ flex: "0 0 auto" }}><button type="submit" className="secondary">Set</button></div>
               </div>
@@ -121,7 +125,7 @@ export default async function AircraftDetail({ params, searchParams }: { params:
             <form action={addManagementAction} style={{ marginTop: 8 }}>
               <Key /><input type="hidden" name="aircraftId" value={id} />
               <div className="row">
-                <div><label>Add management company</label><select name="organisationId" required><option value="">Choose…</option>{orgs.map((o) => <option key={o.id} value={o.id}>{o.canonicalName}</option>)}</select></div>
+                <div><label>Add management company</label><SearchSelect name="organisationId" required placeholder="Type a company name" options={orgs.map((o) => ({ value: o.id, label: o.canonicalName, hint: o.region ?? undefined }))} /></div>
                 <div style={{ flex: "0 0 auto" }}><button type="submit" className="secondary">Add</button></div>
               </div>
             </form>
@@ -172,7 +176,7 @@ export default async function AircraftDetail({ params, searchParams }: { params:
                     ? "made. Remake it after changing the photos."
                     : canCombine
                       ? "not made yet."
-                      : `needs ${COMBINED_NEEDS} of this aircraft, all approved.`}
+                      : `needs ${COMBINED_NEEDS}, all approved (photos of this type count too, but at least one must be of this aircraft).`}
                 </span>
                 {canCombine && (
                   <form action={makeCombinedAction}>

@@ -5,6 +5,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import Icon from "./Icon";
 import TextBox, { Styled } from "./TextBox";
 import MessengerButtons from "./MessengerButtons";
+import SearchSelect from "./SearchSelect";
 import { copyText, fetchPhoto, openAfterCopy, shareText } from "./copyText";
 import { registerCommands, type CommandResult } from "./voice";
 import { togglePreferredOperator } from "../actions";
@@ -184,9 +185,6 @@ export default function QuoteBuilder({ aircraft, operators, preferred: preferred
     const t = [i === 0 ? greeting : null, blocks[i], i === chosen.length - 1 ? closing : null].filter((x): x is string => !!x && x.trim() !== "").join("\n\n");
     return mode === "whatsapp" ? t : forOtherApps(t);
   };
-  const [sentOptions, setSentOptions] = useState<Set<number>>(new Set());
-  useEffect(() => { setSentOptions(new Set()); }, [ids]);
-
   /**
    * Share through the phone's share sheet. option = null: every photo, then the whole message, in one send.
    * option = i: that option's photos with that option's message, so the client sees option 1, then option 2...
@@ -203,11 +201,8 @@ export default function QuoteBuilder({ aircraft, operators, preferred: preferred
       if (files.length && (!navigator.canShare || !navigator.canShare({ files }))) { setMsg("This browser cannot share photos directly. Open this page on your phone, or save the photos from each aircraft page."); return; }
       // WhatsApp shows the photos first, then the message.
       await navigator.share(files.length ? { files, text: message } : { text: message });
-      if (option === null) setMsg("Shared. If the message text did not come through, paste it from Copy message.");
-      else {
-        setSentOptions((s) => new Set(s).add(option));
-        setMsg(option < chosen.length - 1 ? `Option ${option + 1} shared. Now share option ${option + 2}, to the same chat.` : "All options shared.");
-      }
+      // The phone does not say whether the message was actually sent in WhatsApp, so nothing is marked as sent.
+      if (option === null) setMsg("If the message text did not come through, paste it from Copy message.");
     } catch (e) {
       if ((e as Error).name !== "AbortError") setMsg((e as Error).message || "Sharing failed");
     } finally { setBusy(false); }
@@ -316,20 +311,21 @@ export default function QuoteBuilder({ aircraft, operators, preferred: preferred
             <summary className="small">All operators ({browse.length}) · search, filter, sort</summary>
             <div className="group">
               {regions.length > 0 && (
-                <label className="group-row">Region
-                  <select value={region} onChange={(e) => setRegion(e.target.value)}>
-                    <option value="">All regions</option>
-                    {regions.map((r) => <option key={r} value={r}>{r}</option>)}
-                  </select>
-                </label>
+                <div className="group-row"><span>Region</span>
+                  <span className="seg" role="radiogroup" aria-label="Region">
+                    {["", ...regions].map((r) => (
+                      <button key={r || "all"} type="button" role="radio" aria-checked={region === r} className={region === r ? "on" : ""} onClick={() => setRegion(r)}>{r || "All"}</button>
+                    ))}
+                  </span>
+                </div>
               )}
-              <label className="group-row">Sort
-                <select value={sort} onChange={(e) => setSort(e.target.value as Sort)}>
-                  <option value="name">Name A–Z</option>
-                  <option value="aircraft">Most aircraft</option>
-                  <option value="recent">Recently added</option>
-                </select>
-              </label>
+              <div className="group-row"><span>Sort</span>
+                <span className="seg" role="radiogroup" aria-label="Sort">
+                  {([["name", "A–Z"], ["aircraft", "Most aircraft"], ["recent", "Newest"]] as const).map(([v, l]) => (
+                    <button key={v} type="button" role="radio" aria-checked={sort === v} className={sort === v ? "on" : ""} onClick={() => setSort(v)}>{l}</button>
+                  ))}
+                </span>
+              </div>
               <label className="group-row">Only operators with aircraft
                 <input type="checkbox" className="switch" checked={withAircraft} onChange={(e) => setWithAircraft(e.target.checked)} />
               </label>
@@ -404,12 +400,14 @@ export default function QuoteBuilder({ aircraft, operators, preferred: preferred
         <details className="card step" {...stepProps("lang")}>
           <summary><h3>3. Language and details</h3><span className="sum">{QUOTE_WORDS[lang].name}</span></summary>
           <div className="group-title">Message</div>
+          <div className="chips" role="radiogroup" aria-label="Language" style={{ marginBottom: 8 }}>
+            {QUOTE_LANGUAGES.map((l) => (
+              <button key={l} type="button" role="radio" aria-checked={lang === l} className={`chip small${lang === l ? " on" : ""}`} onClick={() => lang !== l && changeLang(l)}>
+                {QUOTE_WORDS[l].name}{templates[l] ? " ●" : ""}
+              </button>
+            ))}
+          </div>
           <div className="group">
-            <label className="group-row">Language
-              <select value={lang} onChange={(e) => changeLang(e.target.value as QuoteLanguage)}>
-                {QUOTE_LANGUAGES.map((l) => <option key={l} value={l}>{QUOTE_WORDS[l].name}{templates[l] ? " ●" : ""}</option>)}
-              </select>
-            </label>
             <label className="group-row">Opening line<input type="checkbox" className="switch" checked={inc.greeting} onChange={(e) => setInc({ ...inc, greeting: e.target.checked })} /></label>
             <label className="group-row">Closing line<input type="checkbox" className="switch" checked={inc.closing} onChange={(e) => setInc({ ...inc, closing: e.target.checked })} /></label>
           </div>
@@ -530,14 +528,10 @@ export default function QuoteBuilder({ aircraft, operators, preferred: preferred
               <div className="option-sends">
                 {chosen.map((a, i) => {
                   const n = photos.filter((x) => x.i === i).length;
-                  const done = sentOptions.has(i);
-                  const next = !done && [...Array(i).keys()].every((j) => sentOptions.has(j));
                   return (
                     <button key={a.id} type="button" className="block-btn secondary option-send" onClick={() => sharePhotos(i)} disabled={busy}>
                       <Icon name="share" />
-                      <span className="option-send-text">Option {i + 1} · {a.type} — {n ? `${n} photo${n === 1 ? "" : "s"} + message` : "message only"}</span>
-                      {done ? <span className="option-tag sent">✓ Sent</span> : next ? <span className="option-tag next">Next</span> : null}
-                    </button>
+                      <span className="option-send-text">Option {i + 1} · {a.type} — {n ? `${n} photo${n === 1 ? "" : "s"} + message` : "message only"}</span>                    </button>
                   );
                 })}
               </div>
@@ -556,12 +550,13 @@ export default function QuoteBuilder({ aircraft, operators, preferred: preferred
           )}
           {styled && (
             <div className="group" style={{ marginTop: 10 }}>
-              <label className="group-row">Bold and italics for
-                <select value={styleFor} onChange={(e) => setStyleFor(e.target.value as "whatsapp" | "other")}>
-                  <option value="whatsapp">WhatsApp</option>
-                  <option value="other">Other apps</option>
-                </select>
-              </label>
+              <div className="group-row"><span>Bold and italics for</span>
+                <span className="seg" role="radiogroup" aria-label="Bold and italics for">
+                  {([["whatsapp", "WhatsApp"], ["other", "Other apps"]] as const).map(([v, l]) => (
+                    <button key={v} type="button" role="radio" aria-checked={styleFor === v} className={styleFor === v ? "on" : ""} onClick={() => setStyleFor(v)}>{l}</button>
+                  ))}
+                </span>
+              </div>
             </div>
           )}
           <details className="collapse" style={{ marginTop: 12 }}>
@@ -569,10 +564,8 @@ export default function QuoteBuilder({ aircraft, operators, preferred: preferred
             {contacts.length > 0 && (
               <div className="row" style={{ alignItems: "end", marginBottom: 10 }}>
                 <div><label>To a saved contact</label>
-                  <select value={contactId} onChange={(e) => setContactId(e.target.value)}>
-                    <option value="">Choose…</option>
-                    {contacts.map((c) => <option key={c.id} value={c.id}>{c.name} ({contactApp(c.app)?.label ?? c.app})</option>)}
-                  </select></div>
+                  <SearchSelect value={contactId} onChange={setContactId} placeholder="Type a name" ariaLabel="Contact"
+                    options={contacts.map((c) => ({ value: c.id, label: c.name, hint: contactApp(c.app)?.label ?? c.app }))} /></div>
                 <div style={{ flex: "0 0 auto" }}><button type="button" className="secondary" disabled={!contact || !text.trim()} onClick={() => contact && open(contact.app, contact.handle, contactApp(contact.app)?.label ?? contact.app)}><Icon name="send" />Send</button></div>
               </div>
             )}

@@ -90,6 +90,20 @@ describe("combined photo in the gallery", () => {
     expect(rows.find((r) => r.mediaId === combined[0].mediaId)?.fileName).toBeNull();
   });
 
+  it("fills a gap from the type's photos (here the floor plan), but needs some photos of the aircraft itself", async () => {
+    const typePlan = (await ingestUpload(t.db, t.store, t.actor, { filename: "plan.png", bytes: await makeImage(400, 300, 9) })).result;
+    let v = (await getMediaDetail(t.db, t.actor.tenantId, typePlan.mediaId))!.media.version;
+    await updateMediaMetadata(t.db, t.actor, key(), { mediaId: typePlan.mediaId, expectedVersion: v, classification: "floor_plan" });
+    await setMediaAssociation(t.db, t.actor, key(), { mediaId: typePlan.mediaId, expectedVersion: ++v, status: "representative_type", aircraftTypeId: typeId });
+    const d = (await getMediaDetail(t.db, t.actor.tenantId, typePlan.mediaId))!;
+    await approveMedia(t.db, t.actor, { mediaId: typePlan.mediaId, contentVersionId: d.media.currentContentVersionId!, expectedVersion: d.media.version });
+    expect(await makeCombinedPhoto(t.db, t.store, t.actor, scope)).toMatchObject({ made: false }); // nothing of its own yet
+
+    await approved(1, "exterior"); await approved(2, "cabin"); await approved(3, "cabin");
+    expect(await ensureCombinedPhotos(t.db, t.store, t.actor)).toEqual({ made: 1, failed: [] });
+    expect((await existingCombined(t.db, t.actor.tenantId, scope))).toHaveLength(1);
+  });
+
   it("remaking replaces the old one", async () => {
     await approved(1, "exterior"); await approved(2, "cabin"); await approved(3, "cabin"); await approved(4, "floor_plan");
     const first = await makeCombinedPhoto(t.db, t.store, t.actor, scope);

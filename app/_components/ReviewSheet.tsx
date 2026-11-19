@@ -7,6 +7,7 @@ import type { Classification } from "@/domain/constants";
 import { assignGroupAction } from "../actions";
 import AircraftPicker, { type PickerAircraft, type PickerOperator, type PickerTypeGroup } from "./AircraftPicker";
 import { SetRest, ViewChoice } from "./ViewChoice";
+import Choice, { WIFI_CHOICES } from "./Choice";
 
 export interface SheetPhoto { mediaId: string; src: string | null; filename: string | null; classification: Classification; autoReason: string | null }
 export interface SheetGroup {
@@ -105,11 +106,9 @@ function GroupCard({
         <div className="sheet-fields">
           <AircraftPicker idPrefix={group} operators={operators} aircraft={aircraft} typeGroups={typeGroups} newOperatorName={d.newOperatorName}
             defaults={{ operator: d.operator, aircraft: d.aircraft, type: d.type }} />
-          <div className="row">
-            <div><label htmlFor={`${group}-tail`}>Tail number</label><input id={`${group}-tail`} name="tail" defaultValue={d.tail} placeholder="Optional" /></div>
-            <div><label htmlFor={`${group}-wifi`}>WIFI</label>
-              <select id={`${group}-wifi`} name="wifiStatus" defaultValue={d.wifi}><option value="yes">Yes</option><option value="no">No</option><option value="tbc">TBC</option><option value="unknown">Unknown</option></select></div>
-          </div>
+          <label htmlFor={`${group}-tail`}>Tail number</label><input id={`${group}-tail`} name="tail" defaultValue={d.tail} placeholder="Optional" />
+          <label>WIFI</label>
+          <Choice name="wifiStatus" defaultValue={d.wifi} options={WIFI_CHOICES} ariaLabel="WIFI" />
           <div className="row">
             <div><label htmlFor={`${group}-yom`}>YOM</label><input id={`${group}-yom`} name="yom" type="number" inputMode="numeric" defaultValue={d.yom} /></div>
             <div><label htmlFor={`${group}-yor`}>YOR</label><input id={`${group}-yor`} name="yor" type="number" inputMode="numeric" defaultValue={d.yor} /></div>

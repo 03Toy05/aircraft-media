@@ -8,6 +8,7 @@ import { CLASSIFICATION_LABEL, type Classification } from "@/domain/constants";
 import { prepareShareAction, type SharePayload } from "../shareActions";
 import { ShareBox } from "./ShareBox";
 import { copyText, fetchPhoto } from "./copyText";
+import SearchSelect from "./SearchSelect";
 import Icon from "./Icon";
 import { CHAT_LANGUAGES, parseChatLang, toHans, trClassification, type ChatLang } from "@/domain/chocksText";
 
@@ -32,7 +33,7 @@ const UI_EN = {
   copyFail: "Could not copy automatically. Select the message above and copy it.",
   openAircraft: "Open the aircraft →", review: "Review queue →", view: "view?",
   sharePhotos: "Share {n} photos + message", preparing: "Preparing…",
-  shared: "Shared. If the message text did not come through, paste it from Copy message.",
+  shared: "If the message text did not come through, paste it from Copy message.",
   cannotShare: "This browser cannot share photos directly. Open the quote on your phone, or use Open the quote.",
   photoFail: "A photo could not be loaded. Try again.",
   sendKinds: "Photos to send:", sendOption: "Option {i} · {name} — {n} photo{s} + message",
@@ -64,7 +65,7 @@ const UI_HANT: UI = {
   copyFail: "無法自動複製。請選取上面的訊息再複製。",
   openAircraft: "打開飛機 →", review: "審核隊列 →", view: "角度？",
   sharePhotos: "分享 {n} 張相片及訊息", preparing: "準備中…",
-  shared: "已分享。如訊息文字未有一併傳送，請用「複製訊息」再貼上。",
+  shared: "如訊息文字未有一併傳送，請用「複製訊息」再貼上。",
   cannotShare: "此瀏覽器無法直接分享相片。請在手機上打開，或按「打開報價」。",
   photoFail: "有相片未能載入，請再試一次。",
   sendKinds: "要傳送的相片：", sendOption: "選項 {i} · {name}：{n} 張相片及訊息",
@@ -108,7 +109,6 @@ function QuoteSend({ photos, options, text, ui, lang }: { photos: ChocksPhoto[];
   const [kinds, setKinds] = useState<Set<string>>(new Set(["exterior", "cabin", "floor_plan", "unclassified"]));
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState<string | null>(null);
-  const [sent, setSent] = useState<Set<number>>(new Set());
   const present = KINDS.filter((k) => photos.some((p) => p.classification === k));
   /** An option's photos of the ticked kinds. If only Combined is ticked and it has none, its single photos go instead. */
   const forOption = (i: number) => {
@@ -173,13 +173,11 @@ function QuoteSend({ photos, options, text, ui, lang }: { photos: ChocksPhoto[];
           <div className="option-sends">
             {options.map((o, i) => {
               const n = forOption(i).length;
-              const next = !sent.has(i) && [...Array(i).keys()].every((j) => sent.has(j));
+              // The phone does not report whether WhatsApp actually sent it, so nothing is marked as sent.
               return (
-                <button key={i} type="button" className="secondary option-send" disabled={busy}
-                  onClick={() => share(forOption(i), o.text, () => { setSent((s) => new Set(s).add(i)); setDone(i < options.length - 1 ? fill(ui.optionShared, { i: i + 1, j: i + 2 }) : ui.allShared); })}>
+                <button key={i} type="button" className="secondary option-send" disabled={busy} onClick={() => share(forOption(i), o.text, () => undefined)}>
                   <Icon name="share" />
                   <span className="option-send-text">{n ? fill(ui.sendOption, { i: i + 1, name: o.title, n, s: n === 1 ? "" : "s" }) : fill(ui.sendOptionText, { i: i + 1, name: o.title })}</span>
-                  {sent.has(i) ? <span className="option-tag sent">{ui.sentTag}</span> : next ? <span className="option-tag next">{ui.nextTag}</span> : null}
                 </button>
               );
             })}
@@ -393,9 +391,11 @@ export default function ChatClient() {
       <div className="card" style={{ marginBottom: 12 }}>
         <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "start" }}>
           <p style={{ margin: 0 }}><b>{ui.hi}</b><br />{ui.intro}</p>
-          <select value={chatLang} onChange={(e) => changeChatLang(e.target.value as ChatLang)} style={{ width: "auto", flex: "0 0 auto" }} aria-label={ui.language}>
-            {CHAT_LANGUAGES.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
-          </select>
+          <span className="seg" role="radiogroup" aria-label={ui.language}>
+            {CHAT_LANGUAGES.map((l) => (
+              <button key={l.id} type="button" role="radio" aria-checked={chatLang === l.id} className={chatLang === l.id ? "on" : ""} onClick={() => changeChatLang(l.id)}>{l.id === "en" ? "EN" : l.id === "zh-Hant" ? "繁" : "简"}</button>
+            ))}
+          </span>
         </div>
         <div className="welcome-actions">
           <Link href="/quote" className="btn"><Icon name="quote" />{ui.doQuote}</Link>
@@ -489,9 +489,9 @@ export default function ChatClient() {
               <label style={{ flex: "0 0 auto" }}><input type="checkbox" checked={speak} onChange={(e) => setSpeak(e.target.checked)} /> {ui.readAloud}</label>
               {canListen && <label style={{ flex: "0 0 auto" }}><input type="checkbox" checked={autoSend} onChange={(e) => setAutoSend(e.target.checked)} /> {ui.autoSend}</label>}
               {canListen && (
-                <select value={voice} onChange={(e) => setVoice(e.target.value)} style={{ flex: "0 0 auto", width: "auto" }} aria-label={ui.voiceLanguage}>
-                  {VOICES.map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}
-                </select>
+                <div style={{ flex: "1 1 160px" }}>
+                  <SearchSelect value={voice} onChange={setVoice} ariaLabel={ui.voiceLanguage} options={VOICES.map((v) => ({ value: v.id, label: v.name }))} />
+                </div>
               )}
             </div>
           ) : null}

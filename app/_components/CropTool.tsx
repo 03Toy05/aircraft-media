@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import Choice from "./Choice";
 
 type Rect = { x: number; y: number; w: number; h: number };
 type Handle = "n" | "s" | "e" | "w" | "ne" | "nw" | "se" | "sw";
@@ -172,7 +173,7 @@ export default function CropTool({
         </div>
       </details>
       <div className="row" style={{ marginTop: 8 }}>
-        <div><select name="mode"><option value="recrop">Replace with this crop (can be undone)</option><option value="separate">Separate as a new photo (collage)</option></select></div>
+        <div><Choice name="mode" defaultValue="recrop" ariaLabel="Crop" options={[{ value: "recrop", label: "Replace (can be undone)" }, { value: "separate", label: "Separate as a new photo" }]} /></div>
         <div style={{ flex: "0 0 auto" }}><button className="secondary" type="button" onClick={clear} disabled={!selected}>Clear</button></div>
         <div style={{ flex: "0 0 auto" }}><button type="submit" disabled={disabled || !selected}>Apply crop</button></div>
       </div>

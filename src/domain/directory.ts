@@ -25,8 +25,17 @@ import {
   WIFI_STATUSES,
 } from "./constants";
 import { conflict, invalid, notFound } from "./errors";
+import { normalizeBase, normalizeRegion } from "./places";
 
 type Q = Db | Tx;
+
+/** Region as saved: "HK" and "Hong Kong" become "Hong Kong" (see places.ts). Empty becomes null. */
+const cleanRegion = (r: string | null | undefined) => (r?.trim() ? normalizeRegion(r) : null);
+/** An operator's base as saved: each place tidied, duplicates dropped, joined with commas. */
+export const cleanBaseList = (b: string | null | undefined) => {
+  const parts = [...new Set((b ?? "").split(/[,;/]|\r?\n/).map((x) => x.trim()).filter(Boolean).map(normalizeBase))];
+  return parts.length ? parts.join(", ") : null;
+};
 
 // ---------------------------------------------------------------- evidence
 
@@ -74,7 +83,7 @@ export function createOrganisation(db: Db, actor: Actor, key: string, input: Cre
       const evidenceId = await recordManualEvidence(tx, actor);
       const [org] = await tx
         .insert(organisations)
-        .values({ tenantId: actor.tenantId, canonicalName: name, normalizedName: norm, region: input.region?.trim() || null, base: input.base?.trim() || null })
+        .values({ tenantId: actor.tenantId, canonicalName: name, normalizedName: norm, region: cleanRegion(input.region), base: cleanBaseList(input.base) })
         .returning({ id: organisations.id });
       for (const role of input.roles?.length ? input.roles : (["operator"] as OrgRole[])) {
         await tx.insert(organisationRoles).values({ organisationId: org.id, role, sourceEvidenceId: evidenceId });
@@ -135,7 +144,7 @@ export function setOrganisationRegion(db: Db, actor: Actor, key: string, input: 
     handler: async (tx) => {
       const [org] = await tx.select().from(organisations).where(and(eq(organisations.id, input.organisationId), eq(organisations.tenantId, actor.tenantId)));
       if (!org) throw notFound("Organisation");
-      await tx.update(organisations).set({ region: input.region?.trim() || null, ...(input.base !== undefined ? { base: input.base?.trim() || null } : {}), updatedAt: new Date() }).where(eq(organisations.id, org.id));
+      await tx.update(organisations).set({ region: cleanRegion(input.region), ...(input.base !== undefined ? { base: cleanBaseList(input.base) } : {}), updatedAt: new Date() }).where(eq(organisations.id, org.id));
       return { organisationId: org.id };
     },
   });
@@ -170,6 +179,34 @@ export function setPreferredOperators(db: Db, actor: Actor, key: string, input: 
 export async function getPreferredOperators(db: Q, tenantId: string): Promise<string[]> {
   const orgs = await db.select({ id: organisations.id, rank: organisations.preferredRank, active: organisations.active }).from(organisations).where(eq(organisations.tenantId, tenantId));
   return orgs.filter((o) => o.active && o.rank != null).sort((a, b) => (a.rank ?? 0) - (b.rank ?? 0)).map((o) => o.id);
+}
+
+/**
+ * Tidy regions and bases saved before the city list existed ("HK" -> "Hong Kong", "HKG" -> "Hong Kong").
+ * Only values that clearly match are changed; anything else is left as typed. Returns how many records changed.
+ */
+export async function tidyExistingPlaces(db: Db, tenantId: string): Promise<number> {
+  let changed = 0;
+  const orgs = await db.select({ id: organisations.id, region: organisations.region, base: organisations.base }).from(organisations).where(eq(organisations.tenantId, tenantId));
+  for (const o of orgs) {
+    const region = cleanRegion(o.region);
+    const base = cleanBaseList(o.base);
+    if (region !== (o.region ?? null) || base !== (o.base ?? null)) {
+      await db.update(organisations).set({ region, base }).where(eq(organisations.id, o.id));
+      changed++;
+    }
+  }
+  const bases = await db
+    .select({ id: aircraftBases.id, location: aircraftBases.location })
+    .from(aircraftBases)
+    .innerJoin(aircraft, eq(aircraft.id, aircraftBases.aircraftId))
+    .where(and(eq(aircraft.tenantId, tenantId), eq(aircraftBases.active, true)));
+  for (const b of bases) {
+    if (!b.location) continue;
+    const loc = normalizeBase(b.location);
+    if (loc !== b.location) { await db.update(aircraftBases).set({ location: loc }).where(eq(aircraftBases.id, b.id)); changed++; }
+  }
+  return changed;
 }
 
 /** The operator's usual base as a list of locations, for pre-filling a new aircraft. */
@@ -559,7 +596,7 @@ export function addInformationVersion(
 // ---------------------------------------------------------------- bases
 
 async function replaceBases(tx: Q, actor: Actor, aircraftId: string, base: BaseInput, evidenceId: string, effectiveDate: string | null) {
-  const locations = (base.locations ?? []).map((l) => l.trim()).filter(Boolean);
+  const locations = [...new Set((base.locations ?? []).map((l) => l.trim()).filter(Boolean).map(normalizeBase))];
   if (base.mode === "floating") {
     // Floating is exclusive: it cannot coexist with active base locations.
     if (locations.length) throw invalid("An aircraft cannot be Floating and have base locations at the same time");

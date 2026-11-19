@@ -6,6 +6,7 @@ import { LANGUAGES } from "@/domain/settings";
 import { MAX_PREFERRED_OPERATORS, getPreferredOperators } from "@/domain/directory";
 import { addNumberAction, deactivateNumberAction, setLanguageAction, setPreferredOperatorsAction } from "../../actions";
 import { Flash, Key, one, type SP } from "../../_components/ui";
+import SearchSelect from "../../_components/SearchSelect";
 
 const LANGUAGE_NAMES: Record<string, string> = {
   en: "English", "zh-Hant": "繁體中文", "zh-Hans": "简体中文", fr: "Français", ar: "العربية", de: "Deutsch", ru: "Русский",
@@ -32,7 +33,7 @@ export default async function Settings({ searchParams }: { searchParams: SP }) {
           <form action={setLanguageAction} className="row">
             <Key />
             <div><label>Reply language default</label>
-              <select name="language" defaultValue={me?.preferredLanguage ?? "en"}>{LANGUAGES.map((l) => <option key={l} value={l}>{LANGUAGE_NAMES[l]}</option>)}</select></div>
+              <SearchSelect name="language" defaultValue={me?.preferredLanguage ?? "en"} options={LANGUAGES.map((l) => ({ value: l, label: LANGUAGE_NAMES[l] ?? l }))} /></div>
             <div style={{ flex: "0 0 auto" }}><button className="secondary" type="submit">Save</button></div>
           </form>
         </div>
@@ -43,10 +44,8 @@ export default async function Settings({ searchParams }: { searchParams: SP }) {
             <Key />
             {Array.from({ length: MAX_PREFERRED_OPERATORS }, (_, i) => (
               <div key={i}><label>{i + 1}.</label>
-                <select name="organisationId" defaultValue={preferred[i] ?? ""}>
-                  <option value="">None</option>
-                  {orgs.map((o) => <option key={o.id} value={o.id}>{o.canonicalName}{o.region ? ` (${o.region})` : ""}</option>)}
-                </select></div>
+                <SearchSelect name="organisationId" defaultValue={preferred[i] ?? ""} emptyLabel="None" placeholder="Type an operator name"
+                  options={orgs.map((o) => ({ value: o.id, label: o.canonicalName, hint: o.region ?? undefined }))} /></div>
             ))}
             <div style={{ marginTop: 10 }}><button type="submit">Save preferred operators</button></div>
           </form>

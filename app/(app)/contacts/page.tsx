@@ -4,6 +4,7 @@ import { CONTACT_APPS, assignMissingPersonReferences, contactApp, listContacts }
 import { createContactAction, retireContactAction, updateContactAction } from "../../actions";
 import { Flash, Key, one, type SP } from "../../_components/ui";
 import Icon from "../../_components/Icon";
+import SearchSelect from "../../_components/SearchSelect";
 
 /** People you send aircraft to, and the messenger each one prefers. Chocks reads this list for "send the G280 to Mr Chan". */
 export default async function Contacts({ searchParams }: { searchParams: SP }) {
@@ -13,7 +14,7 @@ export default async function Contacts({ searchParams }: { searchParams: SP }) {
   if (!readOnly) await assignMissingPersonReferences(db, actor.tenantId); // contacts saved before Person IDs existed
   const list = await listContacts(db, actor.tenantId);
   const AppSelect = ({ value }: { value?: string }) => (
-    <select name="app" defaultValue={value ?? "whatsapp"}>{CONTACT_APPS.map((a) => <option key={a.id} value={a.id}>{a.label}</option>)}</select>
+    <SearchSelect name="app" defaultValue={value ?? "whatsapp"} ariaLabel="Messenger" options={CONTACT_APPS.map((a) => ({ value: a.id, label: a.label }))} />
   );
   return (
     <>
