@@ -47,18 +47,18 @@ async function upload(seed: number, cardText?: string) {
 
 /** classify + associate + approve using only deterministic actions (no AI anywhere). */
 async function approveAs(mediaId: string, classification: Parameters<typeof updateMediaMetadata>[3]["classification"], status: "actual_aircraft" | "representative_type") {
-  let v = (await getMediaDetail(t.db, mediaId))!.media.version;
+  let v = (await getMediaDetail(t.db, t.actor.tenantId, mediaId))!.media.version;
   await updateMediaMetadata(t.db, t.actor, key(), { mediaId, expectedVersion: v, classification });
   v++;
   await setMediaAssociation(t.db, t.actor, key(), { mediaId, expectedVersion: v, status, aircraftId: status === "actual_aircraft" ? acId : null, aircraftTypeId: status === "representative_type" ? typeId : null });
-  const d = (await getMediaDetail(t.db, mediaId))!;
+  const d = (await getMediaDetail(t.db, t.actor.tenantId, mediaId))!;
   await approveMedia(t.db, t.actor, { mediaId, contentVersionId: d.media.currentContentVersionId!, expectedVersion: d.media.version });
 }
 
 describe("Upload and duplicate control (Test 4 for manual uploads)", () => {
   it("retains the original and leaves the photo unclassified, unresolved, needing review", async () => {
     const r = await upload(1);
-    const d = (await getMediaDetail(t.db, r.mediaId))!;
+    const d = (await getMediaDetail(t.db, t.actor.tenantId, r.mediaId))!;
     expect(d.media).toMatchObject({ reviewState: "needs_review", primaryClassification: "unclassified", associationStatus: "unresolved" });
     expect(d.evidence).toMatchObject({ sourceKind: "manual", originalFilename: "p1.png" });
     expect(d.versions).toHaveLength(1);
@@ -85,7 +85,7 @@ describe("Upload and duplicate control (Test 4 for manual uploads)", () => {
 
   it("stores a parsed card as a pending proposal, never as a fact", async () => {
     const r = await upload(2, "Operator: Metrojet\nTail number: B-KXX\nWIFI: Yes");
-    const d = (await getMediaDetail(t.db, r.mediaId))!;
+    const d = (await getMediaDetail(t.db, t.actor.tenantId, r.mediaId))!;
     expect(d.proposals).toHaveLength(1);
     expect(d.proposals[0]).toMatchObject({ provider: "deterministic-card-parser", state: "pending" });
     expect(d.media.associationStatus).toBe("unresolved");
@@ -95,7 +95,7 @@ describe("Upload and duplicate control (Test 4 for manual uploads)", () => {
 describe("Test 7 & 8 — classify, order, correct and approve manually (no AI involved)", () => {
   it("requires classification and association before approval", async () => {
     const r = await upload(3);
-    const d = (await getMediaDetail(t.db, r.mediaId))!;
+    const d = (await getMediaDetail(t.db, t.actor.tenantId, r.mediaId))!;
     await expect(approveMedia(t.db, t.actor, { mediaId: r.mediaId, contentVersionId: r.contentVersionId, expectedVersion: d.media.version })).rejects.toThrow(/classification/);
   });
 
@@ -104,8 +104,8 @@ describe("Test 7 & 8 — classify, order, correct and approve manually (no AI in
     const b = await upload(11);
     await approveAs(a.mediaId, "exterior", "actual_aircraft");
     await approveAs(b.mediaId, "exterior", "actual_aircraft");
-    await updateMediaMetadata(t.db, t.actor, key(), { mediaId: b.mediaId, expectedVersion: (await getMediaDetail(t.db, b.mediaId))!.media.version, displayOrder: 0 });
-    await updateMediaMetadata(t.db, t.actor, key(), { mediaId: a.mediaId, expectedVersion: (await getMediaDetail(t.db, a.mediaId))!.media.version, displayOrder: 5 });
+    await updateMediaMetadata(t.db, t.actor, key(), { mediaId: b.mediaId, expectedVersion: (await getMediaDetail(t.db, t.actor.tenantId, b.mediaId))!.media.version, displayOrder: 0 });
+    await updateMediaMetadata(t.db, t.actor, key(), { mediaId: a.mediaId, expectedVersion: (await getMediaDetail(t.db, t.actor.tenantId, a.mediaId))!.media.version, displayOrder: 5 });
     const lineup = await getLineup(t.db, { aircraftId: acId, aircraftTypeId: typeId });
     expect(lineup.map((l) => [l.mediaId, l.label])).toEqual([
       [b.mediaId, "EXT 1"],
@@ -113,31 +113,31 @@ describe("Test 7 & 8 — classify, order, correct and approve manually (no AI in
     ]);
 
     // correcting the classification of approved media sends it back to review
-    const detail = (await getMediaDetail(t.db, a.mediaId))!;
-    await updateMediaMetadata(t.db, t.actor, key(), { mediaId: a.mediaId, expectedVersion: detail.media.version, classification: "cabin" });
-    expect((await getMediaDetail(t.db, a.mediaId))!.media.reviewState).toBe("needs_review");
+    const detail = (await getMediaDetail(t.db, t.actor.tenantId, a.mediaId))!;
+    await updateMediaMetadata(t.db, t.actor, key(), { mediaId: a.mediaId, expectedVersion: detail.media.version, classification: "interior" });
+    expect((await getMediaDetail(t.db, t.actor.tenantId, a.mediaId))!.media.reviewState).toBe("needs_review");
   });
 
   it("supports rejection with a reason and reopening", async () => {
     const r = await upload(12);
-    const v = (await getMediaDetail(t.db, r.mediaId))!.media.version;
+    const v = (await getMediaDetail(t.db, t.actor.tenantId, r.mediaId))!.media.version;
     await rejectMedia(t.db, t.actor, key(), { mediaId: r.mediaId, expectedVersion: v, reason: "blurry" });
-    let d = (await getMediaDetail(t.db, r.mediaId))!;
+    let d = (await getMediaDetail(t.db, t.actor.tenantId, r.mediaId))!;
     expect(d.media).toMatchObject({ reviewState: "rejected", rejectionReason: "blurry" });
     await reopenMedia(t.db, t.actor, key(), { mediaId: r.mediaId, expectedVersion: d.media.version });
-    d = (await getMediaDetail(t.db, r.mediaId))!;
+    d = (await getMediaDetail(t.db, t.actor.tenantId, r.mediaId))!;
     expect(d.media.reviewState).toBe("needs_review");
   });
 
   it("rejects stale edits via the version precondition", async () => {
     const r = await upload(13);
-    const err = await updateMediaMetadata(t.db, t.actor, key(), { mediaId: r.mediaId, expectedVersion: 99, classification: "cabin" }).catch((e) => e);
+    const err = await updateMediaMetadata(t.db, t.actor, key(), { mediaId: r.mediaId, expectedVersion: 99, classification: "interior" }).catch((e) => e);
     expect(err.code).toBe("VERSION_MISMATCH");
   });
 
   it("approval is idempotent for the same exact content version and actor", async () => {
     const r = await upload(14);
-    await updateMediaMetadata(t.db, t.actor, key(), { mediaId: r.mediaId, expectedVersion: 1, classification: "cabin" });
+    await updateMediaMetadata(t.db, t.actor, key(), { mediaId: r.mediaId, expectedVersion: 1, classification: "interior" });
     await setMediaAssociation(t.db, t.actor, key(), { mediaId: r.mediaId, expectedVersion: 2, status: "actual_aircraft", aircraftId: acId });
     const input = { mediaId: r.mediaId, contentVersionId: r.contentVersionId, expectedVersion: 3 };
     const first = await approveMedia(t.db, t.actor, input);
@@ -151,7 +151,7 @@ describe("Crop and separation keep the original (manual, no AI)", () => {
   it("recrop adds a derivative content version and preserves the earlier one", async () => {
     const r = await upload(20);
     const out = await recropMedia(t.db, t.store, t.actor, { mediaId: r.mediaId, sourceContentVersionId: r.contentVersionId, rect: { x: 10, y: 10, width: 100, height: 80 } });
-    const d = (await getMediaDetail(t.db, r.mediaId))!;
+    const d = (await getMediaDetail(t.db, t.actor.tenantId, r.mediaId))!;
     expect(d.versions.map((v) => [v.versionNumber, v.isDerivative, v.width, v.height])).toEqual([
       [1, false, 400, 300],
       [2, true, 100, 80],
@@ -166,15 +166,15 @@ describe("Crop and separation keep the original (manual, no AI)", () => {
     const r = await upload(23);
     const rect = { x: 10, y: 10, width: 100, height: 80 };
     const c1 = await recropMedia(t.db, t.store, t.actor, { mediaId: r.mediaId, sourceContentVersionId: r.contentVersionId, rect, key: key() });
-    let m = (await getMediaDetail(t.db, r.mediaId))!.media;
+    let m = (await getMediaDetail(t.db, t.actor.tenantId, r.mediaId))!.media;
     const undo = await useContentVersion(t.db, t.actor, key(), { mediaId: r.mediaId, contentVersionId: r.contentVersionId, expectedVersion: m.version });
-    m = (await getMediaDetail(t.db, r.mediaId))!.media;
+    m = (await getMediaDetail(t.db, t.actor.tenantId, r.mediaId))!.media;
     expect(m.currentContentVersionId).toBe(r.contentVersionId);
     expect(undo.result.contentVersionId).toBe(r.contentVersionId);
     expect((await readContentBytes(t.db, t.store, c1.result.contentVersionId)).bytes.byteLength).toBeGreaterThan(0); // crop kept
     const c2 = await recropMedia(t.db, t.store, t.actor, { mediaId: r.mediaId, sourceContentVersionId: r.contentVersionId, rect, key: key() });
     expect(c2.replayed).toBe(false);
-    expect((await getMediaDetail(t.db, r.mediaId))!.versions).toHaveLength(3);
+    expect((await getMediaDetail(t.db, t.actor.tenantId, r.mediaId))!.versions).toHaveLength(3);
   });
 
   it("separates several photos from a collage as independent reviewable media; repeat is a no-op", async () => {
@@ -210,22 +210,22 @@ describe("Test 10 — catalogue states", () => {
     expect((await find()).status).toBe("needs_review");
 
     // approve exterior only -> partial
-    const d = (await getMediaDetail(t.db, p.mediaId))!;
+    const d = (await getMediaDetail(t.db, t.actor.tenantId, p.mediaId))!;
     await approveMedia(t.db, t.actor, { mediaId: p.mediaId, contentVersionId: p.contentVersionId, expectedVersion: d.media.version });
     let row = await find();
     expect(row.status).toBe("partial");
     expect(row.cells.exterior.status).toBe("actual_available");
-    expect(row.cells.cabin.status).toBe("missing");
+    expect(row.cells.interior.status).toBe("missing");
 
     // add cabin + floor plan -> actual_available
-    await approveAs((await upload(31)).mediaId, "cabin", "actual_aircraft");
+    await approveAs((await upload(31)).mediaId, "interior", "actual_aircraft");
     await approveAs((await upload(32)).mediaId, "floor_plan", "actual_aircraft");
     expect((await find()).status).toBe("actual_available");
   });
 
   it("shows representative_available when only type-level media exist, kept distinct from actual", async () => {
     await approveAs((await upload(40)).mediaId, "exterior", "representative_type");
-    await approveAs((await upload(41)).mediaId, "cabin", "representative_type");
+    await approveAs((await upload(41)).mediaId, "interior", "representative_type");
     await approveAs((await upload(42)).mediaId, "floor_plan", "representative_type");
     const row = (await getCatalogue(t.db, t.actor.tenantId)).find((r) => r.aircraftId === acId)!;
     expect(row.status).toBe("representative_available");
@@ -264,14 +264,14 @@ describe("Test 16 — retire and restore without changing history", () => {
   it("retired media leaves the lineup and catalogue; restore brings the same record back", async () => {
     const r = await upload(70);
     await approveAs(r.mediaId, "exterior", "actual_aircraft");
-    const before = (await getMediaDetail(t.db, r.mediaId))!;
+    const before = (await getMediaDetail(t.db, t.actor.tenantId, r.mediaId))!;
     expect(await getLineup(t.db, { aircraftId: acId, aircraftTypeId: typeId })).toHaveLength(1);
 
     await retireMedia(t.db, t.actor, key(), { mediaId: r.mediaId });
     expect(await getLineup(t.db, { aircraftId: acId, aircraftTypeId: typeId })).toHaveLength(0);
     expect((await getCatalogue(t.db, t.actor.tenantId))[0].cells.exterior.status).toBe("missing");
     // approval and content version are untouched by retirement
-    const mid = (await getMediaDetail(t.db, r.mediaId))!;
+    const mid = (await getMediaDetail(t.db, t.actor.tenantId, r.mediaId))!;
     expect(mid.media.reviewState).toBe("approved");
     expect(mid.versions).toEqual(before.versions);
     await expect(approveMedia(t.db, t.actor, { mediaId: r.mediaId, contentVersionId: r.contentVersionId, expectedVersion: mid.media.version })).rejects.toThrow(/Retired/);

@@ -6,6 +6,7 @@ import { parseAircraftCard } from "./card";
 import { invalid } from "./errors";
 import { extractPdfImages, PDF_EXTRACTION_VERSION, type SkippedImage } from "./pdf";
 import { sha256 } from "../lib/hash";
+import { scanView } from "./autoView";
 import type { FileStore } from "../storage";
 import type { DriveSource } from "./media";
 
@@ -27,7 +28,7 @@ export interface PdfIntakeResult {
  * Extraction does not establish identity, operator, rights or configuration: every photo starts
  * unclassified/unresolved in needs_review.
  */
-export async function ingestPdf(db: Db, store: FileStore, actor: Actor, input: { filename: string; bytes: Uint8Array; cardText?: string | null; drive?: DriveSource }) {
+export async function ingestPdf(db: Db, store: FileStore, actor: Actor, input: { filename: string; bytes: Uint8Array; cardText?: string | null; drive?: DriveSource; batchId?: string | null }) {
   const { bytes } = input;
   const drive = input.drive;
   if (bytes.byteLength === 0) throw invalid("The file is empty");
@@ -65,6 +66,7 @@ export async function ingestPdf(db: Db, store: FileStore, actor: Actor, input: {
           originalDriveFileId: drive?.fileId ?? null,
           originalDriveVersion: drive?.revision ?? null,
           metadata: {
+            ...(input.batchId ? { batchId: input.batchId } : {}),
             mime: "application/pdf",
             storageKind: drive ? "drive" : store.kind,
             storageRef: pdfRef,
@@ -80,6 +82,7 @@ export async function ingestPdf(db: Db, store: FileStore, actor: Actor, input: {
       for (const img of extraction.images) {
         const ref = await store.put(img.bytes, `p${img.page}-${img.objectName}`, "Processing", img.mimeType);
         const imgHash = sha256(img.bytes);
+        const view = await scanView(img.bytes, ""); // brochures often carry the floor plan
         const [ev] = await tx
           .insert(sourceEvidence)
           .values({
@@ -90,12 +93,12 @@ export async function ingestPdf(db: Db, store: FileStore, actor: Actor, input: {
             cropRef: { x: 0, y: 0, width: img.width, height: img.height, extractionVersion: PDF_EXTRACTION_VERSION },
             senderId: actor.id,
             contentHash: imgHash,
-            metadata: { pdfImageObject: img.objectName },
+            metadata: { pdfImageObject: img.objectName, ...(view.reason ? { autoView: view.classification, autoViewReason: view.reason } : {}) },
           })
           .returning({ id: sourceEvidence.id });
         const [media] = await tx
           .insert(aircraftMedia)
-          .values({ tenantId: actor.tenantId, reviewState: "needs_review", createdSourceEvidenceId: ev.id })
+          .values({ tenantId: actor.tenantId, reviewState: "needs_review", primaryClassification: view.classification, createdSourceEvidenceId: ev.id })
           .returning({ id: aircraftMedia.id });
         const [cv] = await tx
           .insert(mediaContentVersions)

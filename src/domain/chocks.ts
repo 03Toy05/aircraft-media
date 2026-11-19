@@ -1,6 +1,6 @@
 import { and, eq } from "drizzle-orm";
 import type { Db } from "../db/client";
-import { aircraftTypeAliases, aircraftTypes, organisationAliases, organisations } from "../db/schema";
+import { aircraft, aircraftTypes, organisations } from "../db/schema";
 import { parseAircraftCard } from "./card";
 import { AIRCRAFT_CATEGORY_LABEL, CLASSIFICATION_LABEL, normalizeKey, parseClassification, type AircraftCategory, type Classification, type WifiStatus } from "./constants";
 import { isChinese, plural, tr, trCategory, trClassification, trLoose, trWifi, type ChatLang } from "./chocksText";
@@ -8,12 +8,12 @@ import { parseShareRequest, parseQuoteRequest, findAircraftsForShare } from "./c
 import { answerFleet, answerLookup, fleetBasics, isLookupQuestion, quotePreview } from "./chocksLookup";
 import { parseFleetQuery } from "./fleetQuery";
 import { findContacts } from "./contacts";
-import { findAircraftByTail, findAircraftWithoutTail, getAircraftCard, resolveAircraftTypes, resolveAircraftTypesExact, resolveOrganisations, resolveOrganisationsExact } from "./directory";
+import { findAircraftByTail, findAircraftWithoutTail, getAircraftCard, orgAliasesFor, typeAliasesFor, resolveAircraftTypes, resolveAircraftTypesExact, resolveOrganisations, resolveOrganisationsExact } from "./directory";
 
 /**
  * Chocks, the assistant. It is deterministic: it reads labelled text, checks the directory, and asks one plain
  * question at a time. The whole conversation state lives in the Draft, which the browser sends back each turn,
- * so a short reply ("new", "yes", "cabin") is always read against the question Chocks just asked.
+ * so a short reply ("new", "yes", "interior") is always read against the question Chocks just asked.
  */
 
 export interface Option { id: string; name: string; note?: string }
@@ -86,14 +86,14 @@ function similar(textNorm: string, candNorm: string) {
 export async function similarOperators(db: Db, tenantId: string, text: string): Promise<Option[]> {
   const n = normalizeKey(text);
   const orgs = await db.select().from(organisations).where(and(eq(organisations.tenantId, tenantId), eq(organisations.active, true)));
-  const aliases = await db.select().from(organisationAliases);
+  const aliases = await orgAliasesFor(db, tenantId);
   return orgs.filter((o) => similar(n, o.normalizedName) || aliases.some((a) => a.organisationId === o.id && similar(n, a.normalizedAlias))).slice(0, 4).map((o) => ({ id: o.id, name: o.canonicalName }));
 }
 
 export async function similarTypes(db: Db, tenantId: string, text: string): Promise<Option[]> {
   const n = normalizeKey(text);
   const types = await db.select().from(aircraftTypes).where(and(eq(aircraftTypes.tenantId, tenantId), eq(aircraftTypes.active, true)));
-  const aliases = await db.select().from(aircraftTypeAliases);
+  const aliases = await typeAliasesFor(db, tenantId);
   return types
     .filter((t) => similar(n, t.normalizedName) || aliases.some((a) => a.aircraftTypeId === t.id && similar(n, a.normalizedAlias)))
     .slice(0, 5)
@@ -363,6 +363,19 @@ async function nextStep(db: Db, tenantId: string, d: Draft, say: string[]): Prom
     }
   }
 
+  // -- a tail you already have tells the type: don't ask for it again
+  if (!d.typeId && !d.aircraftText && d.tail) {
+    const found = await findAircraftByTail(db, tenantId, d.tail);
+    if (found.length === 1) {
+      const [row] = await db.select({ t: aircraftTypes }).from(aircraft).innerJoin(aircraftTypes, eq(aircraftTypes.id, aircraft.aircraftTypeId)).where(and(eq(aircraft.id, found[0].aircraftId), eq(aircraft.tenantId, tenantId)));
+      if (row) {
+        d.typeId = row.t.id;
+        d.typeLabel = `${row.t.manufacturer} ${row.t.model}`;
+        say.push(tr(L, "Aircraft type: {label}.", { label: d.typeLabel }));
+      }
+    }
+  }
+
   // -- aircraft type
   if (!d.typeId && !d.typeSkipped) {
     if (d.aircraftText) {
@@ -444,8 +457,8 @@ async function nextStep(db: Db, tenantId: string, d: Draft, say: string[]): Prom
   const unclassified = d.photos.find((p) => p.classification === "unclassified");
   if (unclassified) {
     d.asked = { kind: "classify", mediaId: unclassified.mediaId };
-    const chips = (["exterior", "cabin", "floor_plan", "galley", "flight_deck"] as Classification[]).map((c) => ({ label: trClassification(L, c, CLASSIFICATION_LABEL[c]), send: c }));
-    return { draft: d, reply: { say: [...say, tr(L, "What view is “{name}”? Say “all cabin” to apply a view to every unclassified photo.", { name: unclassified.name })], chips, ready: false } };
+    const chips = (["exterior", "interior", "floor_plan"] as Classification[]).map((c) => ({ label: trClassification(L, c, CLASSIFICATION_LABEL[c]), send: c }));
+    return { draft: d, reply: { say: [...say, tr(L, "What view is “{name}”? Say “all interior” to apply a view to every unclassified photo.", { name: unclassified.name })], chips, ready: false } };
   }
 
   // -- ready

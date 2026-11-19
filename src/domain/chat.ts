@@ -1,10 +1,10 @@
 import { and, eq } from "drizzle-orm";
 import type { Db } from "../db/client";
-import { aircraftMedia, aircraftTypes, organisationAircraftRelationships } from "../db/schema";
+import { aircraft, aircraftMedia, aircraftTypes, organisationAircraftRelationships } from "../db/schema";
 import type { Actor } from "./action";
 import type { ParsedCard } from "./card";
 import { guessClassificationFromFilename, CLASSIFICATIONS, type Classification, type WifiStatus } from "./constants";
-import { addInformationVersion, addOrganisationAlias, setOrganisationRegion, createAircraft, createOrganisation, findAircraftByTail, getAircraftCard, resolveAircraftTypes, resolveOrganisations, setBases, setOperator } from "./directory";
+import { addInformationVersion, addOrganisationAlias, setOrganisationRegion, createAircraft, createOrganisation, findAircraftByTail, getAircraftCard, resolveAircraftTypes, resolveAircraftTypesExact, resolveOrganisations, setBases, setOperator } from "./directory";
 import { DomainError } from "./errors";
 import { approveMedia, setMediaAssociation, updateMediaMetadata } from "./media";
 
@@ -29,7 +29,11 @@ export async function matchCard(db: Q, tenantId: string, parsed: ParsedCard): Pr
   const r: CardMatches = { tailMatches: [], opMatches: [], typeMatches: [], operatorText: parsed.operator ?? "", operatorLoose: false, aircraftText: parsed.aircraft ?? "", leftover: [] };
   if (parsed.tail) r.tailMatches = (await findAircraftByTail(db, tenantId, parsed.tail)).map((x) => x.aircraftId);
   if (r.operatorText) r.opMatches = await resolveOrganisations(db, tenantId, r.operatorText);
-  if (r.aircraftText) r.typeMatches = await resolveAircraftTypes(db, tenantId, r.aircraftText);
+  if (r.aircraftText) {
+    // "G650ER" also partly matches "G650": an exact name wins outright.
+    const exact = await resolveAircraftTypesExact(db, tenantId, r.aircraftText);
+    r.typeMatches = exact.length === 1 ? exact : await resolveAircraftTypes(db, tenantId, r.aircraftText);
+  }
   for (const line of parsed.unrecognised ?? []) {
     if (!r.operatorText) {
       const o = await resolveOrganisations(db, tenantId, line);
@@ -109,8 +113,11 @@ export async function applyChatProposal(db: Db, actor: Actor, key: string, input
 
   let aircraftId: string | null = null;
   if (input.aircraft.mode === "existing") {
-    aircraftId = input.aircraft.aircraftId;
-    out.steps.push(...(await updateExistingAircraft(db, actor, key, aircraftId, operatorId, input)));
+    const [own] = await db.select({ id: aircraft.id }).from(aircraft).where(and(eq(aircraft.id, input.aircraft.aircraftId), eq(aircraft.tenantId, actor.tenantId), eq(aircraft.active, true)));
+    if (own) {
+      aircraftId = own.id;
+      out.steps.push(...(await updateExistingAircraft(db, actor, key, aircraftId, operatorId, input)));
+    } else out.steps.push("Aircraft not found");
   } else if (input.aircraft.mode === "new") {
     try {
       if (!input.aircraftTypeId) throw new DomainError("INVALID", "Choose an aircraft type to create the aircraft");

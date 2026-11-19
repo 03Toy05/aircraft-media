@@ -7,7 +7,9 @@ import { getDb } from "@/db/client";
 import { getDriveClient, getFileStore } from "@/storage";
 import { importDriveFolder } from "@/domain/driveImport";
 import { ingestPdf } from "@/domain/intake";
-import { requireOwner } from "@/lib/session";
+import { cookies, headers } from "next/headers";
+import { VIEW_AS_COOKIE, requireAdmin, requireUser, requireWriter } from "@/lib/session";
+import * as accounts from "@/domain/accounts";
 import { DomainError } from "@/domain/errors";
 import * as dir from "@/domain/directory";
 import * as contacts from "@/domain/contacts";
@@ -48,8 +50,26 @@ async function run(returnTo: string, ok: string | null, fn: () => Promise<unknow
   redirect(ok ? withParam(dest, "ok", ok) : dest);
 }
 
+/** Back to the page the form was on (same site only). */
+async function backTo(): Promise<string> {
+  const ref = (await headers()).get("referer");
+  try {
+    const u = ref ? new URL(ref) : null;
+    return u ? `${u.pathname}${u.search.replace(/([?&])(error|ok)=[^&]*/g, "$1").replace(/[?&]+$/, "")}` : "/";
+  } catch {
+    return "/";
+  }
+}
+
+/** Every action that adds or changes data: refused (with a message on the same page) when the workspace is read-only. */
 async function ctx() {
-  const { actor } = await requireOwner();
+  let actor;
+  try {
+    ({ actor } = await requireWriter());
+  } catch (e) {
+    if (e instanceof DomainError) redirect(withParam(await backTo(), "error", e.message));
+    throw e;
+  }
   return { actor, db: await getDb(), store: getFileStore() };
 }
 
@@ -64,13 +84,14 @@ export async function signOutAction() {
 export async function uploadMediaAction(fd: FormData) {
   const { actor, db, store } = await ctx();
   const cardText = optStr(fd, "cardText");
+  const batchId = randomUUID(); // one upload = one batch: the card text and the assignment apply to all its photos
   const results: { name: string; status: "new" | "duplicate" | "failed" | "partial"; mediaId?: string; error?: string; detail?: string }[] = [];
   for (const f of fd.getAll("files")) {
     if (!(f instanceof File) || f.size === 0) continue;
     const bytes = new Uint8Array(await f.arrayBuffer());
     try {
       if (f.type === "application/pdf" || /\.pdf$/i.test(f.name)) {
-        const r = await ingestPdf(db, store, actor, { filename: f.name, bytes, cardText });
+        const r = await ingestPdf(db, store, actor, { filename: f.name, bytes, cardText, batchId });
         const x = r.result;
         const detail =
           x.status === "no_images"
@@ -78,7 +99,7 @@ export async function uploadMediaAction(fd: FormData) {
             : `${x.extracted.length} photo(s) extracted from ${x.pageCount} page(s)` + (x.skipped.length ? `; skipped ${x.skipped.length}: ${x.skipped.map((k) => `p${k.page} ${k.reason}`).join("; ")}` : "");
         results.push({ name: f.name, status: r.replayed ? "duplicate" : x.status === "partially_processed" ? "partial" : "new", mediaId: x.extracted[0]?.mediaId, detail });
       } else {
-        const r = await media.ingestUpload(db, store, actor, { filename: f.name, bytes, cardText });
+        const r = await media.ingestUpload(db, store, actor, { filename: f.name, bytes, cardText, batchId });
         results.push({ name: f.name, status: r.replayed ? "duplicate" : "new", mediaId: r.result.mediaId });
       }
     } catch (e) {
@@ -87,6 +108,11 @@ export async function uploadMediaAction(fd: FormData) {
     }
   }
   revalidatePath("/", "layout");
+  // All went in: go straight to the first photo, where the scanned views of the whole upload are waiting to be checked.
+  const fresh = results.filter((r) => r.status === "new" && r.mediaId);
+  if (fresh.length && results.every((r) => r.status === "new" || r.status === "duplicate")) {
+    redirect(withParam(`/review/${fresh[0].mediaId}`, "ok", `${fresh.length} photo${fresh.length === 1 ? "" : "s"} uploaded and scanned. Check the views, choose the aircraft, then approve.`));
+  }
   redirect(withParam("/intake", "r", JSON.stringify(results)));
 }
 
@@ -96,6 +122,8 @@ export async function driveImportAction(fd: FormData) {
   let error: string | null = null;
   let summary: unknown = null;
   try {
+    // The Drive folder is the admin's own; other users upload their photos instead.
+    if (!(await requireUser()).isAdmin) throw new DomainError("ADMIN_ONLY", "Only the admin can import from the Google Drive folder. Upload your photos instead.");
     if (!client) throw new DomainError("DRIVE_NOT_CONNECTED", "Google Drive is not connected yet (see the configuration guide).");
     const s = await importDriveFolder(db, client, store, actor, str(fd, "folder") || client.rootFolderId);
     summary = { ...s, items: s.items.filter((i) => i.outcome !== "already_imported").slice(0, 25) };
@@ -425,13 +453,17 @@ export async function assignPhotoAction(fd: FormData) {
   const tail = str(fd, "tail");
   const baseMode = str(fd, "baseMode");
   const baseLocations = list(str(fd, "baseLocations"));
-  const cls = str(fd, "classification") as Classification;
+  const asClass = (v: string): Classification => (CLASSIFICATIONS.includes(v as Classification) ? (v as Classification) : "unclassified");
+  // The other photos sent with this one (same source evidence) that the owner kept ticked, each with its own view.
+  const also = [...new Set(fd.getAll("also").map(String).filter((x) => /^[0-9a-f-]{36}$/.test(x) && x !== mediaId))];
+  const classifications: Record<string, Classification> = { [mediaId]: asClass(str(fd, "classification")) };
+  for (const id of also) classifications[id] = asClass(str(fd, `cls_${id}`));
   let message = "";
   let approved = false;
   try {
     const r = await applyChatProposal(db, actor, key(fd), {
-      mediaIds: [mediaId],
-      classifications: { [mediaId]: CLASSIFICATIONS.includes(cls) ? cls : "unclassified" },
+      mediaIds: [mediaId, ...also],
+      classifications,
       operatorId: operatorChoice && operatorChoice !== "new" ? operatorChoice : null,
       newOperatorName: operatorChoice === "new" ? str(fd, "newOperatorName") : null,
       aircraftTypeId: optStr(fd, "aircraftTypeId"),
@@ -439,7 +471,10 @@ export async function assignPhotoAction(fd: FormData) {
       info: { yom: optNum(fd, "yom"), yor: optNum(fd, "yor"), capacity: optNum(fd, "capacity"), wifiStatus: (str(fd, "wifiStatus") || "unknown") as WifiStatus, notes: optStr(fd, "notes") },
       base: baseMode === "floating" ? { mode: "floating", locations: [] } : baseMode === "based" && baseLocations.length ? { mode: "based", locations: baseLocations } : undefined,
     });
-    message = [...r.steps, ...r.photos.map((p) => `Photo ${p.detail}`)].join(". ");
+    // One line per outcome ("3 photos approved as this aircraft"), not one per photo.
+    const tally = new Map<string, number>();
+    for (const p of r.photos) tally.set(p.detail, (tally.get(p.detail) ?? 0) + 1);
+    message = [...r.steps, ...[...tally].map(([detail, n]) => (n === 1 ? `Photo ${detail}` : `${n} photos ${detail}`))].join(". ");
     approved = r.photos.every((p) => p.outcome === "approved");
   } catch (e) {
     if (e instanceof DomainError) message = e.message;
@@ -470,7 +505,14 @@ export async function setPreferredOperatorsAction(fd: FormData) {
 
 /** Star or unstar an operator from the Quote page, without leaving it. Returns the new list, or a message. */
 export async function togglePreferredOperator(organisationId: string): Promise<{ ids: string[]; error?: string }> {
-  const { actor, db } = await ctx();
+  let actor;
+  try {
+    ({ actor } = await requireWriter());
+  } catch (e) {
+    if (e instanceof DomainError) return { ids: await dir.getPreferredOperators(await getDb(), (await requireUser()).actor.tenantId), error: e.message };
+    throw e;
+  }
+  const db = await getDb();
   const cur = await dir.getPreferredOperators(db, actor.tenantId);
   const next = cur.includes(organisationId) ? cur.filter((x) => x !== organisationId) : [...cur, organisationId];
   if (next.length > dir.MAX_PREFERRED_OPERATORS) return { ids: cur, error: `You already have ${dir.MAX_PREFERRED_OPERATORS} preferred operators. Remove one first (tap its star).` };
@@ -487,4 +529,55 @@ export async function togglePreferredOperator(organisationId: string): Promise<{
 export async function setLanguageAction(fd: FormData) {
   const { actor, db } = await ctx();
   await run("/settings", "Language saved", () => settings.setPreferredLanguage(db, actor, key(fd), { language: str(fd, "language") }));
+}
+
+// ------------------------------------------------------------------ admin (platform owner only)
+
+async function adminCtx() {
+  const s = await requireAdmin();
+  return { s, db: await getDb(), adminEmail: s.email };
+}
+
+export async function inviteUserAction(fd: FormData) {
+  const { s, db } = await adminCtx();
+  const plan = str(fd, "plan") === "full" ? "full" : "trial";
+  await run("/admin", "Invited. Send them the app link; they sign in with that Google account.", () => accounts.inviteUser(db, s.actor.id, { email: str(fd, "email"), plan, name: optStr(fd, "name") }));
+}
+
+export async function extendTrialAction(fd: FormData) {
+  const { db, adminEmail } = await adminCtx();
+  await run("/admin", "Trial extended", () => accounts.extendTrial(db, adminEmail, str(fd, "userId"), Number(str(fd, "days"))));
+}
+
+export async function setPlanAction(fd: FormData) {
+  const { db, adminEmail } = await adminCtx();
+  const plan = str(fd, "plan") === "full" ? "full" : "trial";
+  await run("/admin", plan === "full" ? "Now a full account (no time limit)" : "Back on a 14-day trial", () => accounts.setPlan(db, adminEmail, str(fd, "userId"), plan));
+}
+
+export async function setBlockedAction(fd: FormData) {
+  const { db, adminEmail } = await adminCtx();
+  const blocked = str(fd, "blocked") === "1";
+  await run("/admin", blocked ? "Access turned off; their work is kept" : "Access turned back on", () => accounts.setBlocked(db, adminEmail, str(fd, "userId"), blocked));
+}
+
+export async function withdrawInviteAction(fd: FormData) {
+  const { db, adminEmail } = await adminCtx();
+  await run("/admin", "Invitation withdrawn", () => accounts.withdrawInvite(db, adminEmail, str(fd, "userId")));
+}
+
+/** Admin: look at a user's workspace, read-only, until "Back to my workspace". */
+export async function viewAsAction(fd: FormData) {
+  await requireAdmin();
+  const id = str(fd, "userId");
+  if (/^[0-9a-f-]{36}$/.test(id)) (await cookies()).set(VIEW_AS_COOKIE, id, { httpOnly: true, sameSite: "lax", secure: process.env.NODE_ENV === "production", path: "/", maxAge: 3600 });
+  revalidatePath("/", "layout");
+  redirect("/fleet");
+}
+
+export async function stopViewingAction() {
+  await requireAdmin();
+  (await cookies()).delete(VIEW_AS_COOKIE);
+  revalidatePath("/", "layout");
+  redirect("/admin");
 }

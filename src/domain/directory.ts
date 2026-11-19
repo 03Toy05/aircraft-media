@@ -644,6 +644,8 @@ export function addManagementCompany(db: Db, actor: Actor, key: string, input: {
     input,
     handler: async (tx) => {
       await requireAircraft(tx, actor, input.aircraftId);
+      const [org] = await tx.select({ id: organisations.id }).from(organisations).where(and(eq(organisations.id, input.organisationId), eq(organisations.tenantId, actor.tenantId)));
+      if (!org) throw notFound("Organisation");
       const evidenceId = await recordManualEvidence(tx, actor);
       const [existing] = await tx
         .select({ id: organisationAircraftRelationships.id })
@@ -667,6 +669,16 @@ export function addManagementCompany(db: Db, actor: Actor, key: string, input: {
 }
 
 // ---------------------------------------------------------------- reads: card + resolution
+
+/** Aliases of this workspace's organisations only. */
+export async function orgAliasesFor(db: Q, tenantId: string) {
+  return (await db.select({ a: organisationAliases }).from(organisationAliases).innerJoin(organisations, eq(organisations.id, organisationAliases.organisationId)).where(eq(organisations.tenantId, tenantId))).map((r) => r.a);
+}
+
+/** Aliases of this workspace's aircraft types only. */
+export async function typeAliasesFor(db: Q, tenantId: string) {
+  return (await db.select({ a: aircraftTypeAliases }).from(aircraftTypeAliases).innerJoin(aircraftTypes, eq(aircraftTypes.id, aircraftTypeAliases.aircraftTypeId)).where(eq(aircraftTypes.tenantId, tenantId))).map((r) => r.a);
+}
 
 export interface AircraftCard {
   aircraftId: string;
@@ -738,7 +750,7 @@ export async function resolveOrganisations(db: Q, tenantId: string, text: string
   const n = normalizeKey(text);
   if (!n) return [];
   const orgs = await db.select().from(organisations).where(and(eq(organisations.tenantId, tenantId), eq(organisations.active, true)));
-  const aliases = await db.select().from(organisationAliases);
+  const aliases = await orgAliasesFor(db, tenantId);
   const aliasesByOrg = new Map<string, string[]>();
   for (const a of aliases) aliasesByOrg.set(a.organisationId, [...(aliasesByOrg.get(a.organisationId) ?? []), a.normalizedAlias]);
   return rank(orgs.map((o) => ({ item: o, keys: [o.normalizedName, ...(aliasesByOrg.get(o.id) ?? [])] })), n);
@@ -748,7 +760,7 @@ export async function resolveAircraftTypes(db: Q, tenantId: string, text: string
   const n = normalizeKey(text);
   if (!n) return [];
   const types = await db.select().from(aircraftTypes).where(and(eq(aircraftTypes.tenantId, tenantId), eq(aircraftTypes.active, true)));
-  const aliases = await db.select().from(aircraftTypeAliases);
+  const aliases = await typeAliasesFor(db, tenantId);
   const byType = new Map<string, string[]>();
   for (const a of aliases) byType.set(a.aircraftTypeId, [...(byType.get(a.aircraftTypeId) ?? []), a.normalizedAlias]);
   return rank(types.map((t) => ({ item: t, keys: [t.normalizedName, ...(byType.get(t.id) ?? [])] })), n);
@@ -790,7 +802,7 @@ export async function resolveOrganisationsExact(db: Q, tenantId: string, text: s
   const n = normalizeKey(text);
   if (!n) return [];
   const orgs = await db.select().from(organisations).where(and(eq(organisations.tenantId, tenantId), eq(organisations.active, true)));
-  const aliases = await db.select().from(organisationAliases);
+  const aliases = await orgAliasesFor(db, tenantId);
   return orgs.filter((o) => o.normalizedName === n || aliases.some((a) => a.organisationId === o.id && a.normalizedAlias === n));
 }
 
@@ -798,7 +810,7 @@ export async function resolveAircraftTypesExact(db: Q, tenantId: string, text: s
   const n = normalizeKey(text);
   if (!n) return [];
   const types = await db.select().from(aircraftTypes).where(and(eq(aircraftTypes.tenantId, tenantId), eq(aircraftTypes.active, true)));
-  const aliases = await db.select().from(aircraftTypeAliases);
+  const aliases = await typeAliasesFor(db, tenantId);
   return types.filter((t) => t.normalizedName === n || aliases.some((a) => a.aircraftTypeId === t.id && a.normalizedAlias === n));
 }
 

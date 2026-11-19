@@ -1,8 +1,10 @@
-import { and, asc, desc, eq } from "drizzle-orm";
+import { and, asc, desc, eq, or, sql } from "drizzle-orm";
 import sharp from "sharp";
 import {
   aircraft,
   aircraftMedia,
+  aircraftTypes,
+  organisations,
   mediaAssociations,
   mediaContentVersions,
   processingProposals,
@@ -23,6 +25,7 @@ import {
 } from "./constants";
 import { DomainError, conflict, invalid, notFound } from "./errors";
 import { sha256 } from "../lib/hash";
+import { scanView } from "./autoView";
 import type { FileStore, StorageKind } from "../storage";
 
 type Q = Db | Tx;
@@ -44,6 +47,8 @@ export interface UploadInput {
   bytes: Uint8Array;
   cardText?: string | null;
   drive?: DriveSource;
+  /** Files sent together share one batch id, so the details given once can be applied to all of them. */
+  batchId?: string | null;
 }
 
 export const ensureImageBytes = async (bytes: Uint8Array) => {
@@ -71,6 +76,7 @@ export async function ingestUpload(db: Db, store: FileStore, actor: Actor, input
   const { meta, mime } = await ensureImageBytes(input.bytes);
   const hash = sha256(input.bytes);
   const drive = input.drive;
+  const view = await scanView(input.bytes, input.filename); // first pass, confirmed by the broker in Review
   return runAction({
     db,
     actor,
@@ -93,12 +99,12 @@ export async function ingestUpload(db: Db, store: FileStore, actor: Actor, input
           senderId: actor.id,
           originalText: input.cardText?.trim() || null,
           contentHash: hash,
-          metadata: { mime, uploadedVia: drive ? "drive-import" : "web" },
+          metadata: { mime, uploadedVia: drive ? "drive-import" : "web", ...(input.batchId ? { batchId: input.batchId } : {}), ...(view.reason ? { autoView: view.classification, autoViewReason: view.reason } : {}) },
         })
         .returning({ id: sourceEvidence.id });
       const [media] = await tx
         .insert(aircraftMedia)
-        .values({ tenantId: actor.tenantId, reviewState: "needs_review", createdSourceEvidenceId: ev.id })
+        .values({ tenantId: actor.tenantId, reviewState: "needs_review", primaryClassification: view.classification, createdSourceEvidenceId: ev.id })
         .returning({ id: aircraftMedia.id });
       const [cv] = await tx
         .insert(mediaContentVersions)
@@ -227,7 +233,15 @@ export function setMediaAssociation(db: Db, actor: Actor, key: string, input: As
         aircraftTypeId = ac.aircraftTypeId;
       } else if (input.status === "representative_type") {
         if (!input.aircraftTypeId) throw invalid("Choose the aircraft type this photo represents");
-        aircraftTypeId = input.aircraftTypeId;
+        const [t] = await tx.select().from(aircraftTypes).where(and(eq(aircraftTypes.id, input.aircraftTypeId), eq(aircraftTypes.tenantId, actor.tenantId)));
+        if (!t) throw notFound("Aircraft type");
+        aircraftTypeId = t.id;
+      }
+      let organisationId: string | null = null;
+      if (input.organisationId) {
+        const [o] = await tx.select().from(organisations).where(and(eq(organisations.id, input.organisationId), eq(organisations.tenantId, actor.tenantId)));
+        if (!o) throw notFound("Organisation");
+        organisationId = o.id;
       }
       await tx
         .update(mediaAssociations)
@@ -237,7 +251,7 @@ export function setMediaAssociation(db: Db, actor: Actor, key: string, input: As
         aircraftMediaId: m.id,
         aircraftId,
         aircraftTypeId,
-        organisationId: input.organisationId ?? null,
+        organisationId,
         associationStatus: input.status,
         sourceEvidenceId: m.createdSourceEvidenceId,
         reviewedBy: actor.id,
@@ -563,8 +577,8 @@ export async function readContentBytes(db: Db, store: FileStore, contentVersionI
 
 // ---------------------------------------------------------------- reads
 
-export async function getMediaDetail(db: Q, mediaId: string) {
-  const [media] = await db.select().from(aircraftMedia).where(eq(aircraftMedia.id, mediaId));
+export async function getMediaDetail(db: Q, tenantId: string, mediaId: string) {
+  const [media] = await db.select().from(aircraftMedia).where(and(eq(aircraftMedia.id, mediaId), eq(aircraftMedia.tenantId, tenantId)));
   if (!media) return null;
   const versions = await db.select().from(mediaContentVersions).where(eq(mediaContentVersions.aircraftMediaId, mediaId)).orderBy(asc(mediaContentVersions.versionNumber));
   const [assoc] = await db.select().from(mediaAssociations).where(and(eq(mediaAssociations.aircraftMediaId, mediaId), eq(mediaAssociations.active, true)));
@@ -603,7 +617,15 @@ export async function getLineup(db: Q, opts: { aircraftId: string; aircraftTypeI
     .from(aircraftMedia)
     .innerJoin(mediaAssociations, and(eq(mediaAssociations.aircraftMediaId, aircraftMedia.id), eq(mediaAssociations.active, true)))
     .innerJoin(mediaContentVersions, eq(mediaContentVersions.id, aircraftMedia.currentContentVersionId))
-    .where(and(eq(aircraftMedia.reviewState, "approved"), eq(aircraftMedia.lifecycleState, "active")))
+    .where(
+      and(
+        eq(aircraftMedia.reviewState, "approved"),
+        eq(aircraftMedia.lifecycleState, "active"),
+        // Only the workspace that owns this aircraft type: types are per workspace, so this keeps users' photos apart.
+        eq(aircraftMedia.tenantId, sql`(select ${aircraftTypes.tenantId} from ${aircraftTypes} where ${aircraftTypes.id} = ${opts.aircraftTypeId})`),
+        opts.aircraftId ? or(eq(mediaAssociations.aircraftId, opts.aircraftId), eq(mediaAssociations.aircraftTypeId, opts.aircraftTypeId)) : eq(mediaAssociations.aircraftTypeId, opts.aircraftTypeId),
+      ),
+    )
     .orderBy(asc(aircraftMedia.displayOrder), asc(aircraftMedia.createdAt));
   const counters = new Map<Classification, number>();
   const out: LineupItem[] = [];
@@ -624,4 +646,62 @@ export async function getLineup(db: Q, opts: { aircraftId: string; aircraftTypeI
     });
   }
   return out;
+}
+
+export interface SiblingPhoto {
+  mediaId: string;
+  contentVersionId: string | null;
+  filename: string | null;
+  classification: Classification;
+  /** Why the upload scan chose its view ("from the file name", "looks like a floor plan drawing"), if it did. */
+  autoReason: string | null;
+}
+
+/**
+ * Other photos still waiting in Review that came with this one: the same upload (or Chocks message), the same PDF,
+ * or the same card text from the same person. They carry the same source evidence, so they can be assigned together.
+ */
+export async function findUploadSiblings(db: Q, tenantId: string, mediaId: string): Promise<SiblingPhoto[]> {
+  const [me] = await db
+    .select({ m: aircraftMedia, ev: sourceEvidence })
+    .from(aircraftMedia)
+    .innerJoin(sourceEvidence, eq(sourceEvidence.id, aircraftMedia.createdSourceEvidenceId))
+    .where(and(eq(aircraftMedia.id, mediaId), eq(aircraftMedia.tenantId, tenantId)));
+  if (!me) return [];
+  const batchId = (me.ev.metadata as { batchId?: string } | null)?.batchId ?? null;
+  const parent = me.ev.parentEvidenceId;
+  const text = me.ev.originalText?.trim() || null;
+  if (!batchId && !parent && !text) return [];
+  const rows = await db
+    .select({ m: aircraftMedia, ev: sourceEvidence })
+    .from(aircraftMedia)
+    .innerJoin(sourceEvidence, eq(sourceEvidence.id, aircraftMedia.createdSourceEvidenceId))
+    .where(and(eq(aircraftMedia.tenantId, tenantId), eq(aircraftMedia.reviewState, "needs_review"), eq(aircraftMedia.lifecycleState, "active")))
+    .orderBy(asc(aircraftMedia.createdAt));
+  // A PDF's photos point at the PDF's evidence, which carries the batch id.
+  const parentBatch = new Map<string, string | null>();
+  for (const r of rows) {
+    if (r.ev.parentEvidenceId && !parentBatch.has(r.ev.parentEvidenceId)) {
+      const [p] = await db.select({ metadata: sourceEvidence.metadata }).from(sourceEvidence).where(and(eq(sourceEvidence.id, r.ev.parentEvidenceId), eq(sourceEvidence.tenantId, tenantId)));
+      parentBatch.set(r.ev.parentEvidenceId, (p?.metadata as { batchId?: string } | undefined)?.batchId ?? null);
+    }
+  }
+  const batchOf = (ev: typeof sourceEvidence.$inferSelect) =>
+    (ev.metadata as { batchId?: string } | null)?.batchId ?? (ev.parentEvidenceId ? parentBatch.get(ev.parentEvidenceId) ?? null : null);
+  const myBatch = batchId ?? (parent ? parentBatch.get(parent) ?? null : null);
+  return rows
+    .filter((r) => r.m.id !== mediaId)
+    .filter(
+      (r) =>
+        (myBatch && batchOf(r.ev) === myBatch) ||
+        (parent && r.ev.parentEvidenceId === parent) ||
+        (text && r.ev.originalText?.trim() === text && r.ev.senderId === me.ev.senderId),
+    )
+    .map((r) => ({
+      mediaId: r.m.id,
+      contentVersionId: r.m.currentContentVersionId,
+      filename: r.ev.originalFilename,
+      classification: r.m.primaryClassification,
+      autoReason: (r.ev.metadata as { autoViewReason?: string } | null)?.autoViewReason ?? null,
+    }));
 }

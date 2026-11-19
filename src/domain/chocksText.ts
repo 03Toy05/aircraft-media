@@ -70,7 +70,7 @@ export const HANT: Record<string, string> = {
   "Photos for the type only": "相片只屬於機型",
   "No tail number was given, so I'll record the aircraft without one. You can add it later.": "沒有提供機尾號，我會先記錄這架飛機而不填機尾號。之後可以再補。",
   "To create {tail} I need its aircraft type. Which one is it?": "要新增 {tail}，我需要知道它的機型。是哪一個？",
-  "What view is “{name}”? Say “all cabin” to apply a view to every unclassified photo.": "「{name}」是哪個角度？說「全部客艙」可把該角度套用到所有未分類的相片。",
+  "What view is “{name}”? Say “all interior” to apply a view to every unclassified photo.": "「{name}」是哪個角度？說「全部內部」可把該角度套用到所有未分類的相片。",
   "I need a bit more. Send photos, or details like “Operator: …”, “Aircraft type: …”, “Tail number: …”.": "我需要多一點資料。請傳相片，或像「營運商：…」、「機型：…」、「機尾號：…」這樣的資料。",
   "Say “confirm”, or change something by sending it again (for example “Capacity: 12”).": "請說「確認」，或重新傳送要修改的內容（例如「載客量：12」）。",
   "Confirm": "確認",
@@ -155,8 +155,7 @@ export function trCategory(lang: ChatLang | undefined, key: string, englishLabel
 }
 
 export const CLASSIFICATION_ZH: Record<Classification, string> = {
-  exterior: "外觀", cabin: "客艙", seating: "座椅", sleeping: "臥室", galley: "廚房", lavatory: "洗手間",
-  flight_deck: "駕駛艙", baggage: "行李艙", floor_plan: "平面圖", other: "其他", unclassified: "未分類",
+  exterior: "外觀", interior: "內部", floor_plan: "平面圖", unclassified: "未分類",
 };
 export function trClassification(lang: ChatLang | undefined, c: Classification, englishLabel: string): string {
   if (!isChinese(lang)) return englishLabel;

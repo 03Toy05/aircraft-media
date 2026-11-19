@@ -1,12 +1,11 @@
 import { randomUUID } from "node:crypto";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { asc, eq } from "drizzle-orm";
+import { and, asc, eq } from "drizzle-orm";
 import { getDb } from "@/db/client";
-import { aircraft, aircraftTypes, organisations } from "@/db/schema";
+import { aircraftTypes, organisations } from "@/db/schema";
 import { requireOwner } from "@/lib/session";
-import { getMediaDetail } from "@/domain/media";
-import { getAircraftCard } from "@/domain/directory";
+import { findUploadSiblings, getMediaDetail } from "@/domain/media";
 import { AIRCRAFT_CATEGORIES, AIRCRAFT_CATEGORY_LABEL, CLASSIFICATIONS, CLASSIFICATION_LABEL, guessClassificationFromFilename } from "@/domain/constants";
 import { getCatalogue } from "@/domain/catalogue";
 import { parseAircraftCard, type ParsedCard } from "@/domain/card";
@@ -16,6 +15,8 @@ import {
 } from "../../../actions";
 import { Flash, Key, one, type SP } from "../../../_components/ui";
 import CropTool from "../../../_components/CropTool";
+import AircraftPicker from "../../../_components/AircraftPicker";
+import { SetRest, ViewChoice } from "../../../_components/ViewChoice";
 
 export default async function ReviewWorkspace({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: SP }) {
   const { id } = await params;
@@ -23,14 +24,15 @@ export default async function ReviewWorkspace({ params, searchParams }: { params
   const { actor } = await requireOwner();
   const db = await getDb();
   if (!/^[0-9a-f-]{36}$/.test(id)) notFound();
-  const d = await getMediaDetail(db, id);
+  const d = await getMediaDetail(db, actor.tenantId, id);
   if (!d || d.media.tenantId !== actor.tenantId) notFound();
   const { media, versions, association, proposals, evidence } = d;
   const current = versions.find((v) => v.id === media.currentContentVersionId)!;
 
-  const acs = await db.select({ a: aircraft, t: aircraftTypes }).from(aircraft).innerJoin(aircraftTypes, eq(aircraftTypes.id, aircraft.aircraftTypeId)).where(eq(aircraft.active, true));
-  const aircraftOptions = await Promise.all(acs.map(async ({ a, t }) => ({ id: a.id, label: `${(await getAircraftCard(db, a.id))?.tailNumber ?? "?"} — ${t.manufacturer} ${t.model}` })));
-  const types = await db.select().from(aircraftTypes).where(eq(aircraftTypes.active, true)).orderBy(asc(aircraftTypes.model));
+  const types = await db.select().from(aircraftTypes).where(and(eq(aircraftTypes.tenantId, actor.tenantId), eq(aircraftTypes.active, true))).orderBy(asc(aircraftTypes.model));
+  const typeLabel = new Map(types.map((t) => [t.id, `${t.manufacturer} ${t.model}`]));
+  const siblings = media.reviewState === "needs_review" ? await findUploadSiblings(db, actor.tenantId, media.id) : [];
+  const scanned = siblings.some((x) => x.autoReason) || !!(d.evidence?.metadata as { autoViewReason?: string } | undefined)?.autoViewReason;
 
   // Card proposal (deterministic parse): show what it suggests; the owner confirms through normal actions.
   const cardProposal = proposals.find((p) => p.proposalType === "details");
@@ -42,8 +44,11 @@ export default async function ReviewWorkspace({ params, searchParams }: { params
     ? await matchCard(db, actor.tenantId, parsed)
     : { tailMatches: [] as string[], opMatches: [], typeMatches: [], operatorText: "", operatorLoose: false, aircraftText: "", leftover: [] as string[] };
   const suggestedClass = media.primaryClassification === "unclassified" ? guessClassificationFromFilename(evidence?.originalFilename ?? "") : null;
+  const mainView = suggestedClass ?? media.primaryClassification;
+  const autoReason = (evidence?.metadata as { autoViewReason?: string } | undefined)?.autoViewReason ?? (suggestedClass ? "from the file name" : null);
   const allOrgs = await db.select().from(organisations).where(eq(organisations.tenantId, actor.tenantId)).orderBy(asc(organisations.canonicalName));
   const catalogueRows = await getCatalogue(db, actor.tenantId);
+  const aircraftOptions = catalogueRows.map((r) => ({ id: r.aircraftId, label: `${r.tail ?? "no tail yet"} — ${r.aircraft}` }));
   const operatorDefault = opMatches.length === 1 ? opMatches[0].id : opMatches.length === 0 && operatorText ? "new" : "";
   const typeDefault = typeMatches.length === 1 ? typeMatches[0].id : "";
   // Default aircraft: the one tail match, else the operator's only aircraft of that type (so a second photo joins it), else a new one.
@@ -125,31 +130,38 @@ export default async function ReviewWorkspace({ params, searchParams }: { params
             {(parsed?.assumed ?? []).map((a, i) => <p key={`a${i}`} className="small muted" style={{ margin: "2px 0" }}>Assumed: {a}</p>)}
             {[...(parsed?.problems ?? []), ...leftover.map((u) => `Not recognised: ${u}`)].map((p, i) => <p key={i} className="small" style={{ color: "var(--warn)", margin: "2px 0" }}>{p}</p>)}
             <Key /><input type="hidden" name="mediaId" value={media.id} />
-            <label>Operator</label>
-            <select name="operator" defaultValue={operatorDefault}>
-              <option value="">No operator</option>
-              {operatorText && opMatches.length === 0 && <option value="new">Create new operator: {operatorText}</option>}
-              {allOrgs.map((o) => <option key={o.id} value={o.id}>{o.canonicalName}</option>)}
-            </select>
-            <input type="hidden" name="newOperatorName" value={operatorText} />
-            <label>Aircraft</label>
-            <select name="aircraft" defaultValue={aircraftDefault}>
-              <option value="new">Create a new aircraft</option>
-              {catalogueRows.map((r) => <option key={r.aircraftId} value={r.aircraftId}>Use existing: {r.tail ?? "no tail yet"} — {r.aircraft}{r.operator ? ` — ${r.operator}` : ""}</option>)}
-              <option value="none">No aircraft (photo represents the aircraft type)</option>
-            </select>
-            <label>Aircraft type</label>
-            <select name="aircraftTypeId" defaultValue={typeDefault}>
-              <option value="">Not chosen</option>
-              {typeGroups.map((g) => (
-                <optgroup key={g.key} label={g.label}>{g.items.map((t) => <option key={t.id} value={t.id}>{t.manufacturer} {t.model}</option>)}</optgroup>
+            <fieldset className="siblings views">
+              <legend>{siblings.length ? `${siblings.length + 1} photos sent together` : "View"}</legend>
+              <p className="muted small">
+                {scanned ? "I scanned them first: floor plans are found by how they're drawn, and file names like “ext” or “cabin” are read. " : ""}
+                Check each view{siblings.length ? ", and untick any photo that doesn't belong. The operator, aircraft and details below apply to all ticked photos" : ""}.
+              </p>
+              <div className="sibling">
+                <span className="sib-check" aria-hidden>✓</span>
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={`/api/media/${current.id}`} alt="" />
+                <span className="small sib-name">This photo{autoReason ? <span className="muted"> · {autoReason}</span> : null}</span>
+                <ViewChoice name="classification" value={mainView} label="View of this photo" group="upload" />
+              </div>
+              {siblings.map((sib) => (
+                <div key={sib.mediaId} className="sibling">
+                  <input type="checkbox" name="also" value={sib.mediaId} defaultChecked aria-label={`Include ${sib.filename ?? "photo"}`} />
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  {sib.contentVersionId ? <img src={`/api/media/${sib.contentVersionId}`} alt="" /> : <span />}
+                  <span className="small sib-name">{sib.filename ?? "Photo"}{sib.autoReason ? <span className="muted"> · {sib.autoReason}</span> : null}</span>
+                  <ViewChoice name={`cls_${sib.mediaId}`} value={sib.classification} label={`View of ${sib.filename ?? "photo"}`} group="upload" />
+                </div>
               ))}
-            </select>
-            <div className="row">
-              <div><label>Tail number</label><input name="tail" defaultValue={parsed?.tail ?? ""} placeholder="Optional" /></div>
-              <div><label>View</label>
-                <select name="classification" defaultValue={suggestedClass ?? media.primaryClassification}>{CLASSIFICATIONS.map((c) => <option key={c} value={c}>{CLASSIFICATION_LABEL[c]}</option>)}</select></div>
-            </div>
+              {siblings.length > 0 && <p style={{ margin: "6px 0 0" }}><SetRest group="upload" to="interior" label="Set the rest to Interior" /></p>}
+            </fieldset>
+            <AircraftPicker
+              operators={allOrgs.filter((o) => o.active).map((o) => ({ id: o.id, name: o.canonicalName }))}
+              aircraft={catalogueRows.map((r) => ({ id: r.aircraftId, label: `${r.tail ?? "no tail yet"} — ${r.aircraft}${r.operator ? ` — ${r.operator}` : ""}`, aircraftTypeId: r.aircraftTypeId, typeLabel: typeLabel.get(r.aircraftTypeId) ?? r.aircraft, operatorId: r.operatorId }))}
+              typeGroups={typeGroups.map((g) => ({ key: g.key, label: g.label, items: g.items.map((t) => ({ id: t.id, label: `${t.manufacturer} ${t.model}` })) }))}
+              newOperatorName={operatorText && opMatches.length === 0 ? operatorText : ""}
+              defaults={{ operator: operatorDefault, aircraft: aircraftDefault, type: typeDefault }}
+            />
+            <label>Tail number</label><input name="tail" defaultValue={parsed?.tail ?? ""} placeholder="Optional" />
             <div className="row">
               <div><label>YOM</label><input name="yom" type="number" defaultValue={parsed?.yom ?? ""} /></div>
               <div><label>YOR</label><input name="yor" type="number" defaultValue={parsed?.yor ?? ""} /></div>
@@ -159,8 +171,8 @@ export default async function ReviewWorkspace({ params, searchParams }: { params
             </div>
             <label>Notes</label><input name="notes" defaultValue={parsed?.notes ?? ""} />
             <input type="hidden" name="baseMode" value={parsed?.base?.mode ?? ""} /><input type="hidden" name="baseLocations" value={parsed?.base?.locations.join(", ") ?? ""} />
-            <p className="muted small">Details are saved on a new aircraft, or added to the existing aircraft you choose (only the fields you fill in). The photo is approved when it has a view and an aircraft or type.</p>
-            <p><button type="submit" disabled={retired}>Assign and approve</button></p>
+            <p className="muted small">Details are saved on a new aircraft, or added to the existing aircraft you choose (only the fields you fill in). Each photo is approved when it has a view and an aircraft or type.</p>
+            <p><button type="submit" disabled={retired}>{siblings.length ? `Assign and approve ${siblings.length + 1} photos` : "Assign and approve"}</button></p>
           </form>
 
           <div className="card">
@@ -179,9 +191,9 @@ export default async function ReviewWorkspace({ params, searchParams }: { params
             </form>
           </div>
 
-          <div className="card">
-            <h3>Association <span className="badge">{media.associationStatus.replace(/_/g, " ")}</span></h3>
-            <p className="muted small">What this photo is evidence of. Visual similarity is not proof of identity — choose deliberately.</p>
+          <details className="card collapse">
+            <summary>Advanced: change what this photo shows <span className="badge">{media.associationStatus.replace(/_/g, " ")}</span></summary>
+            <p className="muted small">Only needed to correct a photo after it was assigned. For an actual aircraft the type comes from the aircraft; the type is only used for a representative photo.</p>
             <form action={mediaAssociationAction}>
               <Key /><input type="hidden" name="mediaId" value={media.id} /><input type="hidden" name="expectedVersion" value={media.version} />
               <label>Status</label>
@@ -196,7 +208,7 @@ export default async function ReviewWorkspace({ params, searchParams }: { params
               <select name="aircraftTypeId" defaultValue={association?.aircraftTypeId ?? ""}><option value="">—</option>{types.map((t) => <option key={t.id} value={t.id}>{t.manufacturer} {t.model}</option>)}</select>
               <p><button type="submit" className="secondary">Save association</button></p>
             </form>
-          </div>
+          </details>
 
           <div className="card">
             <h3>Decision</h3>

@@ -16,7 +16,7 @@ const TABS = [
  * Phone navigation: a bar along the bottom with the four things used most, and a "More" sheet for the rest.
  * Shown only on narrow screens (see globals.css); the top bar's links are used on larger ones.
  */
-export default function MobileNav({ email, signOut }: { email: string; signOut: () => Promise<void> }) {
+export default function MobileNav({ email, signOut, isAdmin = false }: { email: string; signOut: () => Promise<void>; isAdmin?: boolean }) {
   const path = usePathname() ?? "/";
   const [open, setOpen] = useState(false);
   useEffect(() => setOpen(false), [path]); // close the sheet after going somewhere
@@ -28,7 +28,7 @@ export default function MobileNav({ email, signOut }: { email: string; signOut: 
     window.addEventListener("chocks:listening", on);
     return () => window.removeEventListener("chocks:listening", on);
   }, []);
-  const moreActive = path.startsWith("/review") || path.startsWith("/contacts") || path.startsWith("/settings") || path.startsWith("/photos") || path.startsWith("/intake");
+  const moreActive = path.startsWith("/review") || path.startsWith("/contacts") || path.startsWith("/settings") || path.startsWith("/photos") || path.startsWith("/intake") || path.startsWith("/admin");
 
   return (
     <>
@@ -40,6 +40,7 @@ export default function MobileNav({ email, signOut }: { email: string; signOut: 
           <Link href="/photos"><Icon name="photos" />Approved photos</Link>
           <Link href="/intake"><Icon name="upload" />Upload photos</Link>
           <Link href="/settings"><Icon name="settings" />Settings</Link>
+          {isAdmin && <Link href="/admin"><Icon name="contacts" />Users</Link>}
           <p className="small muted" style={{ margin: "6px 0" }}>{email}</p>
           <form action={signOut}><button type="submit" className="secondary"><Icon name="signout" />Sign out</button></form>
         </div>

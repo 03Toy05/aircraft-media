@@ -8,7 +8,7 @@ import { DomainError } from "@/domain/errors";
 
 /**
  * Owner-only export of an aircraft's card and approved photos.
- *   ?views=cabin,floor_plan   limit to some classifications (default: all)
+ *   ?views=interior,floor_plan   limit to some classifications (default: all)
  *   zip download with the card as aircraft-card.txt
  */
 export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }) {

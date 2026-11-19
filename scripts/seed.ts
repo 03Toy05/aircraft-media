@@ -56,16 +56,16 @@ async function add(text: string, hue: number, cls: Classification, assoc: { airc
     aircraftId: assoc.aircraftId ?? null, aircraftTypeId: assoc.typeId ?? null,
   });
   if (approve) {
-    const d = (await getMediaDetail(db, r.mediaId))!;
+    const d = (await getMediaDetail(db, actor.tenantId, r.mediaId))!;
     await approveMedia(db, actor, { mediaId: r.mediaId, contentVersionId: d.media.currentContentVersionId!, expectedVersion: d.media.version });
   }
 }
 
 await add("B-KXX Exterior", 210, "exterior", { aircraftId: a1 }, true);
-await add("B-KXX Cabin", 30, "cabin", { aircraftId: a1 }, true);
+await add("B-KXX Cabin", 30, "interior", { aircraftId: a1 }, true);
 await add("B-KXX Floor plan", 140, "floor_plan", { aircraftId: a1 }, true);
 await add("G650ER type exterior", 280, "exterior", { typeId: g650 }, true);
-await add("B-KYY Cabin (awaiting review)", 350, "cabin", { aircraftId: a2 }, false);
+await add("B-KYY Cabin (awaiting review)", 350, "interior", { aircraftId: a2 }, false);
 
 console.log("Demo data created: 2 operators, 2 aircraft types, 3 aircraft, 5 demo photos.");
 process.exit(0);

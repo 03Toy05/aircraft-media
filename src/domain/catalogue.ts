@@ -73,13 +73,14 @@ export async function getCatalogue(db: Db, tenantId: string, filters: CatalogueF
     .innerJoin(aircraftTypes, eq(aircraftTypes.id, aircraft.aircraftTypeId))
     .where(and(eq(aircraft.tenantId, tenantId), eq(aircraft.active, true)));
 
-  const regs = await db.select().from(aircraftRegistrations).where(eq(aircraftRegistrations.isCurrent, true));
-  const bases = await db.select().from(aircraftBases).where(eq(aircraftBases.active, true));
+  // Child tables have no tenant column: reach them through this workspace's aircraft.
+  const regs = (await db.select({ r: aircraftRegistrations }).from(aircraftRegistrations).innerJoin(aircraft, eq(aircraft.id, aircraftRegistrations.aircraftId)).where(and(eq(aircraft.tenantId, tenantId), eq(aircraftRegistrations.isCurrent, true)))).map((x) => x.r);
+  const bases = (await db.select({ b: aircraftBases }).from(aircraftBases).innerJoin(aircraft, eq(aircraft.id, aircraftBases.aircraftId)).where(and(eq(aircraft.tenantId, tenantId), eq(aircraftBases.active, true)))).map((x) => x.b);
   const ops = await db
     .select({ aircraftId: organisationAircraftRelationships.aircraftId, orgId: organisations.id, name: organisations.canonicalName })
     .from(organisationAircraftRelationships)
     .innerJoin(organisations, eq(organisations.id, organisationAircraftRelationships.organisationId))
-    .where(and(eq(organisationAircraftRelationships.role, "operator"), eq(organisationAircraftRelationships.active, true)));
+    .where(and(eq(organisations.tenantId, tenantId), eq(organisationAircraftRelationships.role, "operator"), eq(organisationAircraftRelationships.active, true)));
 
   const media = await db
     .select({ m: aircraftMedia, a: mediaAssociations, cv: mediaContentVersions })

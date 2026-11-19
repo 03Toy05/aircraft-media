@@ -3,57 +3,49 @@
 
 export const FIXED_TENANT_ID = "00000000-0000-0000-0000-000000000001"; // single-tenant v1
 
-export const CLASSIFICATIONS = [
-  "exterior",
-  "cabin",
-  "seating",
-  "sleeping",
-  "galley",
-  "lavatory",
-  "flight_deck",
-  "baggage",
-  "floor_plan",
-  "other",
-  "unclassified",
-] as const;
+/**
+ * The views a photo can be. Kept to three on purpose: brokers only need exterior, interior and floor plan.
+ * (Older detailed views such as cabin, seating or galley were folded into "interior" by migration 0009.)
+ */
+export const CLASSIFICATIONS = ["exterior", "interior", "floor_plan", "unclassified"] as const;
 export type Classification = (typeof CLASSIFICATIONS)[number];
 
 export const CLASSIFICATION_LABEL: Record<Classification, string> = {
   exterior: "EXT",
-  cabin: "CABIN",
-  seating: "SEAT",
-  sleeping: "SLEEP",
-  galley: "GALLEY",
-  lavatory: "LAV",
-  flight_deck: "FLIGHT DECK",
-  baggage: "BAGGAGE",
+  interior: "INT",
   floor_plan: "FLOOR PLAN",
-  other: "OTHER",
   unclassified: "UNCLASSIFIED",
 };
 
-// Import/search aliases (Rulebook: Interior/INT -> Cabin; Layout/floorplan -> Floor plan).
+/** Words for each view, in file names and typed replies. Every room inside the aircraft counts as interior. */
 export const CLASSIFICATION_ALIASES: Record<string, Classification> = {
   ext: "exterior",
   exterior: "exterior",
-  cabin: "cabin",
-  interior: "cabin",
-  int: "cabin",
-  seat: "seating",
-  seats: "seating",
-  seating: "seating",
-  sleep: "sleeping",
-  sleeping: "sleeping",
-  bed: "sleeping",
-  galley: "galley",
-  lav: "lavatory",
-  lavatory: "lavatory",
-  flightdeck: "flight_deck",
-  cockpit: "flight_deck",
-  baggage: "baggage",
+  outside: "exterior",
+  outer: "exterior",
+  ramp: "exterior",
+  int: "interior",
+  interior: "interior",
+  inside: "interior",
+  cabin: "interior",
+  seat: "interior",
+  seats: "interior",
+  seating: "interior",
+  sleep: "interior",
+  sleeping: "interior",
+  bed: "interior",
+  galley: "interior",
+  lav: "interior",
+  lavatory: "interior",
+  toilet: "interior",
+  flightdeck: "interior",
+  cockpit: "interior",
+  baggage: "interior",
   floorplan: "floor_plan",
   layout: "floor_plan",
-  other: "other",
+  fp: "floor_plan",
+  plan: "floor_plan",
+  seatmap: "floor_plan",
   unclassified: "unclassified",
 };
 
@@ -92,22 +84,16 @@ export function guessClassificationFromFilename(filename: string): Classificatio
   for (let i = 0; i < words.length; i++) {
     const pair = i + 1 < words.length ? CLASSIFICATION_ALIASES[(words[i] + words[i + 1]).toLowerCase()] : undefined;
     const hit = pair ?? CLASSIFICATION_ALIASES[words[i].toLowerCase()];
-    if (hit && hit !== "other" && hit !== "unclassified") return hit;
+    if (hit && hit !== "unclassified") return hit;
   }
   return null;
 }
 
 /** Chinese names for the views, Traditional and Simplified. */
 const CLASSIFICATION_ZH_ALIASES: [RegExp, Classification][] = [
-  [/外觀|外观|機身|机身/, "exterior"],
-  [/客艙|客舱|機艙|机舱|內部|内部|室內|室内/, "cabin"],
-  [/座椅|座位/, "seating"],
-  [/臥室|卧室|睡房|床/, "sleeping"],
-  [/廚房|厨房|廚艙|厨舱/, "galley"],
-  [/洗手間|洗手间|廁所|厕所/, "lavatory"],
-  [/駕駛艙|驾驶舱/, "flight_deck"],
-  [/行李艙|行李舱/, "baggage"],
   [/平面圖|平面图|佈局|布局/, "floor_plan"],
+  [/外觀|外观|機身|机身|外部/, "exterior"],
+  [/內部|内部|客艙|客舱|機艙|机舱|室內|室内|座椅|座位|臥室|卧室|睡房|床|廚房|厨房|洗手間|洗手间|廁所|厕所|駕駛艙|驾驶舱|行李艙|行李舱/, "interior"],
 ];
 
 /** Parse a user-typed view name ("Floor Plan", "FLOOR PLAN", "interior") into a canonical classification. */
@@ -163,11 +149,8 @@ export const PROPOSAL_STATES = ["pending", "accepted", "rejected", "superseded"]
 export const ALLOWED_IMAGE_MIME = ["image/jpeg", "image/png", "image/webp"] as const;
 export const MAX_UPLOAD_BYTES = 20 * 1024 * 1024;
 
-/**
- * Catalogue coverage columns. "Required" classes decide actual/representative/partial.
- * Deliberately small: exterior, cabin, floor plan are the three the handoff calls out.
- */
-export const REQUIRED_CLASSES: Classification[] = ["exterior", "cabin", "floor_plan"];
+/** Catalogue coverage columns. "Required" classes decide actual/representative/partial. */
+export const REQUIRED_CLASSES: Classification[] = ["exterior", "interior", "floor_plan"];
 
 /** Normalise free text for matching: NFKC, lowercase, keep letters/digits (any script). */
 export function normalizeKey(text: string): string {

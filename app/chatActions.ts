@@ -2,11 +2,11 @@
 
 import { randomUUID } from "node:crypto";
 import { revalidatePath } from "next/cache";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { getDb } from "@/db/client";
 import { aircraftMedia } from "@/db/schema";
 import { getFileStore } from "@/storage";
-import { requireOwner } from "@/lib/session";
+import { requireUser } from "@/lib/session";
 import { DomainError } from "@/domain/errors";
 import { ingestPdf } from "@/domain/intake";
 import { ingestUpload } from "@/domain/media";
@@ -21,9 +21,9 @@ export interface TurnResult {
   applied?: ApplyResult;
 }
 
-async function photoFor(db: Awaited<ReturnType<typeof getDb>>, mediaId: string, name: string, note?: string): Promise<DraftPhoto> {
-  const [m] = await db.select().from(aircraftMedia).where(eq(aircraftMedia.id, mediaId));
-  return { mediaId, name, contentVersionId: m?.currentContentVersionId ?? null, classification: suggestClassification(name), note };
+async function photoFor(db: Awaited<ReturnType<typeof getDb>>, tenantId: string, mediaId: string, name: string, note?: string): Promise<DraftPhoto> {
+  const [m] = await db.select().from(aircraftMedia).where(and(eq(aircraftMedia.id, mediaId), eq(aircraftMedia.tenantId, tenantId)));
+  return { mediaId, name, contentVersionId: m?.currentContentVersionId ?? null, classification: m && m.primaryClassification !== "unclassified" ? m.primaryClassification : suggestClassification(name), note };
 }
 
 /**
@@ -32,7 +32,11 @@ async function photoFor(db: Awaited<ReturnType<typeof getDb>>, mediaId: string, 
  * attached or approved until the owner confirms.
  */
 export async function chocksTurnAction(fd: FormData): Promise<TurnResult> {
-  const { actor } = await requireOwner();
+  const session = await requireUser();
+  const { actor } = session;
+  const readOnlyWhy = session.viewingAs
+    ? `You are looking at ${session.viewingAs.email}'s workspace, so nothing can be added here.`
+    : session.readOnly ? "Your 14-day trial has ended, so I can look things up and share, but not add or change anything. Ask the admin to extend it." : null;
   const db = await getDb();
   const store = getFileStore();
   let draft: Draft;
@@ -47,19 +51,24 @@ export async function chocksTurnAction(fd: FormData): Promise<TurnResult> {
   const message = String(fd.get("text") ?? "");
   const photos: DraftPhoto[] = [];
   const failures: string[] = [];
+  const batchId = randomUUID();
 
   for (const f of fd.getAll("files")) {
     if (!(f instanceof File) || f.size === 0) continue;
+    if (readOnlyWhy) {
+      failures.push(`${f.name}: ${readOnlyWhy}`);
+      continue;
+    }
     const bytes = new Uint8Array(await f.arrayBuffer());
     try {
       if (f.type === "application/pdf" || /\.pdf$/i.test(f.name)) {
-        const r = await ingestPdf(db, store, actor, { filename: f.name, bytes, cardText: message || null });
-        for (const x of r.result.extracted) photos.push(await photoFor(db, x.mediaId, f.name));
+        const r = await ingestPdf(db, store, actor, { filename: f.name, bytes, cardText: message || null, batchId });
+        for (const x of r.result.extracted) photos.push(await photoFor(db, actor.tenantId, x.mediaId, f.name));
         if (r.result.extracted.length === 0) failures.push(`${f.name}: no embedded photos were found in this PDF (kept as evidence).`);
       } else {
-        const r = await ingestUpload(db, store, actor, { filename: f.name, bytes, cardText: message || null });
+        const r = await ingestUpload(db, store, actor, { filename: f.name, bytes, cardText: message || null, batchId });
         if (draft.photos.some((p) => p.mediaId === r.result.mediaId)) continue; // same photo sent twice in this chat
-        photos.push(await photoFor(db, r.result.mediaId, f.name, r.replayed ? "uploaded before" : undefined));
+        photos.push(await photoFor(db, actor.tenantId, r.result.mediaId, f.name, r.replayed ? "uploaded before" : undefined));
       }
     } catch (e) {
       if (e instanceof DomainError) failures.push(`${f.name}: ${e.message}`);
@@ -70,6 +79,7 @@ export async function chocksTurnAction(fd: FormData): Promise<TurnResult> {
   const turn = await converse(db, actor.tenantId, draft, message, photos);
   revalidatePath("/", "layout");
   if (!turn.confirm) return { draft: turn.draft, reply: turn.reply, failures };
+  if (readOnlyWhy) return { draft: turn.draft, reply: { ...turn.reply, say: [readOnlyWhy], ready: false }, failures };
 
   // The owner said yes: apply exactly what the last summary listed.
   const d = turn.draft;

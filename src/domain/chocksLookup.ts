@@ -1,11 +1,11 @@
 import { eq } from "drizzle-orm";
 import type { Db } from "../db/client";
-import { aircraftTypes, organisationAliases, organisations } from "../db/schema";
+import { aircraftTypes, organisations } from "../db/schema";
 import { fleetLink, looksLikeFleetRequest, parseFleetQuery, runFleetQuery, sortAircraft } from "./fleetQuery";
 import { getCatalogue } from "./catalogue";
 import { AIRCRAFT_CATEGORIES, AIRCRAFT_CATEGORY_LABEL, normalizeKey, normalizeRegistration } from "./constants";
 import { isChinese, plural, tr, trUnderstood, trWifi, type ChatLang } from "./chocksText";
-import { getAircraftCard } from "./directory";
+import { getAircraftCard, orgAliasesFor } from "./directory";
 import { getLineup } from "./media";
 import { buildQuote } from "./quote";
 import { getQuoteTemplates } from "./quoteTemplates";
@@ -59,7 +59,7 @@ export async function answerLookup(db: Db, tenantId: string, message: string, la
   const wantsPhotos = WANTS_PHOTOS.test(message);
 
   const orgs = await db.select().from(organisations).where(eq(organisations.tenantId, tenantId));
-  const aliases = await db.select().from(organisationAliases);
+  const aliases = await orgAliasesFor(db, tenantId);
   const hit = orgs.filter((o) => o.active && [o.canonicalName, ...aliases.filter((a) => a.organisationId === o.id).map((a) => a.alias)].some((n) => mentions(sentence, normalizeKey(n))));
 
   const lines: string[] = [];

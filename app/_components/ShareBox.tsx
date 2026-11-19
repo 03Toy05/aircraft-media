@@ -9,7 +9,7 @@ import { contactApp, contactLink, type ContactApp } from "@/domain/messengers";
 export interface ShareItem {
   classification: string;
   classificationLabel: string;
-  label: string; // "CABIN 1"
+  label: string; // "INT 1"
   url: string; // /api/media/<contentVersionId>
   mimeType: string;
   representative: boolean;

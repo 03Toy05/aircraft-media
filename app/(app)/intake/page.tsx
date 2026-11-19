@@ -20,11 +20,12 @@ function parse<T>(raw: string | undefined, fallback: T): T {
 
 export default async function Intake({ searchParams }: { searchParams: SP }) {
   const sp = await searchParams;
-  const { actor } = await requireOwner();
+  const { actor, isAdmin } = await requireOwner();
   const db = await getDb();
   const results = parse<Result[]>(one(sp.r), []);
   const drive = parse<DriveImportSummary | null>(one(sp.d), null);
   const driveOn = getDriveClient() !== null;
+  const showDrive = isAdmin; // the Drive folder is the admin's; everyone else uploads
   const folders = await db.select().from(driveSyncState).where(eq(driveSyncState.tenantId, actor.tenantId)).orderBy(desc(driveSyncState.lastSyncedAt));
   const label: Record<Result["status"], string> = {
     new: "Received — needs review",
@@ -64,7 +65,7 @@ export default async function Intake({ searchParams }: { searchParams: SP }) {
         <button type="submit">Upload</button>
       </form>
 
-      <div className="card">
+      {showDrive && <div className="card">
         <h3>Google Drive</h3>
         {!driveOn ? (
           <p className="muted">Not connected. Set the Drive credentials described in <code>docs/CONFIGURATION.md</code> to import from the Aircraft Media folder.</p>
@@ -95,7 +96,7 @@ export default async function Intake({ searchParams }: { searchParams: SP }) {
             )}
           </>
         )}
-      </div>
+      </div>}
       <div className="card">
         <h3>WhatsApp</h3>
         <p className="muted">Not connected — deferred. Use <b>Share</b> on an aircraft page to send photos and the card from your phone.</p>

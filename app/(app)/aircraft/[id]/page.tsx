@@ -28,13 +28,13 @@ export default async function AircraftDetail({ params, searchParams }: { params:
     .select({ r: organisationAircraftRelationships, o: organisations })
     .from(organisationAircraftRelationships)
     .innerJoin(organisations, eq(organisations.id, organisationAircraftRelationships.organisationId))
-    .where(eq(organisationAircraftRelationships.aircraftId, id));
+    .where(and(eq(organisationAircraftRelationships.aircraftId, id), eq(organisations.tenantId, actor.tenantId)));
   const lineup = await getLineup(db, { aircraftId: id, aircraftTypeId: ac.aircraftTypeId });
   const pending = await db
     .select({ m: aircraftMedia })
     .from(aircraftMedia)
     .innerJoin(mediaAssociations, and(eq(mediaAssociations.aircraftMediaId, aircraftMedia.id), eq(mediaAssociations.active, true), eq(mediaAssociations.aircraftId, id)))
-    .where(eq(aircraftMedia.reviewState, "needs_review"));
+    .where(and(eq(aircraftMedia.tenantId, actor.tenantId), eq(aircraftMedia.reviewState, "needs_review")));
   const current = infos.find((i) => i.isCurrent);
   const tailInUse = (one(sp.error) ?? "").includes("another aircraft");
 

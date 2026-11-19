@@ -51,13 +51,21 @@ export const users = pgTable(
     tenantId: uuid("tenant_id").notNull(),
     email: text("email").notNull(),
     displayName: text("display_name").notNull(),
-    role: text("role").notNull().default("owner"), // v1 is single-owner; column kept for CBOS-compatible export
+    role: text("role").notNull().default("owner"), // each user owns their own workspace (tenant)
     preferredLanguage: text("preferred_language").notNull().default("en"),
+    /** invited (not signed in yet) | active | blocked */
     status: text("status").notNull().default("active"),
+    /** trial: may add and change things until trialEndsAt, read-only after | full: no time limit */
+    plan: text("plan").notNull().default("full"),
+    /** Set at the first sign-in for trial users (first sign-in + the trial length). */
+    trialEndsAt: timestamp("trial_ends_at", { withTimezone: true }),
+    firstSignInAt: timestamp("first_sign_in_at", { withTimezone: true }),
+    lastSignInAt: timestamp("last_sign_in_at", { withTimezone: true }),
+    invitedBy: uuid("invited_by"),
     createdAt: created(),
     updatedAt: updated(),
   },
-  (t) => [uniqueIndex("users_tenant_email_uq").on(t.tenantId, t.email)],
+  (t) => [uniqueIndex("users_tenant_email_uq").on(t.tenantId, t.email), uniqueIndex("users_email_uq").on(t.email)],
 );
 
 export const verifiedWhatsappNumbers = pgTable(

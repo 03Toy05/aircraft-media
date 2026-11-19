@@ -2,6 +2,11 @@ import { redirect } from "next/navigation";
 import { signIn } from "@/auth";
 import { devBypassEnabled } from "@/lib/owner";
 
+const ERRORS: Record<string, string> = {
+  not_invited: "That Google account hasn't been invited yet. Ask the admin to add your email.",
+  blocked: "Access for this account has been turned off. Contact the admin.",
+};
+
 export default async function LoginPage({ searchParams }: { searchParams: Promise<{ error?: string }> }) {
   if (devBypassEnabled()) redirect("/");
   const { error } = await searchParams;
@@ -11,8 +16,8 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img src="/logo.svg" alt="" width={48} height={48} />
         <h1>Aircraft Media</h1>
-        <p className="muted">Private application. Sign in with the owner&apos;s Google account.</p>
-        {error && <div className="flash err">That Google account is not authorised.</div>}
+        <p className="muted">Sign in with the Google account you were invited with.</p>
+        {error && <div className="flash err">{ERRORS[error] ?? "That Google account is not authorised."}</div>}
         <form
           action={async () => {
             "use server";
