@@ -42,6 +42,11 @@ img.preview { max-width: 100%; max-height: 520px; border-radius: 8px; border: 1p
 .photo-tile.combined img { object-fit: contain; background: #fff; }
 .option-sends { display: grid; gap: 6px; }
 .option-sends .block-btn { text-align: left; }
+.option-send { display: flex; align-items: center; gap: 8px; justify-content: flex-start; }
+.option-send-text { flex: 1; }
+.option-tag { flex: 0 0 auto; font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 999px; }
+.option-tag.next { background: var(--accent, #2563eb); color: #fff; }
+.option-tag.sent { background: #e7f6ec; color: #18794e; }
 .photo-pick-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 6px; }
 .photo-pick-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(84px, 1fr)); gap: 6px; }
 .photo-tile { position: relative; display: block; padding: 0; margin: 0; width: 100%; background: none; border: 2px solid var(--line); border-radius: 8px; overflow: hidden; cursor: pointer; color: inherit; }

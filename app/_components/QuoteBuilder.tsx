@@ -5,11 +5,11 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import Icon from "./Icon";
 import TextBox, { Styled } from "./TextBox";
 import MessengerButtons from "./MessengerButtons";
-import { copyText, openAfterCopy, shareText } from "./copyText";
+import { copyText, fetchPhoto, openAfterCopy, shareText } from "./copyText";
 import { registerCommands, type CommandResult } from "./voice";
 import { togglePreferredOperator } from "../actions";
 import { contactApp, contactLink } from "@/domain/messengers";
-import { QUOTE_LANGUAGES, QUOTE_WORDS, buildQuoteParts, type QuoteLanguage, type QuoteTemplate } from "@/domain/quote";
+import { QUOTE_LANGUAGES, QUOTE_WORDS, buildQuoteParts, renumberBlock, type QuoteLanguage, type QuoteTemplate } from "@/domain/quote";
 import { forOtherApps, parseStyled, readsMarkers } from "@/domain/textStyle";
 import { parseQuoteCommands, type QuoteCommand } from "@/domain/quoteCommands";
 import { COMBINED_NEEDS, type WifiStatus } from "@/domain/constants";
@@ -109,7 +109,11 @@ export default function QuoteBuilder({ aircraft, operators, preferred: preferred
   );
   const greeting = parts.greeting === null ? null : edits.greeting ?? parts.greeting;
   const closing = parts.closing === null ? null : edits.closing ?? parts.closing;
-  const blocks = chosen.map((a, i) => edits[`block:${a.id}`] ?? parts.blocks[i]);
+  // A block rewritten by hand keeps the broker's words; only its "Aircraft N" label follows the current order.
+  const blocks = chosen.map((a, i) => {
+    const own = edits[`block:${a.id}`];
+    return own === undefined ? parts.blocks[i] : renumberBlock(own, { language: lang, template: templates[lang] ?? null }, i + 1, chosen.length);
+  });
   const text = [greeting, ...blocks, closing].filter((x): x is string => !!x && x.trim() !== "").join("\n\n");
   const styled = parseStyled(text).some((s) => s.bold || s.italic || s.strike || s.underline);
   /** The message as the chosen app needs it: WhatsApp reads *bold* and _italic_; other apps get Unicode letters. */
@@ -192,9 +196,7 @@ export default function QuoteBuilder({ aircraft, operators, preferred: preferred
     try {
       const mine = option === null ? photos : photos.filter((x) => x.i === option);
       const files = await Promise.all(mine.map(async ({ a, i, p }) => {
-        const res = await fetch(p.url);
-        if (!res.ok) throw new Error("A photo could not be loaded");
-        const blob = await res.blob();
+        const blob = await fetchPhoto(p.url, `${a.type} ${p.label}`);
         return new File([blob], `Option ${i + 1} - ${a.type} - ${p.label}${p.representative ? " (representative)" : ""}.${EXT[p.mimeType] ?? "jpg"}`, { type: p.mimeType });
       }));
       const message = option === null ? textFor(styleFor) : optionText(option, styleFor);
@@ -497,45 +499,50 @@ export default function QuoteBuilder({ aircraft, operators, preferred: preferred
           <h3>5. Send</h3>
           {allClasses.length > 0 && (
             <>
-              <div className="group-title">Photos to include ({photos.length})</div>
-              <div className="chips" style={{ marginBottom: 10 }}>
+              <div className="group-title">Quick pick for all {chosen.length > 1 ? `${chosen.length} aircraft` : "photos"}</div>
+              <p className="small muted" style={{ margin: "0 0 6px" }}>
+                Tap a kind to tick or untick it for every aircraft at once. To pick single photos, tap them under each aircraft in step 4.
+              </p>
+              <div className="chips" style={{ marginBottom: 8 }}>
                 {allClasses.map(([c, label]) => (
                   <button key={c} type="button" className={`chip small${useClass(c) ? " on" : ""}`} aria-pressed={useClass(c)} onClick={() => toggleClass(c)}>{useClass(c) ? "✓ " : ""}{label}</button>
                 ))}
               </div>
             </>
           )}
-          {chosen.length > 0 && (
+          {chosen.length > 0 && withoutCombined.length < chosen.length && (
             <>
               <div className="chips" style={{ marginBottom: 6 }}>
                 <button type="button" className={`chip small${isMode("single") ? " on" : ""}`} aria-pressed={isMode("single")} onClick={() => sendAs("single")}>Single photos</button>
-                <button type="button" className={`chip small${isMode("combined") ? " on" : ""}`} aria-pressed={isMode("combined")} onClick={() => sendAs("combined")} disabled={withoutCombined.length === chosen.length}>Combined photo</button>
+                <button type="button" className={`chip small${isMode("combined") ? " on" : ""}`} aria-pressed={isMode("combined")} onClick={() => sendAs("combined")}>Combined photo</button>
               </div>
-              {withoutCombined.length > 0 && (
-                <p className="small muted" style={{ margin: "0 0 8px" }}>
-                  No combined photo yet for {withoutCombined.map((a) => a.type).join(", ")}: it is made once the aircraft has {COMBINED_NEEDS}. {isMode("combined") ? "These go as single photos." : ""}
-                </p>
-              )}
-              <p className="small muted" style={{ margin: "0 0 8px" }}>Tick or untick single photos under each aircraft in step 4.</p>
             </>
+          )}
+          {chosen.length > 0 && withoutCombined.length > 0 && (
+            <p className="small muted" style={{ margin: "0 0 8px" }}>
+              {withoutCombined.length === chosen.length ? (chosen.length === 1 ? "This aircraft has" : "These aircraft have") : `${withoutCombined.map((a) => a.type).join(", ")} ${withoutCombined.length === 1 ? "has" : "have"}`} no combined photo yet (it is made once an aircraft has {COMBINED_NEEDS}).
+              {withoutCombined.length < chosen.length && isMode("combined") ? " Those go as single photos." : ""}
+            </p>
           )}
           {chosen.length > 1 ? (
             <>
-              <div className="group-title">Send option by option</div>
+              <div className="group-title">Send, one option at a time ({photos.length} photo{photos.length === 1 ? "" : "s"} ticked in total)</div>
               <div className="option-sends">
                 {chosen.map((a, i) => {
                   const n = photos.filter((x) => x.i === i).length;
                   const done = sentOptions.has(i);
                   const next = !done && [...Array(i).keys()].every((j) => sentOptions.has(j));
                   return (
-                    <button key={a.id} type="button" className={`block-btn${next ? "" : " secondary"}`} onClick={() => sharePhotos(i)} disabled={busy}>
-                      <Icon name="share" />{done ? "✓ " : ""}Option {i + 1} · {a.type}: {n} photo{n === 1 ? "" : "s"} + message
+                    <button key={a.id} type="button" className="block-btn secondary option-send" onClick={() => sharePhotos(i)} disabled={busy}>
+                      <Icon name="share" />
+                      <span className="option-send-text">Option {i + 1} · {a.type} — {n ? `${n} photo${n === 1 ? "" : "s"} + message` : "message only"}</span>
+                      {done ? <span className="option-tag sent">✓ Sent</span> : next ? <span className="option-tag next">Next</span> : null}
                     </button>
                   );
                 })}
               </div>
               <p className="small muted" style={{ margin: "6px 0 0" }}>
-                Each button opens your phone&apos;s share sheet with that option&apos;s photos and its message, so the client gets option 1&apos;s photos and message, then option 2&apos;s. Pick the same chat each time.
+                Tap Option 1, choose the chat, send; then Option 2 to the same chat, and so on. The client gets each option&apos;s photos followed by its message.
               </p>
               <button ref={shareBtn} type="button" className="secondary" style={{ marginTop: 8 }} onClick={() => sharePhotos(null)} disabled={busy || photos.length === 0}>
                 Or everything at once: {photos.length} photo{photos.length === 1 ? "" : "s"}, then one message

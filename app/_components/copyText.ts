@@ -1,6 +1,21 @@
 "use client";
 
 /**
+ * Download one photo for sharing. Tries twice (a dropped connection or the server restarting usually clears in a
+ * moment), then fails with a message that names the photo.
+ */
+export async function fetchPhoto(url: string, name: string): Promise<Blob> {
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const res = await fetch(url, { cache: "no-store" });
+      if (res.ok) return await res.blob();
+    } catch { /* network dropped: try again */ }
+    if (attempt === 0) await new Promise((r) => setTimeout(r, 1200));
+  }
+  throw new Error(`Could not download ${name}. The connection dropped or the site was restarting. Wait a few seconds and tap the button again.`);
+}
+
+/**
  * Copy text to the clipboard as reliably as phones allow.
  * The old-style copy (a hidden text box + execCommand) runs first and synchronously, while the tap still counts as
  * the user's gesture; some phone browsers refuse the modern clipboard API once the page starts switching to another

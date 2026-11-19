@@ -7,7 +7,7 @@ import type { ChocksPhoto, Draft } from "@/domain/chocks";
 import { CLASSIFICATION_LABEL, type Classification } from "@/domain/constants";
 import { prepareShareAction, type SharePayload } from "../shareActions";
 import { ShareBox } from "./ShareBox";
-import { copyText } from "./copyText";
+import { copyText, fetchPhoto } from "./copyText";
 import Icon from "./Icon";
 import { CHAT_LANGUAGES, parseChatLang, toHans, trClassification, type ChatLang } from "@/domain/chocksText";
 
@@ -35,7 +35,8 @@ const UI_EN = {
   shared: "Shared. If the message text did not come through, paste it from Copy message.",
   cannotShare: "This browser cannot share photos directly. Open the quote on your phone, or use Open the quote.",
   photoFail: "A photo could not be loaded. Try again.",
-  sendKinds: "Photos to send:", sendOption: "Option {i} · {name}: {n} photo{s} + message",
+  sendKinds: "Photos to send:", sendOption: "Option {i} · {name} — {n} photo{s} + message",
+  sendOptionText: "Option {i} · {name} — message only", nextTag: "Next", sentTag: "✓ Sent",
   allAtOnce: "Or everything at once: {n} photo{s}, then one message",
   optionShared: "Option {i} shared. Now share option {j} to the same chat.", allShared: "All options shared.",
   byOption: "Each button sends that option's photos, then its message. Pick the same chat each time.",
@@ -67,6 +68,7 @@ const UI_HANT: UI = {
   cannotShare: "此瀏覽器無法直接分享相片。請在手機上打開，或按「打開報價」。",
   photoFail: "有相片未能載入，請再試一次。",
   sendKinds: "要傳送的相片：", sendOption: "選項 {i} · {name}：{n} 張相片及訊息",
+  sendOptionText: "選項 {i} · {name}：只有訊息", nextTag: "下一個", sentTag: "✓ 已傳送",
   allAtOnce: "或一次過傳送：{n} 張相片，然後一段訊息",
   optionShared: "已分享選項 {i}。請把選項 {j} 分享到同一個對話。", allShared: "所有選項已分享。",
   byOption: "每個按鈕會先傳送該選項的相片，再傳送它的訊息。每次請選同一個對話。",
@@ -125,9 +127,7 @@ function QuoteSend({ photos, options, text, ui, lang }: { photos: ChocksPhoto[];
     setBusy(true); setDone(null);
     try {
       const files = await Promise.all(list.map(async (p, i) => {
-        const res = await fetch(`/api/media/${p.id}`);
-        if (!res.ok) throw new Error(ui.photoFail);
-        const blob = await res.blob();
+        const blob = await fetchPhoto(`/api/media/${p.id}`, p.label);
         const name = `${String(i + 1).padStart(2, "0")} ${p.label}`.replace(/[\\/:*?"<>|]/g, "-");
         return new File([blob], `${name}.${EXT[blob.type] ?? "jpg"}`, { type: blob.type || "image/jpeg" });
       }));
@@ -175,9 +175,11 @@ function QuoteSend({ photos, options, text, ui, lang }: { photos: ChocksPhoto[];
               const n = forOption(i).length;
               const next = !sent.has(i) && [...Array(i).keys()].every((j) => sent.has(j));
               return (
-                <button key={i} type="button" className={next ? undefined : "secondary"} disabled={busy}
+                <button key={i} type="button" className="secondary option-send" disabled={busy}
                   onClick={() => share(forOption(i), o.text, () => { setSent((s) => new Set(s).add(i)); setDone(i < options.length - 1 ? fill(ui.optionShared, { i: i + 1, j: i + 2 }) : ui.allShared); })}>
-                  <Icon name="share" />{sent.has(i) ? "✓ " : ""}{fill(ui.sendOption, { i: i + 1, name: o.title, n, s: n === 1 ? "" : "s" })}
+                  <Icon name="share" />
+                  <span className="option-send-text">{n ? fill(ui.sendOption, { i: i + 1, name: o.title, n, s: n === 1 ? "" : "s" }) : fill(ui.sendOptionText, { i: i + 1, name: o.title })}</span>
+                  {sent.has(i) ? <span className="option-tag sent">{ui.sentTag}</span> : next ? <span className="option-tag next">{ui.nextTag}</span> : null}
                 </button>
               );
             })}

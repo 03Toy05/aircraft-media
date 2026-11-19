@@ -252,6 +252,23 @@ export function buildQuoteParts(items: QuoteAircraft[], opts: QuoteOptions): Quo
   return { greeting: opts.greeting ? t.greeting : null, blocks, closing: closing ? t.closing : null };
 }
 
+const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+/**
+ * The option number belongs to the aircraft's place in the message, never to the text. A block rewritten by hand
+ * keeps the broker's words, but its "Aircraft 3" label is renumbered to where the aircraft now is ("Aircraft 1"),
+ * or loses the number when only one aircraft is quoted. Only the first line that starts with the template's label
+ * (before {n}, bold/italic marks allowed) followed by a colon is touched.
+ */
+export function renumberBlock(text: string, opts: { language: QuoteLanguage; template?: Partial<QuoteTemplate> | null }, position: number, total: number): string {
+  const block = opts.template?.block?.trim() ? opts.template.block : defaultQuoteTemplate(opts.language).block;
+  const line = block.split(/\r?\n/).find((l) => l.includes("{n}"));
+  const label = line?.slice(0, line.indexOf("{n}")).replace(/\{[a-z_]+\}/g, "").trim();
+  if (!label) return text;
+  const re = new RegExp(`^(\\s*[*_~]*\\s*${escapeRe(label)})(?:\\s*\\d+)?(?=\\s*[*_~]*\\s*[:：])`, "m");
+  return text.replace(re, (_m, head: string) => (total > 1 ? `${head} ${position}` : head));
+}
+
 /**
  * "Aircraft: Gulfstream G550 / Manufacture: 2013 / Refurbished: 2020 / Capacity: 13 seats / WIFI: Yes, at USD 10/MB / Price:"
  * Lines for unknown values are left out; Price is always present so it can be filled in.
