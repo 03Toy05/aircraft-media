@@ -13,7 +13,7 @@ import { findAircraftByTail, findAircraftWithoutTail, getAircraftCard, orgAliase
 /**
  * Chocks, the assistant. It is deterministic: it reads labelled text, checks the directory, and asks one plain
  * question at a time. The whole conversation state lives in the Draft, which the browser sends back each turn,
- * so a short reply ("new", "yes", "interior") is always read against the question Chocks just asked.
+ * so a short reply ("new", "yes", "cabin") is always read against the question Chocks just asked.
  */
 
 export interface Option { id: string; name: string; note?: string }
@@ -457,8 +457,8 @@ async function nextStep(db: Db, tenantId: string, d: Draft, say: string[]): Prom
   const unclassified = d.photos.find((p) => p.classification === "unclassified");
   if (unclassified) {
     d.asked = { kind: "classify", mediaId: unclassified.mediaId };
-    const chips = (["exterior", "interior", "floor_plan"] as Classification[]).map((c) => ({ label: trClassification(L, c, CLASSIFICATION_LABEL[c]), send: c }));
-    return { draft: d, reply: { say: [...say, tr(L, "What view is “{name}”? Say “all interior” to apply a view to every unclassified photo.", { name: unclassified.name })], chips, ready: false } };
+    const chips = (["exterior", "cabin", "floor_plan"] as Classification[]).map((c) => ({ label: trClassification(L, c, CLASSIFICATION_LABEL[c]), send: c }));
+    return { draft: d, reply: { say: [...say, tr(L, "What view is “{name}”? Say “all cabin” to apply a view to every unclassified photo.", { name: unclassified.name })], chips, ready: false } };
   }
 
   // -- ready

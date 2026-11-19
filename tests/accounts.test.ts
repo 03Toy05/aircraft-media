@@ -82,7 +82,7 @@ describe("Workspaces are kept apart", () => {
     const q = (await ingestUpload(t.db, t.store, other, { filename: "y.png", bytes: await makeImage(400, 300, 71) })).result;
     const qv = (await getMediaDetail(t.db, other.tenantId, q.mediaId))!.media.version;
     await expect(setMediaAssociation(t.db, other, key(), { mediaId: q.mediaId, expectedVersion: qv, status: "representative_type", aircraftTypeId: myType })).rejects.toThrow(/not found/i);
-    const r = await applyChatProposal(t.db, other, key(), { mediaIds: [q.mediaId], classifications: { [q.mediaId]: "interior" }, operatorId: null, aircraftTypeId: null, aircraft: { mode: "existing", aircraftId: myAc }, info: { yom: 2030, yor: null, capacity: null, wifiStatus: "unknown", notes: null } });
+    const r = await applyChatProposal(t.db, other, key(), { mediaIds: [q.mediaId], classifications: { [q.mediaId]: "cabin" }, operatorId: null, aircraftTypeId: null, aircraft: { mode: "existing", aircraftId: myAc }, info: { yom: 2030, yor: null, capacity: null, wifiStatus: "unknown", notes: null } });
     expect(r.aircraftId).toBeNull();
     expect((await getCatalogue(t.db, t.actor.tenantId)).find((x) => x.aircraftId === myAc)?.tail).toBe("B-AAA");
   });
@@ -105,7 +105,7 @@ describe("One upload, one source evidence", () => {
     const type = (await createAircraftType(t.db, t.actor, key(), { manufacturer: "Gulfstream", model: "G280" })).result.aircraftTypeId;
     const r = await applyChatProposal(t.db, t.actor, key(), {
       mediaIds: ids,
-      classifications: { [ids[0]]: "exterior", [ids[1]]: "interior", [ids[2]]: "interior" },
+      classifications: { [ids[0]]: "exterior", [ids[1]]: "cabin", [ids[2]]: "cabin" },
       operatorId: null,
       newOperatorName: "Metrojet",
       aircraftTypeId: type,

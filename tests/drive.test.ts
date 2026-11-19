@@ -145,17 +145,17 @@ describe("Drive storage", () => {
     const mediaId = s.items[0].mediaIds![0];
     const typeId = (await createAircraftType(t.db, t.actor, key(), { manufacturer: "Gulfstream", model: "G650ER" })).result.aircraftTypeId;
     const acId = (await createAircraft(t.db, t.actor, key(), { aircraftTypeId: typeId, registration: "B-KXX" })).result.aircraftId;
-    await updateMediaMetadata(t.db, t.actor, key(), { mediaId, expectedVersion: 1, classification: "interior" });
+    await updateMediaMetadata(t.db, t.actor, key(), { mediaId, expectedVersion: 1, classification: "cabin" });
     await setMediaAssociation(t.db, t.actor, key(), { mediaId, expectedVersion: 2, status: "actual_aircraft", aircraftId: acId });
     const cv = (await t.db.select().from(mediaContentVersions).where(eq(mediaContentVersions.aircraftMediaId, mediaId)))[0];
     await approveMedia(t.db, t.actor, { mediaId, contentVersionId: cv.id, expectedVersion: 3 });
-    expect((await getCatalogue(t.db, t.actor.tenantId))[0].cells.interior.status).toBe("actual_available");
+    expect((await getCatalogue(t.db, t.actor.tenantId))[0].cells.cabin.status).toBe("actual_available");
     expect((await readContentBytes(t.db, store, cv.id)).bytes.byteLength).toBeGreaterThan(0);
 
     drive.remove(fileId); // gone from Drive
     await expect(readContentBytes(t.db, store, cv.id)).rejects.toThrow(/could not be retrieved/);
     const row = (await getCatalogue(t.db, t.actor.tenantId))[0];
-    expect(row.cells.interior.status).toBe("unavailable");
+    expect(row.cells.cabin.status).toBe("unavailable");
     expect(row.status).toBe("unavailable");
   });
 });

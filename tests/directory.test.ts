@@ -229,7 +229,7 @@ describe("Aircraft card parsing (English)", () => {
   });
 
   it("suggests a classification from the file name only when it is clear", () => {
-    expect(guessClassificationFromFilename("G280 Int 1.jpeg")).toBe("interior");
+    expect(guessClassificationFromFilename("G280 Int 1.jpeg")).toBe("cabin");
     expect(guessClassificationFromFilename("B-KXX_exterior_2.png")).toBe("exterior");
     expect(guessClassificationFromFilename("Floor Plan.pdf")).toBe("floor_plan");
     expect(guessClassificationFromFilename("IMG_2231.jpg")).toBeNull();

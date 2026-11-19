@@ -152,7 +152,7 @@ export default async function ReviewWorkspace({ params, searchParams }: { params
                   <ViewChoice name={`cls_${sib.mediaId}`} value={sib.classification} label={`View of ${sib.filename ?? "photo"}`} group="upload" />
                 </div>
               ))}
-              {siblings.length > 0 && <p style={{ margin: "6px 0 0" }}><SetRest group="upload" to="interior" label="Set the rest to Interior" /></p>}
+              {siblings.length > 0 && <p style={{ margin: "6px 0 0" }}><SetRest group="upload" to="cabin" label="Set the rest to Cabin" /></p>}
             </fieldset>
             <AircraftPicker
               operators={allOrgs.filter((o) => o.active).map((o) => ({ id: o.id, name: o.canonicalName }))}

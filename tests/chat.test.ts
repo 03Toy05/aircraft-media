@@ -48,7 +48,7 @@ describe("Quick add: confirm", () => {
     const r = await applyChatProposal(t.db, t.actor, key(), {
       ...base,
       mediaIds: [mediaId],
-      classifications: { [mediaId]: "interior" },
+      classifications: { [mediaId]: "cabin" },
       newOperatorName: "Advanced Aviation",
       aircraftTypeId: g280,
       aircraft: { mode: "new", registration: "B-KXX" },
@@ -58,7 +58,7 @@ describe("Quick add: confirm", () => {
     const card = await getAircraftCard(t.db, r.aircraftId!);
     expect(card).toMatchObject({ tailNumber: "B-KXX", operator: "Advanced Aviation", yom: 2025, capacity: 10 });
     const [m] = await t.db.select().from(aircraftMedia).where(eq(aircraftMedia.id, mediaId));
-    expect(m).toMatchObject({ reviewState: "approved", primaryClassification: "interior", associationStatus: "actual_aircraft" });
+    expect(m).toMatchObject({ reviewState: "approved", primaryClassification: "cabin", associationStatus: "actual_aircraft" });
   });
 
   it("without a tail the photo represents the type; without a view it stays in review", async () => {
@@ -67,7 +67,7 @@ describe("Quick add: confirm", () => {
     const r = await applyChatProposal(t.db, t.actor, key(), {
       ...base,
       mediaIds: [a, b],
-      classifications: { [a]: "interior", [b]: "unclassified" },
+      classifications: { [a]: "cabin", [b]: "unclassified" },
       aircraftTypeId: g280,
       aircraft: { mode: "none" },
     });
@@ -82,7 +82,7 @@ describe("Quick add: confirm", () => {
     const input = {
       ...base,
       mediaIds: [mediaId],
-      classifications: { [mediaId]: "interior" as const },
+      classifications: { [mediaId]: "cabin" as const },
       newOperatorName: "Advanced Aviation", // already exists: not created, aircraft still made
       aircraftTypeId: g280,
       aircraft: { mode: "new" as const, registration: "B-KYY" },
@@ -96,7 +96,7 @@ describe("Quick add: confirm", () => {
   });
 });
 
-const fakePhoto = (name: string, classification: DraftPhoto["classification"] = "interior"): DraftPhoto => ({ mediaId: `m-${name}`, name, contentVersionId: null, classification });
+const fakePhoto = (name: string, classification: DraftPhoto["classification"] = "cabin"): DraftPhoto => ({ mediaId: `m-${name}`, name, contentVersionId: null, classification });
 const say = (r: { reply: { say: string[] } }) => r.reply.say.join(" ");
 
 describe("Existing aircraft: update what was provided", () => {
@@ -202,7 +202,7 @@ describe("Chocks conversation", () => {
     r = await converse(t.db, t.actor.tenantId, r.draft, "new", []);
     expect(r.draft.asked).toMatchObject({ kind: "classify" }); // operator settled, now the photo with no hint
     r = await converse(t.db, t.actor.tenantId, r.draft, "all cabin", []);
-    expect(r.draft.photos[0].classification).toBe("interior");
+    expect(r.draft.photos[0].classification).toBe("cabin");
     expect(r.reply.ready).toBe(true);
   });
 

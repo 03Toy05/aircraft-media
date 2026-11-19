@@ -102,7 +102,7 @@ describe("Share/export — card plus exact approved photos", () => {
     const aircraftId = (await createAircraft(t.db, t.actor, key(), { aircraftTypeId: typeId, registration: "B-KXX", operatorId: org, base: { mode: "based", locations: ["Hong Kong"] }, info: { yom: 2018, wifiStatus: "yes" } })).result.aircraftId;
     return { aircraftId, typeId };
   }
-  async function approve(seed: number, cls: "exterior" | "interior" | "floor_plan", status: "actual_aircraft" | "representative_type", ids: { aircraftId: string; typeId: string }) {
+  async function approve(seed: number, cls: "exterior" | "cabin" | "floor_plan", status: "actual_aircraft" | "representative_type", ids: { aircraftId: string; typeId: string }) {
     const up = (await ingestUpload(t.db, t.store, t.actor, { filename: `p${seed}.png`, bytes: await makeImage(300, 200, seed) })).result;
     await updateMediaMetadata(t.db, t.actor, key(), { mediaId: up.mediaId, expectedVersion: 1, classification: cls });
     await setMediaAssociation(t.db, t.actor, key(), { mediaId: up.mediaId, expectedVersion: 2, status, aircraftId: status === "actual_aircraft" ? ids.aircraftId : null, aircraftTypeId: status === "representative_type" ? ids.typeId : null });
@@ -113,21 +113,21 @@ describe("Share/export — card plus exact approved photos", () => {
   it("exports labelled photos in lineup order with the compact card, limited to chosen views", async () => {
     const ids = await seedAircraft();
     await approve(1, "exterior", "actual_aircraft", ids);
-    await approve(2, "interior", "actual_aircraft", ids);
+    await approve(2, "cabin", "actual_aircraft", ids);
     await approve(3, "floor_plan", "representative_type", ids);
 
     const all = await buildAircraftExport(t.db, t.store, t.actor, ids.aircraftId);
-    expect(all.files.map((f) => f.name).sort()).toEqual(["EXT 1 - B-KXX.png", "FLOOR PLAN 1 (representative) - B-KXX.png", "INT 1 - B-KXX.png"]);
+    expect(all.files.map((f) => f.name).sort()).toEqual(["CABIN 1 - B-KXX.png", "EXT 1 - B-KXX.png", "FLOOR PLAN 1 (representative) - B-KXX.png"]);
     expect(all.cardText).toContain("Operator: Metrojet");
     expect(all.cardText).toContain("Tail number: B-KXX");
 
-    const some = await buildAircraftExport(t.db, t.store, t.actor, ids.aircraftId, ["interior"]);
-    expect(some.files.map((f) => f.name)).toEqual(["INT 1 - B-KXX.png"]);
+    const some = await buildAircraftExport(t.db, t.store, t.actor, ids.aircraftId, ["cabin"]);
+    expect(some.files.map((f) => f.name)).toEqual(["CABIN 1 - B-KXX.png"]);
 
     const zip = unzipSync(zipExport(some));
-    expect(Object.keys(zip).sort()).toEqual(["INT 1 - B-KXX.png", "aircraft-card.txt"]);
+    expect(Object.keys(zip).sort()).toEqual(["CABIN 1 - B-KXX.png", "aircraft-card.txt"]);
     expect(strFromU8(zip["aircraft-card.txt"])).toContain("YOM: 2018");
-    expect((await sharp(zip["INT 1 - B-KXX.png"]).metadata()).width).toBe(300);
+    expect((await sharp(zip["CABIN 1 - B-KXX.png"]).metadata()).width).toBe(300);
   });
 
   it("does not export unapproved or retired photos", async () => {

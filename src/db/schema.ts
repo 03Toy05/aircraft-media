@@ -149,7 +149,11 @@ export const quoteTemplates = pgTable(
 export const contacts = pgTable("contacts", {
   id: pk(),
   tenantId: uuid("tenant_id").notNull(),
+  /** CBOS Rulebook B1.2 Person reference, PER-{initials}-{number}: allocated once, never changed or reused. */
+  reference: text("reference"),
   name: text("name").notNull(),
+  /** The English name the reference's initials came from (kept as allocated, per the Rulebook). */
+  englishName: text("english_name"),
   normalizedName: text("normalized_name").notNull(),
   app: text("app").notNull(),
   handle: text("handle"),
@@ -157,7 +161,7 @@ export const contacts = pgTable("contacts", {
   active: boolean("active").notNull().default(true),
   createdAt: created(),
   updatedAt: updated(),
-});
+}, (t) => [uniqueIndex("contact_reference_uq").on(t.tenantId, t.reference)]);
 
 export const organisationAliases = pgTable(
   "organisation_aliases",
@@ -465,4 +469,23 @@ export const driveSyncState = pgTable(
     updatedAt: updated(),
   },
   (t) => [uniqueIndex("drive_sync_folder_uq").on(t.tenantId, t.folderId)],
+);
+
+// ---- CBOS export: the CBOS-named copy of each approved photo (import assistance only, never identity) ----
+export const cbosExports = pgTable(
+  "cbos_exports",
+  {
+    id: pk(),
+    tenantId: uuid("tenant_id").notNull(),
+    aircraftMediaId: uuid("aircraft_media_id").notNull().references(() => aircraftMedia.id),
+    /** The content version the copy holds; a re-crop makes a new copy. */
+    contentVersionId: uuid("content_version_id").notNull(),
+    driveFileId: text("drive_file_id").notNull(),
+    driveFolderId: text("drive_folder_id").notNull(),
+    /** Folder path and file name, e.g. "CBOS Export/Operator Aircraft/Metrojet/B-KXX/Exterior_01.jpg". */
+    path: text("path").notNull(),
+    createdAt: created(),
+    updatedAt: updated(),
+  },
+  (t) => [uniqueIndex("cbos_export_media_uq").on(t.aircraftMediaId)],
 );

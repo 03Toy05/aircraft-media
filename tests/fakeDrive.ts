@@ -120,7 +120,25 @@ export class FakeDrive {
       return this.json({ files: page.map((r) => this.pub(r)), nextPageToken: next });
     }
 
+    const up = /^\/upload\/drive\/v3\/files\/([^/]+)$/.exec(path);
+    if (up && method === "PATCH") {
+      const node = this.nodes.get(decodeURIComponent(up[1]));
+      if (!node) return this.json({ error: "not found" }, 404);
+      node.bytes = new Uint8Array(init.body as Uint8Array);
+      return this.json({ id: node.id });
+    }
+
     const m = /^\/drive\/v3\/files\/([^/]+)$/.exec(path);
+    if (m && method === "PATCH") {
+      const node = this.nodes.get(decodeURIComponent(m[1]));
+      if (!node) return this.json({ error: "not found" }, 404);
+      const body = JSON.parse(String(init.body)) as { name?: string; trashed?: boolean };
+      if (body.name) node.name = body.name;
+      if (body.trashed) node.trashed = true;
+      const add = url.searchParams.get("addParents"), remove = url.searchParams.get("removeParents");
+      if (add && remove) node.parents = [...(node.parents ?? []).filter((p) => p !== remove), add];
+      return this.json({ id: node.id });
+    }
     if (m && method === "GET") {
       const id = decodeURIComponent(m[1]);
       const node = this.nodes.get(id);

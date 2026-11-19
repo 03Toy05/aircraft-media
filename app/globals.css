@@ -255,3 +255,6 @@ fieldset.views .sibling { grid-template-columns: 22px 56px minmax(0, 1fr) auto; 
 .sheet-save button { min-width: 200px; }
 @media (max-width: 640px) { .sheet-save button { width: 100%; } }
 .saved-list ul { margin: 4px 0 0; padding-left: 18px; }
+
+/* CBOS references (PER-WF-001 …) */
+code.ref { font-size: 12px; padding: 1px 6px; border: 1px solid var(--line); border-radius: 6px; color: var(--muted); background: transparent; }

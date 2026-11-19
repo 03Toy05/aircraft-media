@@ -114,7 +114,7 @@ describe("Test 7 & 8 — classify, order, correct and approve manually (no AI in
 
     // correcting the classification of approved media sends it back to review
     const detail = (await getMediaDetail(t.db, t.actor.tenantId, a.mediaId))!;
-    await updateMediaMetadata(t.db, t.actor, key(), { mediaId: a.mediaId, expectedVersion: detail.media.version, classification: "interior" });
+    await updateMediaMetadata(t.db, t.actor, key(), { mediaId: a.mediaId, expectedVersion: detail.media.version, classification: "cabin" });
     expect((await getMediaDetail(t.db, t.actor.tenantId, a.mediaId))!.media.reviewState).toBe("needs_review");
   });
 
@@ -131,13 +131,13 @@ describe("Test 7 & 8 — classify, order, correct and approve manually (no AI in
 
   it("rejects stale edits via the version precondition", async () => {
     const r = await upload(13);
-    const err = await updateMediaMetadata(t.db, t.actor, key(), { mediaId: r.mediaId, expectedVersion: 99, classification: "interior" }).catch((e) => e);
+    const err = await updateMediaMetadata(t.db, t.actor, key(), { mediaId: r.mediaId, expectedVersion: 99, classification: "cabin" }).catch((e) => e);
     expect(err.code).toBe("VERSION_MISMATCH");
   });
 
   it("approval is idempotent for the same exact content version and actor", async () => {
     const r = await upload(14);
-    await updateMediaMetadata(t.db, t.actor, key(), { mediaId: r.mediaId, expectedVersion: 1, classification: "interior" });
+    await updateMediaMetadata(t.db, t.actor, key(), { mediaId: r.mediaId, expectedVersion: 1, classification: "cabin" });
     await setMediaAssociation(t.db, t.actor, key(), { mediaId: r.mediaId, expectedVersion: 2, status: "actual_aircraft", aircraftId: acId });
     const input = { mediaId: r.mediaId, contentVersionId: r.contentVersionId, expectedVersion: 3 };
     const first = await approveMedia(t.db, t.actor, input);
@@ -215,17 +215,17 @@ describe("Test 10 — catalogue states", () => {
     let row = await find();
     expect(row.status).toBe("partial");
     expect(row.cells.exterior.status).toBe("actual_available");
-    expect(row.cells.interior.status).toBe("missing");
+    expect(row.cells.cabin.status).toBe("missing");
 
     // add cabin + floor plan -> actual_available
-    await approveAs((await upload(31)).mediaId, "interior", "actual_aircraft");
+    await approveAs((await upload(31)).mediaId, "cabin", "actual_aircraft");
     await approveAs((await upload(32)).mediaId, "floor_plan", "actual_aircraft");
     expect((await find()).status).toBe("actual_available");
   });
 
   it("shows representative_available when only type-level media exist, kept distinct from actual", async () => {
     await approveAs((await upload(40)).mediaId, "exterior", "representative_type");
-    await approveAs((await upload(41)).mediaId, "interior", "representative_type");
+    await approveAs((await upload(41)).mediaId, "cabin", "representative_type");
     await approveAs((await upload(42)).mediaId, "floor_plan", "representative_type");
     const row = (await getCatalogue(t.db, t.actor.tenantId)).find((r) => r.aircraftId === acId)!;
     expect(row.status).toBe("representative_available");

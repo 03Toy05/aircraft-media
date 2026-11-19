@@ -160,6 +160,37 @@ export class DriveClient {
     });
     return ((await res.json()) as { id: string }).id;
   }
+
+  /** A file of this name directly inside a folder, if any. */
+  async findChild(parentId: string, name: string): Promise<DriveFile | null> {
+    const q = `'${esc(parentId)}' in parents and name = '${esc(name)}' and trashed = false`;
+    const j = (await (await this.call(`${API}/files?q=${encodeURIComponent(q)}&fields=${encodeURIComponent(`files(${FIELDS})`)}&supportsAllDrives=true&includeItemsFromAllDrives=true`)).json()) as { files: DriveFile[] };
+    return j.files[0] ?? null;
+  }
+
+  /** Rename a file and, when the folder changed, move it. */
+  async renameMove(id: string, name: string, fromParent?: string, toParent?: string): Promise<void> {
+    const move = fromParent && toParent && fromParent !== toParent ? `&addParents=${encodeURIComponent(toParent)}&removeParents=${encodeURIComponent(fromParent)}` : "";
+    await this.call(`${API}/files/${encodeURIComponent(id)}?fields=id&supportsAllDrives=true${move}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name }),
+    });
+  }
+
+  /** Replace a file's bytes, keeping its id (used for the export's data sheet). */
+  async replaceContent(id: string, mimeType: string, bytes: Uint8Array): Promise<void> {
+    await this.call(`${UPLOAD}/${encodeURIComponent(id)}?uploadType=media&fields=id&supportsAllDrives=true`, { method: "PATCH", headers: { "Content-Type": mimeType }, body: new Uint8Array(bytes) });
+  }
+
+  /** Move to Drive's bin (recoverable there); never a permanent delete. */
+  async trash(id: string): Promise<void> {
+    await this.call(`${API}/files/${encodeURIComponent(id)}?fields=id&supportsAllDrives=true`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ trashed: true }),
+    });
+  }
 }
 
 /** Bytes stored in the `Aircraft Media` root: Sources/ for originals, Processing/ for derivatives. */

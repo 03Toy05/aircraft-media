@@ -100,7 +100,7 @@ function GroupCard({
               <ViewChoice name={`cls_${p.mediaId}`} value={p.classification} label={`View of ${p.filename ?? "photo"}`} group={group} />
             </div>
           ))}
-          {n > 1 && <p style={{ margin: "6px 0 0" }}><SetRest group={group} to="interior" label="Set the rest to Interior" /></p>}
+          {n > 1 && <p style={{ margin: "6px 0 0" }}><SetRest group={group} to="cabin" label="Set the rest to Cabin" /></p>}
         </fieldset>
         <div className="sheet-fields">
           <AircraftPicker idPrefix={group} operators={operators} aircraft={aircraft} typeGroups={typeGroups} newOperatorName={d.newOperatorName}

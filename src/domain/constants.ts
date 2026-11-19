@@ -4,43 +4,44 @@
 export const FIXED_TENANT_ID = "00000000-0000-0000-0000-000000000001"; // single-tenant v1
 
 /**
- * The views a photo can be. Kept to three on purpose: brokers only need exterior, interior and floor plan.
- * (Older detailed views such as cabin, seating or galley were folded into "interior" by migration 0009.)
+ * The views a photo can be: three of the CBOS Rulebook's confirmed canonical classifications (Exterior, Cabin,
+ * Floor plan) plus Unclassified. Brokers only need these three. "Interior"/"INT" is the Rulebook's import/search alias
+ * for Cabin, not a separate classification. (Migration 0009 folded the older detailed views into one; 0010 names it cabin.)
  */
-export const CLASSIFICATIONS = ["exterior", "interior", "floor_plan", "unclassified"] as const;
+export const CLASSIFICATIONS = ["exterior", "cabin", "floor_plan", "unclassified"] as const;
 export type Classification = (typeof CLASSIFICATIONS)[number];
 
 export const CLASSIFICATION_LABEL: Record<Classification, string> = {
   exterior: "EXT",
-  interior: "INT",
+  cabin: "CABIN",
   floor_plan: "FLOOR PLAN",
   unclassified: "UNCLASSIFIED",
 };
 
-/** Words for each view, in file names and typed replies. Every room inside the aircraft counts as interior. */
+/** Words for each view, in file names and typed replies (Rulebook aliases included). Every room inside the aircraft counts as cabin. */
 export const CLASSIFICATION_ALIASES: Record<string, Classification> = {
   ext: "exterior",
   exterior: "exterior",
   outside: "exterior",
   outer: "exterior",
   ramp: "exterior",
-  int: "interior",
-  interior: "interior",
-  inside: "interior",
-  cabin: "interior",
-  seat: "interior",
-  seats: "interior",
-  seating: "interior",
-  sleep: "interior",
-  sleeping: "interior",
-  bed: "interior",
-  galley: "interior",
-  lav: "interior",
-  lavatory: "interior",
-  toilet: "interior",
-  flightdeck: "interior",
-  cockpit: "interior",
-  baggage: "interior",
+  int: "cabin",
+  interior: "cabin",
+  inside: "cabin",
+  cabin: "cabin",
+  seat: "cabin",
+  seats: "cabin",
+  seating: "cabin",
+  sleep: "cabin",
+  sleeping: "cabin",
+  bed: "cabin",
+  galley: "cabin",
+  lav: "cabin",
+  lavatory: "cabin",
+  toilet: "cabin",
+  flightdeck: "cabin",
+  cockpit: "cabin",
+  baggage: "cabin",
   floorplan: "floor_plan",
   layout: "floor_plan",
   fp: "floor_plan",
@@ -93,7 +94,7 @@ export function guessClassificationFromFilename(filename: string): Classificatio
 const CLASSIFICATION_ZH_ALIASES: [RegExp, Classification][] = [
   [/平面圖|平面图|佈局|布局/, "floor_plan"],
   [/外觀|外观|機身|机身|外部/, "exterior"],
-  [/內部|内部|客艙|客舱|機艙|机舱|室內|室内|座椅|座位|臥室|卧室|睡房|床|廚房|厨房|洗手間|洗手间|廁所|厕所|駕駛艙|驾驶舱|行李艙|行李舱/, "interior"],
+  [/內部|内部|客艙|客舱|機艙|机舱|室內|室内|座椅|座位|臥室|卧室|睡房|床|廚房|厨房|洗手間|洗手间|廁所|厕所|駕駛艙|驾驶舱|行李艙|行李舱/, "cabin"],
 ];
 
 /** Parse a user-typed view name ("Floor Plan", "FLOOR PLAN", "interior") into a canonical classification. */
@@ -150,7 +151,7 @@ export const ALLOWED_IMAGE_MIME = ["image/jpeg", "image/png", "image/webp"] as c
 export const MAX_UPLOAD_BYTES = 20 * 1024 * 1024;
 
 /** Catalogue coverage columns. "Required" classes decide actual/representative/partial. */
-export const REQUIRED_CLASSES: Classification[] = ["exterior", "interior", "floor_plan"];
+export const REQUIRED_CLASSES: Classification[] = ["exterior", "cabin", "floor_plan"];
 
 /** Normalise free text for matching: NFKC, lowercase, keep letters/digits (any script). */
 export function normalizeKey(text: string): string {

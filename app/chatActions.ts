@@ -7,6 +7,7 @@ import { getDb } from "@/db/client";
 import { aircraftMedia } from "@/db/schema";
 import { getFileStore } from "@/storage";
 import { requireUser } from "@/lib/session";
+import { exportAfterResponse } from "@/lib/cbosExportRunner";
 import { DomainError } from "@/domain/errors";
 import { ingestPdf } from "@/domain/intake";
 import { ingestUpload } from "@/domain/media";
@@ -99,6 +100,7 @@ export async function chocksTurnAction(fd: FormData): Promise<TurnResult> {
     base: d.base ?? undefined,
     evidenceText: d.evidence.join("\n") || null,
   });
+  if (applied.photos.some((p) => p.outcome === "approved")) exportAfterResponse(session);
   revalidatePath("/", "layout");
   const say = [tr(L, "Done."), ...applied.steps.map((x) => trStep(L, x)), ...applied.photos.map((p) => tr(L, "Photo: {detail}", { detail: trStep(L, p.detail) }))];
   return { draft: { ...emptyDraft(randomUUID()), lang: L }, reply: { say, chips: [], ready: false, done: true }, failures, applied };

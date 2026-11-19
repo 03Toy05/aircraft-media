@@ -10,6 +10,7 @@ import { ingestPdf } from "@/domain/intake";
 import { cookies, headers } from "next/headers";
 import { VIEW_AS_COOKIE, requireAdmin, requireUser, requireWriter } from "@/lib/session";
 import * as accounts from "@/domain/accounts";
+import { exportAfterResponse, runExport } from "@/lib/cbosExportRunner";
 import { DomainError } from "@/domain/errors";
 import type { Actor } from "@/domain/action";
 import * as dir from "@/domain/directory";
@@ -204,12 +205,12 @@ export async function resetQuoteTemplateAction(fd: FormData) {
 
 export async function createContactAction(fd: FormData) {
   const { actor, db } = await ctx();
-  await run("/contacts", "Contact added", () => contacts.createContact(db, actor, key(fd), { name: str(fd, "name"), app: str(fd, "app"), handle: str(fd, "handle"), notes: str(fd, "notes") }));
+  await run("/contacts", "Contact added", () => contacts.createContact(db, actor, key(fd), { name: str(fd, "name"), englishName: optStr(fd, "englishName"), app: str(fd, "app"), handle: str(fd, "handle"), notes: str(fd, "notes") }));
 }
 
 export async function updateContactAction(fd: FormData) {
   const { actor, db } = await ctx();
-  await run("/contacts", "Contact saved", () => contacts.updateContact(db, actor, key(fd), { contactId: str(fd, "contactId"), name: str(fd, "name"), app: str(fd, "app"), handle: str(fd, "handle"), notes: str(fd, "notes") }));
+  await run("/contacts", "Contact saved", () => contacts.updateContact(db, actor, key(fd), { contactId: str(fd, "contactId"), name: str(fd, "name"), englishName: optStr(fd, "englishName"), app: str(fd, "app"), handle: str(fd, "handle"), notes: str(fd, "notes") }));
 }
 
 export async function retireContactAction(fd: FormData) {
@@ -353,6 +354,7 @@ export async function addManagementAction(fd: FormData) {
 
 export async function mediaMetadataAction(fd: FormData) {
   const { actor, db } = await ctx();
+  exportAfterResponse(await requireUser());
   const id = str(fd, "mediaId");
   const cls = str(fd, "classification") as Classification;
   await run(`/review/${id}`, "Saved", () =>
@@ -368,6 +370,7 @@ export async function mediaMetadataAction(fd: FormData) {
 
 export async function mediaAssociationAction(fd: FormData) {
   const { actor, db } = await ctx();
+  exportAfterResponse(await requireUser());
   const id = str(fd, "mediaId");
   const status = str(fd, "status") as "actual_aircraft" | "representative_type" | "unresolved";
   await run(`/review/${id}`, "Association saved", () =>
@@ -383,6 +386,7 @@ export async function mediaAssociationAction(fd: FormData) {
 
 export async function approveAction(fd: FormData) {
   const { actor, db } = await ctx();
+  exportAfterResponse(await requireUser());
   const id = str(fd, "mediaId");
   // After a decision, go back to the queue so the next photo is one click away.
   await run(`/review/${id}`, "Photo approved", () =>
@@ -393,6 +397,7 @@ export async function approveAction(fd: FormData) {
 
 export async function useVersionAction(fd: FormData) {
   const { actor, db } = await ctx();
+  exportAfterResponse(await requireUser());
   const id = str(fd, "mediaId");
   await run(`/review/${id}`, "Switched version (earlier versions are kept)", () =>
     media.useContentVersion(db, actor, key(fd), { mediaId: id, contentVersionId: str(fd, "contentVersionId"), expectedVersion: Number(str(fd, "expectedVersion")) }),
@@ -401,6 +406,7 @@ export async function useVersionAction(fd: FormData) {
 
 export async function rejectAction(fd: FormData) {
   const { actor, db } = await ctx();
+  exportAfterResponse(await requireUser());
   const id = str(fd, "mediaId");
   await run(`/review/${id}`, "Photo rejected. It is listed under Rejected, where you can reopen it.", () =>
     media.rejectMedia(db, actor, key(fd), { mediaId: id, expectedVersion: Number(str(fd, "expectedVersion")), reason: str(fd, "reason") }),
@@ -410,24 +416,28 @@ export async function rejectAction(fd: FormData) {
 
 export async function reopenAction(fd: FormData) {
   const { actor, db } = await ctx();
+  exportAfterResponse(await requireUser());
   const id = str(fd, "mediaId");
   await run(`/review/${id}`, "Reopened for review", () => media.reopenMedia(db, actor, key(fd), { mediaId: id, expectedVersion: Number(str(fd, "expectedVersion")) }));
 }
 
 export async function retireAction(fd: FormData) {
   const { actor, db } = await ctx();
+  exportAfterResponse(await requireUser());
   const id = str(fd, "mediaId");
   await run(`/review/${id}`, "Retired", () => media.retireMedia(db, actor, key(fd), { mediaId: id }));
 }
 
 export async function restoreAction(fd: FormData) {
   const { actor, db } = await ctx();
+  exportAfterResponse(await requireUser());
   const id = str(fd, "mediaId");
   await run(`/review/${id}`, "Restored", () => media.restoreMedia(db, actor, key(fd), { mediaId: id }));
 }
 
 export async function cropAction(fd: FormData) {
   const { actor, db, store } = await ctx();
+  exportAfterResponse(await requireUser());
   const id = str(fd, "mediaId");
   const input = {
     mediaId: id,
@@ -501,6 +511,7 @@ async function assignFromForm(actor: Actor, db: Awaited<ReturnType<typeof getDb>
 export async function assignPhotoAction(fd: FormData) {
   const { actor, db } = await ctx();
   const r = await assignFromForm(actor, db, fd);
+  if (r.approvedIds.length) exportAfterResponse(await requireUser());
   revalidatePath("/", "layout");
   if (r.ok) redirect(withParam("/review", "ok", r.message));
   redirect(withParam(`/review/${str(fd, "mediaId")}`, "error", r.message || "Nothing was saved"));
@@ -516,6 +527,7 @@ export async function assignGroupAction(fd: FormData): Promise<AssignOutcome> {
     throw e;
   }
   const r = await assignFromForm(actor, await getDb(), fd);
+  if (r.approvedIds.length) exportAfterResponse(await requireUser());
   revalidatePath("/", "layout");
   return r;
 }
@@ -615,4 +627,22 @@ export async function stopViewingAction() {
   (await cookies()).delete(VIEW_AS_COOKIE);
   revalidatePath("/", "layout");
   redirect("/admin");
+}
+
+// ------------------------------------------------------------------ CBOS export
+
+/** Approved photos page: bring the CBOS export folder in Drive up to date now. */
+export async function exportCbosAction() {
+  await ctx(); // refuses read-only workspaces
+  const s = await requireUser();
+  let error: string | null = null;
+  let ok = "";
+  try {
+    const r = await runExport(s);
+    ok = `Export to Drive “${r.root}” done: ${r.added} added, ${r.updated} refreshed, ${r.moved} renamed or moved, ${r.removed} removed, ${r.unchanged} unchanged${r.skipped ? `, ${r.skipped} without a view (not exported)` : ""}.`;
+    if (r.failed.length) error = `${ok} ${r.failed.length} failed (${r.failed[0].error}). Press Export again to retry them.`;
+  } catch (e) {
+    error = `Export failed: ${e instanceof Error ? e.message : "unknown error"}`;
+  }
+  redirect(withParam("/photos", error ? "error" : "ok", error ?? ok));
 }

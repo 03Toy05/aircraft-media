@@ -4,7 +4,7 @@ import type { Classification } from "@/domain/constants";
 
 const VIEWS: { value: Classification; label: string }[] = [
   { value: "exterior", label: "Exterior" },
-  { value: "interior", label: "Interior" },
+  { value: "cabin", label: "Cabin" },
   { value: "floor_plan", label: "Floor plan" },
 ];
 
@@ -22,7 +22,7 @@ export function ViewChoice({ name, value, label, group }: { name: string; value:
   );
 }
 
-/** Sets every photo in the group that has no view yet to the chosen one (usually the rest are interior). */
+/** Sets every photo in the group that has no view yet to the chosen one (usually the rest are cabin). */
 export function SetRest({ group, to, label }: { group: string; to: Classification; label: string }) {
   return (
     <button

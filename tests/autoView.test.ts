@@ -39,12 +39,12 @@ describe("Scanning a new photo's view (no AI)", () => {
     }
   });
 
-  it("reads the view from the file name, and folds every room into interior", async () => {
+  it("reads the view from the file name, and folds every room into cabin", async () => {
     expect((await scanView(await photo(), "G280 ext 1.jpg")).classification).toBe("exterior");
-    expect(guessClassificationFromFilename("galley.jpg")).toBe("interior");
-    expect(guessClassificationFromFilename("Cabin_02.jpeg")).toBe("interior");
+    expect(guessClassificationFromFilename("galley.jpg")).toBe("cabin");
+    expect(guessClassificationFromFilename("Cabin_02.jpeg")).toBe("cabin");
     expect(guessClassificationFromFilename("floor plan.png")).toBe("floor_plan");
-    expect(parseClassification("客艙")).toBe("interior");
+    expect(parseClassification("客艙")).toBe("cabin");
     expect(parseClassification("平面圖")).toBe("floor_plan");
   });
 });
