@@ -3,7 +3,6 @@
 import { useMemo, useState } from "react";
 import Icon from "./Icon";
 import { copyText, openAfterCopy, shareText } from "./copyText";
-import MessengerButtons from "./MessengerButtons";
 import { contactApp, contactLink, type ContactApp } from "@/domain/messengers";
 
 export interface ShareItem {
@@ -126,12 +125,7 @@ export function ShareBox({ aircraftId, tail, cardText, items, contact }: { aircr
           </div>
         </>
       )}
-      {!contact && (
-        <>
-          <p className="small muted" style={{ marginBottom: 4 }}>Or send just the card to:</p>
-          <MessengerButtons onPick={(id) => { const a = contactApp(id); if (a) openApp(a); }} />
-        </>
-      )}
+      {items.length > 0 && <p className="small muted" style={{ margin: "6px 0 0" }}>Share opens your phone&apos;s share sheet with the photos and the card: choose the app, then the chat. WeChat keeps only the photos, so paste the card after them (Copy card).</p>}
       {msg && <p className="small" role="status">{msg}</p>}
     </div>
   );

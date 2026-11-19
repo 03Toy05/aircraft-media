@@ -4,14 +4,11 @@ import Link from "next/link";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import Icon from "./Icon";
 import TextBox, { Styled } from "./TextBox";
-import MessengerButtons from "./MessengerButtons";
-import SearchSelect from "./SearchSelect";
-import { copyText, fetchPhoto, openAfterCopy, shareText } from "./copyText";
+import { copyText, fetchPhoto } from "./copyText";
 import { registerCommands, type CommandResult } from "./voice";
 import { togglePreferredOperator } from "../actions";
-import { contactApp, contactLink } from "@/domain/messengers";
 import { QUOTE_LANGUAGES, QUOTE_WORDS, buildQuoteParts, renumberBlock, type QuoteLanguage, type QuoteTemplate } from "@/domain/quote";
-import { forOtherApps, parseStyled, readsMarkers } from "@/domain/textStyle";
+import { forOtherApps, parseStyled } from "@/domain/textStyle";
 import { parseQuoteCommands, type QuoteCommand } from "@/domain/quoteCommands";
 import { COMBINED_NEEDS, type WifiStatus } from "@/domain/constants";
 import type { ShareItem } from "./ShareBox";
@@ -32,10 +29,19 @@ export interface QuoteAircraftOption {
   photos: ShareItem[];
 }
 export interface QuoteOperator { id: string; name: string; region: string | null; addedAt: string; count: number }
-export interface QuoteContact { id: string; name: string; app: string; handle: string | null }
 export type SavedTemplates = Partial<Record<QuoteLanguage, Partial<QuoteTemplate>>>;
 
 const EXT: Record<string, string> = { "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp" };
+/** Which app the quote goes through. WhatsApp reads *bold*; WeChat takes photos and text in separate sends. */
+type SendApp = "whatsapp" | "wechat" | "other";
+const SEND_APPS: [SendApp, string][] = [["whatsapp", "WhatsApp"], ["wechat", "WeChat"], ["other", "Other apps"]];
+/** The quote being written, kept on this device so leaving the page does not lose it. */
+const DRAFT = "quoteDraft";
+const DRAFT_DAYS = 14;
+interface Draft {
+  savedAt: number; ids: string[]; lang: QuoteLanguage; inc: Record<string, boolean>; prices: Record<string, string>;
+  extras: Record<string, string>; edits: Record<string, string>; flip: string[]; app: SendApp; opId: string;
+}
 const SPEECH: Partial<Record<QuoteLanguage, string>> = { en: "en-US", "zh-Hant": "zh-HK", "zh-Hans": "zh-CN", ja: "ja-JP", ko: "ko-KR", vi: "vi-VN", th: "th-TH", id: "id-ID", fr: "fr-FR", de: "de-DE", ru: "ru-RU", ar: "ar-SA" };
 type Sort = "name" | "aircraft" | "recent";
 
@@ -45,8 +51,8 @@ type Sort = "name" | "aircraft" | "recent";
  * closing line. Every box has Bold / Italic / Underline and a microphone. The Ask Chocks microphone runs spoken
  * commands on this page ("add the G280, Chinese, price 40,000").
  */
-export default function QuoteBuilder({ aircraft, operators, preferred: preferredInitial, contacts, initialIds, templates }: {
-  aircraft: QuoteAircraftOption[]; operators: QuoteOperator[]; preferred: string[]; contacts: QuoteContact[]; initialIds: string[]; templates: SavedTemplates;
+export default function QuoteBuilder({ aircraft, operators, preferred: preferredInitial, initialIds, templates }: {
+  aircraft: QuoteAircraftOption[]; operators: QuoteOperator[]; preferred: string[]; initialIds: string[]; templates: SavedTemplates;
 }) {
   const [ids, setIds] = useState<string[]>(initialIds);
   const [lang, setLang] = useState<QuoteLanguage>("en");
@@ -56,10 +62,10 @@ export default function QuoteBuilder({ aircraft, operators, preferred: preferred
   const [extras, setExtras] = useState<Record<string, string>>({});
   const [edits, setEdits] = useState<Record<string, string>>({}); // "greeting" | "closing" | "block:<aircraftId>" -> the broker's own text
   const [flip, setFlip] = useState<Set<string>>(new Set()); // photos ("<aircraftId>|<photo url>") ticked or unticked by hand, against their default
-  const [contactId, setContactId] = useState("");
   const [msg, setMsg] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [styleFor, setStyleFor] = useState<"whatsapp" | "other">("whatsapp");
+  const [app, setApp] = useState<SendApp>("whatsapp");
+  const styleFor: "whatsapp" | "other" = app === "whatsapp" ? "whatsapp" : "other";
 
   // -- finding the operator
   const [preferred, setPreferred] = useState<string[]>(preferredInitial);
@@ -76,6 +82,36 @@ export default function QuoteBuilder({ aircraft, operators, preferred: preferred
   const messageRef = useRef<HTMLDivElement>(null);
   // Steps fold to a one-line summary. Steps 1 and 2 start folded when Chocks already chose the aircraft.
   const [steps, setSteps] = useState({ op: initialIds.length === 0, ac: true, lang: false });
+
+  // -- the draft: brought back when the page opens without aircraft chosen elsewhere, saved on every change
+  const [loaded, setLoaded] = useState(false);
+  const [restored, setRestored] = useState(false);
+  useEffect(() => {
+    try {
+      const d = JSON.parse(localStorage.getItem(DRAFT) ?? "null") as Draft | null;
+      const known = d ? d.ids.filter((id) => aircraft.some((a) => a.id === id)) : [];
+      if (d && initialIds.length === 0 && Date.now() - d.savedAt < DRAFT_DAYS * 864e5 && (known.length || Object.keys(d.edits).length)) {
+        setIds(known); setLang(d.lang); setInc((cur) => ({ ...cur, ...d.inc })); setPrices(d.prices); setExtras(d.extras);
+        setEdits(d.edits); setFlip(new Set(d.flip)); setApp(d.app); setOpId(d.opId);
+        if (known.length) setSteps({ op: false, ac: true, lang: false });
+        setRestored(true);
+      }
+    } catch { /* no storage: the page starts empty */ }
+    setLoaded(true);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (!loaded) return;
+    try {
+      const d: Draft = { savedAt: Date.now(), ids, lang, inc, prices, extras, edits, flip: [...flip], app, opId };
+      localStorage.setItem(DRAFT, JSON.stringify(d));
+    } catch { /* storage full or blocked */ }
+  }, [loaded, ids, lang, inc, prices, extras, edits, flip, app, opId]);
+  const startOver = () => {
+    if (!window.confirm("Clear this quote and start a new one?")) return;
+    try { localStorage.removeItem(DRAFT); } catch { /* ignore */ }
+    setIds([]); setPrices({}); setExtras({}); setEdits({}); setFlip(new Set()); setOpId(""); setRestored(false); setMsg(null);
+    setSteps({ op: true, ac: true, lang: false });
+  };
 
   const opById = useMemo(() => new Map(operators.map((o) => [o.id, o])), [operators]);
   const preferredOps = preferred.map((id) => opById.get(id)).filter((o): o is QuoteOperator => !!o);
@@ -189,51 +225,35 @@ export default function QuoteBuilder({ aircraft, operators, preferred: preferred
    * Share through the phone's share sheet. option = null: every photo, then the whole message, in one send.
    * option = i: that option's photos with that option's message, so the client sees option 1, then option 2...
    */
-  async function sharePhotos(option: number | null = null) {
+  async function sharePhotos(option: number | null = null, what: "both" | "photos" | "message" = "both") {
     setBusy(true); setMsg(null);
     try {
+      const message = option === null ? textFor(styleFor) : optionText(option, styleFor);
+      if (what === "message") { await navigator.share({ text: message }); return; }
       const mine = option === null ? photos : photos.filter((x) => x.i === option);
       const files = await Promise.all(mine.map(async ({ a, i, p }) => {
         const blob = await fetchPhoto(p.url, `${a.type} ${p.label}`);
         return new File([blob], `Option ${i + 1} - ${a.type} - ${p.label}${p.representative ? " (representative)" : ""}.${EXT[p.mimeType] ?? "jpg"}`, { type: p.mimeType });
       }));
-      const message = option === null ? textFor(styleFor) : optionText(option, styleFor);
       if (files.length && (!navigator.canShare || !navigator.canShare({ files }))) { setMsg("This browser cannot share photos directly. Open this page on your phone, or save the photos from each aircraft page."); return; }
+      if (what === "photos") { await navigator.share({ files }); return; }
       // WhatsApp shows the photos first, then the message.
       await navigator.share(files.length ? { files, text: message } : { text: message });
       // The phone does not say whether the message was actually sent in WhatsApp, so nothing is marked as sent.
-      if (option === null) setMsg("If the message text did not come through, paste it from Copy message.");
+      if (option === null && files.length) setMsg(app === "other" ? "If the app kept only the photos, tap Message only and send it to the same chat." : "If the message text did not come through, paste it from Copy message.");
     } catch (e) {
+      if ((e as Error).name === "TypeError" || !navigator.share) { setMsg("This browser cannot open the share sheet. Open this page on your phone, or use Copy message."); return; }
       if ((e as Error).name !== "AbortError") setMsg((e as Error).message || "Sharing failed");
     } finally { setBusy(false); }
   }
 
-  async function open(appId: string, handle: string | null, label: string) {
-    const t = textFor(readsMarkers(appId) ? "whatsapp" : "other");
-    const link = contactLink(appId, handle, t);
-    if (link.copyFirst) {
-      // Apps that cannot take text from a link: the phone's share sheet passes the message straight in.
-      const r = await shareText(t);
-      if (r === "shared") { setMsg(`Message sent to the share sheet. If ${label} did not open, pick it there. Then share the photos.`); return; }
-      if (r === "cancelled") { setMsg(null); return; }
-      if (!(await copyText(t))) { setMsg(`Could not copy the message automatically. Select it and copy it, then open ${label}.`); return; }
-      setMsg(`Message copied. Opening ${label}. Paste it into the chat (long-press, Paste), then share the photos.`);
-      openAfterCopy(link.url, link.newTab);
-      return;
-    }
-    setMsg(`${label} opened with the message ready. Press Send there, then share the photos.`);
-    if (link.newTab) window.open(link.url, "_blank"); else window.location.href = link.url;
-  }
-
-  const email = () => { window.location.href = `mailto:?subject=${encodeURIComponent(QUOTE_WORDS[lang].aircraft)}&body=${encodeURIComponent(textFor("other"))}`; setMsg("Email opened with the message. Attach the photos from Share photos, or paste them in."); };
-  const contact = contacts.find((c) => c.id === contactId);
   const rows = (v: string) => Math.max(2, v.split("\n").length);
 
   // -- spoken commands (the Ask Chocks microphone on this page)
   const live = useRef({ aircraft, ids, operators, handEdits: anyEdits });
   live.current = { aircraft, ids, operators, handEdits: anyEdits };
-  const actions = useRef({ copy, sharePhotos, open, email });
-  actions.current = { copy, sharePhotos, open, email };
+  const actions = useRef({ copy, sharePhotos });
+  actions.current = { copy, sharePhotos };
   useEffect(() => registerCommands((said): CommandResult | null => {
     const { aircraft: list, ids: cur, operators: ops } = live.current;
     const r = parseQuoteCommands(said, list, cur);
@@ -261,11 +281,14 @@ export default function QuoteBuilder({ aircraft, operators, preferred: preferred
         // Copying and sharing need a tap on the phone, so Chocks offers the button.
         case "copy": followUp = { label: "Copy message", run: () => actions.current.copy() }; break;
         case "share": followUp = { label: "Share photos + message", run: () => { actions.current.sharePhotos(); } }; shareBtn.current?.scrollIntoView({ block: "center" }); break;
-        case "send": {
-          const label = c.app === "email" ? "Email" : contactApp(c.app)?.label ?? c.app;
-          followUp = { label: `Open ${label}`, run: () => (c.app === "email" ? actions.current.email() : actions.current.open(c.app, null, label)) };
+        // Links cannot carry photos, so "send it on WeChat" also goes through the share sheet.
+        case "send":
+          if (c.app === "whatsapp" || c.app === "wechat") setApp(c.app);
+          followUp = c.app === "wechat"
+            ? { label: "Share the photos (then the message)", run: () => { actions.current.sharePhotos(null, "photos"); } }
+            : { label: "Share photos + message", run: () => { actions.current.sharePhotos(); } };
+          shareBtn.current?.scrollIntoView({ block: "center" });
           break;
-        }
       }
     }
     if (r.unknown.length) out.push(`I didn't catch: “${r.unknown.join("”, “")}”.`);
@@ -291,6 +314,12 @@ export default function QuoteBuilder({ aircraft, operators, preferred: preferred
   return (
     <div className="grid g2" style={{ alignItems: "start" }}>
       <div>
+        {restored && (
+          <div className="draft-note small">
+            <span>Your last quote is back, as you left it.</span>
+            <button type="button" className="linkish" onClick={startOver}>Start a new one</button>
+          </div>
+        )}
         <details className="card step" {...stepProps("op")}>
           <summary><h3>1. Operator</h3><span className="sum">{opId ? opById.get(opId)?.name : "All operators"}</span></summary>
           <TextBox single styles={false} value={search} onChange={setSearch} placeholder="Search operator, type or tail" ariaLabel="Search operators and aircraft" />
@@ -490,7 +519,9 @@ export default function QuoteBuilder({ aircraft, operators, preferred: preferred
           <div className="row" style={{ marginTop: 8 }}>
             <div style={{ flex: "0 0 auto" }}><button type="button" className="secondary" onClick={() => copy()} disabled={!text.trim()}><Icon name="copy" />Copy message</button></div>
             {anyEdits && <div style={{ flex: "0 0 auto" }}><button type="button" className="secondary" onClick={() => setEdits({})}>Reset all edits</button></div>}
+            {(chosen.length > 0 || anyEdits) && <div style={{ flex: "0 0 auto" }}><button type="button" className="secondary" onClick={startOver}>New quote</button></div>}
           </div>
+          <p className="small muted" style={{ margin: "4px 0 0" }}>Saved on this device as you type, so you can leave the page and come back.</p>
         </div>
 
         <div className="card">
@@ -522,55 +553,70 @@ export default function QuoteBuilder({ aircraft, operators, preferred: preferred
               {withoutCombined.length < chosen.length && isMode("combined") ? " Those go as single photos." : ""}
             </p>
           )}
+          <div className="group" style={{ margin: "4px 0 10px" }}>
+            <div className="group-row"><span>Sending through</span>
+              <span className="seg" role="radiogroup" aria-label="Sending through">
+                {SEND_APPS.map(([v, l]) => (
+                  <button key={v} type="button" role="radio" aria-checked={app === v} className={app === v ? "on" : ""} onClick={() => setApp(v)}>{l}</button>
+                ))}
+              </span>
+            </div>
+          </div>
+          {app === "wechat" && (
+            <p className="small muted" style={{ margin: "0 0 8px" }}>
+              WeChat takes photos or a message, not both in one share. Tap Photos and send them, then Message to the same chat.
+            </p>
+          )}
           {chosen.length > 1 ? (
             <>
               <div className="group-title">Send, one option at a time ({photos.length} photo{photos.length === 1 ? "" : "s"} ticked in total)</div>
               <div className="option-sends">
                 {chosen.map((a, i) => {
                   const n = photos.filter((x) => x.i === i).length;
-                  return (
+                  return app === "wechat" ? (
+                    <div key={a.id} className="option-pair">
+                      <span className="option-send-text small">Option {i + 1} · {a.type}</span>
+                      <button type="button" className="secondary" onClick={() => sharePhotos(i, "photos")} disabled={busy || n === 0}><Icon name="share" />{n} photo{n === 1 ? "" : "s"}</button>
+                      <button type="button" className="secondary" onClick={() => sharePhotos(i, "message")} disabled={busy}><Icon name="share" />Message</button>
+                    </div>
+                  ) : (
                     <button key={a.id} type="button" className="block-btn secondary option-send" onClick={() => sharePhotos(i)} disabled={busy}>
                       <Icon name="share" />
-                      <span className="option-send-text">Option {i + 1} · {a.type} — {n ? `${n} photo${n === 1 ? "" : "s"} + message` : "message only"}</span>                    </button>
+                      <span className="option-send-text">Option {i + 1} · {a.type} — {n ? `${n} photo${n === 1 ? "" : "s"} + message` : "message only"}</span>
+                    </button>
                   );
                 })}
               </div>
               <p className="small muted" style={{ margin: "6px 0 0" }}>
-                Tap Option 1, choose the chat, send; then Option 2 to the same chat, and so on. The client gets each option&apos;s photos followed by its message.
+                {app === "wechat"
+                  ? "Send Option 1's photos, then its message, then Option 2's, all to the same chat."
+                  : "Tap Option 1, choose the chat, send; then Option 2 to the same chat, and so on. The client gets each option's photos followed by its message."}
               </p>
-              <button ref={shareBtn} type="button" className="secondary" style={{ marginTop: 8 }} onClick={() => sharePhotos(null)} disabled={busy || photos.length === 0}>
-                Or everything at once: {photos.length} photo{photos.length === 1 ? "" : "s"}, then one message
-              </button>
+              {app === "wechat" ? (
+                <div className="row" style={{ marginTop: 8 }}>
+                  <div style={{ flex: "0 0 auto" }}><button ref={shareBtn} type="button" className="secondary" onClick={() => sharePhotos(null, "photos")} disabled={busy || photos.length === 0}>Or all {photos.length} photo{photos.length === 1 ? "" : "s"}</button></div>
+                  <div style={{ flex: "0 0 auto" }}><button type="button" className="secondary" onClick={() => sharePhotos(null, "message")} disabled={busy || !text.trim()}>then the whole message</button></div>
+                </div>
+              ) : (
+                <button ref={shareBtn} type="button" className="secondary" style={{ marginTop: 8 }} onClick={() => sharePhotos(null)} disabled={busy || photos.length === 0}>
+                  Or everything at once: {photos.length} photo{photos.length === 1 ? "" : "s"}, then one message
+                </button>
+              )}
             </>
+          ) : app === "wechat" ? (
+            <div className="row">
+              <div style={{ flex: "0 0 auto" }}><button ref={shareBtn} type="button" onClick={() => sharePhotos(null, "photos")} disabled={busy || photos.length === 0}><Icon name="share" />{busy ? "Preparing…" : `1. Share ${photos.length} photo${photos.length === 1 ? "" : "s"}`}</button></div>
+              <div style={{ flex: "0 0 auto" }}><button type="button" onClick={() => sharePhotos(null, "message")} disabled={busy || !text.trim()}><Icon name="share" />2. Share the message</button></div>
+            </div>
           ) : (
             <>
-              <button ref={shareBtn} type="button" className="block-btn" onClick={() => sharePhotos(null)} disabled={busy || photos.length === 0}><Icon name="share" />{busy ? "Preparing…" : `Share ${photos.length} photo${photos.length === 1 ? "" : "s"} + message`}</button>
-              <p className="small muted" style={{ margin: "6px 0 0" }}>Opens your phone&apos;s share sheet with the photos and the message together. Choose the app, then the client.</p>
+              <button ref={shareBtn} type="button" className="block-btn" onClick={() => sharePhotos(null)} disabled={busy || (photos.length === 0 && !text.trim())}><Icon name="share" />{busy ? "Preparing…" : photos.length ? `Share ${photos.length} photo${photos.length === 1 ? "" : "s"} + message` : "Share the message"}</button>
+              <p className="small muted" style={{ margin: "6px 0 0" }}>
+                Opens your phone&apos;s share sheet: choose the app, then the client. Links to an app cannot carry photos, so this is the one way to send both.
+                {app === "other" && <> If the app keeps only the photos, <button type="button" className="linkish" onClick={() => sharePhotos(null, "message")} disabled={busy}>share the message</button> after them.</>}
+              </p>
             </>
           )}
-          {styled && (
-            <div className="group" style={{ marginTop: 10 }}>
-              <div className="group-row"><span>Bold and italics for</span>
-                <span className="seg" role="radiogroup" aria-label="Bold and italics for">
-                  {([["whatsapp", "WhatsApp"], ["other", "Other apps"]] as const).map(([v, l]) => (
-                    <button key={v} type="button" role="radio" aria-checked={styleFor === v} className={styleFor === v ? "on" : ""} onClick={() => setStyleFor(v)}>{l}</button>
-                  ))}
-                </span>
-              </div>
-            </div>
-          )}
-          <details className="collapse" style={{ marginTop: 12 }}>
-            <summary className="small">More ways to send (message only)</summary>
-            {contacts.length > 0 && (
-              <div className="row" style={{ alignItems: "end", marginBottom: 10 }}>
-                <div><label>To a saved contact</label>
-                  <SearchSelect value={contactId} onChange={setContactId} placeholder="Type a name" ariaLabel="Contact"
-                    options={contacts.map((c) => ({ value: c.id, label: c.name, hint: contactApp(c.app)?.label ?? c.app }))} /></div>
-                <div style={{ flex: "0 0 auto" }}><button type="button" className="secondary" disabled={!contact || !text.trim()} onClick={() => contact && open(contact.app, contact.handle, contactApp(contact.app)?.label ?? contact.app)}><Icon name="send" />Send</button></div>
-              </div>
-            )}
-            <MessengerButtons disabled={!text.trim()} onPick={(id, label) => open(id, null, label)} onEmail={email} />
-          </details>
           {msg && <p className="small" role="status">{msg}</p>}
         </div>
       </div>

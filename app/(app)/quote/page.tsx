@@ -5,7 +5,6 @@ import { and, eq } from "drizzle-orm";
 import { organisations } from "@/db/schema";
 import { getAircraftCard, getPreferredOperators } from "@/domain/directory";
 import { getLineup } from "@/domain/media";
-import { listContacts } from "@/domain/contacts";
 import { getQuoteTemplates } from "@/domain/quoteTemplates";
 import { CLASSIFICATION_LABEL } from "@/domain/constants";
 import QuoteBuilder, { type QuoteAircraftOption, type QuoteOperator } from "../../_components/QuoteBuilder";
@@ -45,7 +44,6 @@ export default async function Quote({ searchParams }: { searchParams: SP }) {
       })),
     });
   }
-  const contacts = (await listContacts(db, actor.tenantId)).map((c) => ({ id: c.id, name: c.name, app: c.app, handle: c.handle }));
   const orgRows = await db.select().from(organisations).where(and(eq(organisations.tenantId, actor.tenantId), eq(organisations.active, true)));
   const operators: QuoteOperator[] = orgRows.map((o) => ({
     id: o.id, name: o.canonicalName, region: o.region, addedAt: o.createdAt.toISOString(),
@@ -57,7 +55,7 @@ export default async function Quote({ searchParams }: { searchParams: SP }) {
     <>
       <h1>Quote</h1>
       <p className="muted">Find the operator, tick the aircraft, then edit and send the message with the photos. Or tap the microphone and say it. <a href="/quote/template">Change the standard wording</a>.</p>
-      <QuoteBuilder aircraft={options} operators={operators} preferred={preferred} contacts={contacts} initialIds={initial} templates={await getQuoteTemplates(db, actor.tenantId)} />
+      <QuoteBuilder aircraft={options} operators={operators} preferred={preferred} initialIds={initial} templates={await getQuoteTemplates(db, actor.tenantId)} />
     </>
   );
 }
