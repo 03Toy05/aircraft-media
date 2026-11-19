@@ -6,7 +6,8 @@ import { requireOwner } from "@/lib/session";
 import Icon from "../../_components/Icon";
 import OpenSection from "../../_components/OpenSection";
 import CollapseOnMobile from "../../_components/CollapseOnMobile";
-import { AC_SORTS, runFleetQuery, type AcSort, type OperatorSort } from "@/domain/fleetQuery";
+import { AC_SORTS, runFleetQuery, sortAircraft, type AcSort, type OperatorSort } from "@/domain/fleetQuery";
+import RememberFilters from "../../_components/RememberFilters";
 import { getCatalogue, type CatalogueRow } from "@/domain/catalogue";
 import { AIRCRAFT_CATEGORIES, AIRCRAFT_CATEGORY_LABEL } from "@/domain/constants";
 import { getAircraftCard, resolveAircraftTypes, tidyExistingPlaces } from "@/domain/directory";
@@ -19,6 +20,9 @@ import { Flash, Key, one, type SP } from "../../_components/ui";
 import PlacePicker from "../../_components/PlacePicker";
 import SearchSelect from "../../_components/SearchSelect";
 import Choice, { WIFI_CHOICES } from "../../_components/Choice";
+
+/** The page's filters and view, remembered on each device (see RememberFilters). */
+const FILTER_KEYS = ["q", "region", "category", "base", "wifi", "acsort", "sort", "view"];
 
 /** Operators and their aircraft on one page: each aircraft shows its details and a few approved photos. */
 export default async function Fleet({ searchParams }: { searchParams: SP }) {
@@ -50,23 +54,28 @@ export default async function Fleet({ searchParams }: { searchParams: SP }) {
     }))
     .filter((g) => g.items.length > 0);
 
-  const AircraftCard = ({ r }: { r: CatalogueRow }) => {
+  /** One aircraft in two lines (name and tail; its facts) with small photos beside it, so long fleets stay readable. */
+  const opName = new Map(orgs.map((o) => [o.id, o.canonicalName]));
+  const AircraftCard = ({ r, showOperator = false }: { r: CatalogueRow; showOperator?: boolean }) => {
     const d = details.get(r.aircraftId)!;
-    const facts = [d.card?.yom != null && `YOM ${d.card.yom}`, d.card?.yor != null && `YOR ${d.card.yor}`, d.card?.capacity != null && `${d.card.capacity} seats`, r.base && `Base: ${r.base}`].filter(Boolean);
+    const wifi = d.card?.wifi === "yes" ? "WIFI" : d.card?.wifi === "no" ? "No WIFI" : null;
+    const facts = [d.card?.yom != null && `YOM ${d.card.yom}`, d.card?.yor != null && `YOR ${d.card.yor}`, d.card?.capacity != null && `${d.card.capacity} seats`, wifi, r.base && `Base: ${r.base}`, d.card?.notes].filter(Boolean);
     return (
-      <div style={{ borderTop: "1px solid var(--line)", paddingTop: 10, marginTop: 10 }}>
-        <div>
-          <Link href={`/aircraft/${r.aircraftId}`}><b>{r.aircraft}</b></Link>
-          <span className="muted"> · {r.tail ?? "no tail number yet"}</span>
+      <div className="ac-row">
+        <div className="ac-row-text">
+          <div className="ac-row-name">
+            <Link href={`/aircraft/${r.aircraftId}`}><b>{r.aircraft}</b></Link>
+            <span className="muted"> · {r.tail ?? "no tail yet"}</span>
+            {showOperator && <span className="muted"> · {r.operatorId ? <Link href={`/organisations/${r.operatorId}`}>{opName.get(r.operatorId) ?? "Operator"}</Link> : "No operator"}</span>}
+          </div>
+          <div className="small muted ac-row-facts">{facts.length ? facts.join(" · ") : "No details yet"}</div>
         </div>
-        {facts.length > 0 && <div className="small muted">{facts.join(" · ")}</div>}
-        {d.card?.notes && <div className="small muted">{d.card.notes}</div>}
         {d.photos.length > 0 && (
-          <div className="thumbs" style={{ marginTop: 6 }}>
+          <div className="ac-row-photos">
             {d.photos.map((p) => (
               <a key={p.contentVersionId} href={`/api/media/${p.contentVersionId}`} target="_blank" title={p.label}>
                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={`/api/media/${p.contentVersionId}`} alt={p.label} style={{ width: 96, height: 68 }} />
+                <img src={`/api/media/${p.contentVersionId}`} alt={p.label} loading="lazy" />
               </a>
             ))}
           </div>
@@ -74,6 +83,19 @@ export default async function Fleet({ searchParams }: { searchParams: SP }) {
       </div>
     );
   };
+  /** An operator's aircraft: the first few, then the rest folded away behind "Show all". */
+  const SHOW_FIRST = 3;
+  const AircraftList = ({ list }: { list: CatalogueRow[] }) => (
+    <>
+      {list.slice(0, SHOW_FIRST).map((r) => <AircraftCard key={r.aircraftId} r={r} />)}
+      {list.length > SHOW_FIRST && (
+        <details className="ac-more">
+          <summary className="small">Show all {list.length} aircraft</summary>
+          {list.slice(SHOW_FIRST).map((r) => <AircraftCard key={r.aircraftId} r={r} />)}
+        </details>
+      )}
+    </>
+  );
 
   // Filters and sorting are shared with Chocks (src/domain/fleetQuery.ts), so both give the same answer.
   const wifiParam = one(sp.wifi);
@@ -84,10 +106,29 @@ export default async function Fleet({ searchParams }: { searchParams: SP }) {
     { q: one(sp.q), region: one(sp.region), category: one(sp.category), base: one(sp.base), sort: one(sp.sort) as OperatorSort, acsort: one(sp.acsort) as AcSort, wifi: ["yes", "no", "tbc", "unknown"].includes(wifiParam ?? "") ? (wifiParam as "yes") : undefined },
   );
   const shown = shownGroups.map((g) => g.org);
+  const cardMap = new Map([...details].map(([id, d]) => [id, d.card]));
+
+  // "By operator" (cards) or "All aircraft" (one list across operators, in the chosen order).
+  const view = one(sp.view) === "aircraft" ? "aircraft" : "operators";
+  const allAircraft = view === "aircraft"
+    ? (acSort ? sortAircraft([...shownGroups.flatMap((g) => g.aircraft), ...unassigned], acSort, cardMap)
+      : [...shownGroups.flatMap((g) => g.aircraft), ...unassigned].sort((a, b) => a.aircraft.localeCompare(b.aircraft) || (a.tail ?? "").localeCompare(b.tail ?? "")))
+    : [];
+  const viewLink = (v: "operators" | "aircraft") => {
+    const p = new URLSearchParams();
+    for (const k of FILTER_KEYS) { const val = one(sp[k]); if (val && k !== "view") p.set(k, val); }
+    p.set("view", v);
+    return `/fleet?${p}`;
+  };
+  const withAircraft = shownGroups.filter((g) => g.aircraft.length > 0);
+  // Fold operator cards to one line each once there are many (opened when a filter narrows the list).
+  const FOLD_AT = 30;
+  const fold = withAircraft.length >= FOLD_AT && !filtering;
 
   return (
     <>
       <h1>Operators &amp; aircraft</h1>
+      <RememberFilters keys={FILTER_KEYS} />
       <Flash error={one(sp.error)} ok={one(sp.ok)} />
 
       <div className="row" style={{ marginBottom: 12 }}>
@@ -108,34 +149,69 @@ export default async function Fleet({ searchParams }: { searchParams: SP }) {
           <div><label>Base</label>
             <SearchSelect name="base" defaultValue={baseFilter} emptyLabel="All bases"
               options={[...baseOptions.map((b) => ({ value: b, label: b })), { value: "__none", label: "Base not recorded" }]} /></div>
-          <div><label>Sort operators by</label>
-            <Choice name="sort" defaultValue={sort} ariaLabel="Sort operators by"
-              options={[{ value: "name", label: "Name" }, { value: "region", label: "Region" }, { value: "aircraft", label: "Most aircraft" }]} /></div>
+          {sort !== "name" && <input type="hidden" name="sort" value={sort} />}
+          <input type="hidden" name="view" value={view} />
           <div><label>WIFI</label>
-            <Choice name="wifi" defaultValue={wifiFilter} ariaLabel="WIFI" options={[{ value: "", label: "Any" }, ...WIFI_CHOICES]} /></div>
+            <SearchSelect name="wifi" defaultValue={wifiFilter} emptyLabel="Any WIFI"
+              options={WIFI_CHOICES.map((w) => ({ value: w.value, label: `WIFI: ${w.label}` }))} /></div>
           <div><label>Sort aircraft by</label>
             <SearchSelect name="acsort" defaultValue={acSort} options={AC_SORTS.map((o) => ({ value: o.id, label: o.label }))} /></div>
-          <div style={{ flex: "0 0 auto" }}><button type="submit"><Icon name="search" />Apply</button> {filtering && <Link href="/fleet">Clear</Link>}</div>
+          <div style={{ flex: "0 0 auto" }}><button type="submit"><Icon name="search" />Apply</button> {filtering && <Link href={`/fleet?reset=1&view=${view}`}>Clear</Link>}</div>
         </form>
         </CollapseOnMobile>
       )}
       {filtering && <p className="muted small">Showing {shown.length} of {orgs.length} operators.</p>}
 
       {orgs.length === 0 && rows.length === 0 && <div className="card muted">Nothing here yet. Add an operator or an aircraft, or tell Chocks on the dashboard.</div>}
-      {shown.map((o) => {
-        const mine = shownGroups.find((g) => g.org.id === o.id)?.aircraft ?? [];
-        return (
+      {rows.length > 0 && (
+        <div className="view-switch" role="tablist" aria-label="Show">
+          <Link role="tab" aria-selected={view === "operators"} className={view === "operators" ? "on" : ""} href={viewLink("operators")}>By operator</Link>
+          <Link role="tab" aria-selected={view === "aircraft"} className={view === "aircraft" ? "on" : ""} href={viewLink("aircraft")}>All aircraft ({shownGroups.reduce((n, g) => n + g.aircraft.length, 0) + unassigned.length})</Link>
+        </div>
+      )}
+
+      {view === "aircraft" ? (
+        <div className="card">
+          <p className="small muted" style={{ margin: 0 }}>
+            {allAircraft.length} aircraft, {acSort ? `sorted by ${AC_SORTS.find((s) => s.id === acSort)?.label.toLowerCase()}` : "by type"}. Change the order with “Sort aircraft by” above.
+          </p>
+          {allAircraft.length === 0 ? <p className="muted">No aircraft match.</p> : allAircraft.map((r) => <AircraftCard key={r.aircraftId} r={r} showOperator />)}
+        </div>
+      ) : (
+        <>
+      {withAircraft.map(({ org: o, aircraft: mine }) => {
+        const head = <><Link href={`/organisations/${o.id}`}>{o.canonicalName}</Link> <span className="muted small" style={{ fontWeight: 400 }}>· {mine.length} aircraft{o.region ? ` · ${o.region}` : ""}{o.base ? ` · Base: ${o.base}` : ""}</span></>;
+        // With many operators, each card folds to one line; tap it to see its aircraft.
+        return fold ? (
+          <details className="card op-card" key={o.id}>
+            <summary><h3 style={{ margin: 0, display: "inline" }}>{head}</h3></summary>
+            <AircraftList list={mine} />
+          </details>
+        ) : (
           <div className="card" key={o.id}>
-            <h3 style={{ margin: 0 }}><Link href={`/organisations/${o.id}`}>{o.canonicalName}</Link> <span className="muted small" style={{ fontWeight: 400 }}>· {mine.length} aircraft{o.region ? ` · ${o.region}` : ""}{o.base ? ` · Base: ${o.base}` : ""}</span></h3>
-            {mine.length === 0 ? <p className="muted small" style={{ margin: "6px 0 0" }}>No aircraft yet.</p> : mine.map((r) => <AircraftCard key={r.aircraftId} r={r} />)}
+            <h3 style={{ margin: 0 }}>{head}</h3>
+            <AircraftList list={mine} />
           </div>
         );
       })}
+      {/* Operators without aircraft take one line each in a single card, instead of a card each. */}
+      {shownGroups.some((g) => g.aircraft.length === 0) && (
+        <details className="card" open={filtering || shownGroups.every((g) => g.aircraft.length === 0)}>
+          <summary><b>Operators with no aircraft yet</b> <span className="muted small">· {shownGroups.filter((g) => g.aircraft.length === 0).length}</span></summary>
+          <div className="op-names">
+            {shownGroups.filter((g) => g.aircraft.length === 0).map(({ org: o }) => (
+              <Link key={o.id} href={`/organisations/${o.id}`} className="chip small">{o.canonicalName}{o.region ? <span className="muted"> · {o.region}</span> : null}</Link>
+            ))}
+          </div>
+        </details>
+      )}
       {unassigned.length > 0 && (
         <div className="card">
           <h3 style={{ margin: 0 }}>No operator <span className="muted small" style={{ fontWeight: 400 }}>· {unassigned.length} aircraft</span></h3>
-          {unassigned.map((r) => <AircraftCard key={r.aircraftId} r={r} />)}
+          <AircraftList list={unassigned} />
         </div>
+      )}
+        </>
       )}
 
       <div className="grid g2">

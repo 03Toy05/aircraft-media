@@ -42,6 +42,32 @@ img.preview { max-width: 100%; max-height: 520px; border-radius: 8px; border: 1p
 .photo-tile.combined img { object-fit: contain; background: #fff; }
 .option-sends { display: grid; gap: 6px; }
 .option-sends .block-btn { text-align: left; }
+/* Fleet: one aircraft in two lines, small photos beside it */
+.ac-row { display: flex; align-items: center; gap: 12px; border-top: 1px solid var(--line); padding: 8px 0; }
+.ac-row:first-of-type { margin-top: 8px; }
+.ac-row-text { flex: 1; min-width: 0; }
+.ac-row-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ac-row-facts { overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 1; -webkit-box-orient: vertical; }
+.ac-row-photos { display: flex; gap: 4px; flex: 0 0 auto; }
+.ac-row-photos img { width: 56px; height: 40px; object-fit: cover; border-radius: 4px; border: 1px solid var(--line); display: block; }
+.ac-more > summary { cursor: pointer; color: var(--accent); padding: 6px 0 2px; border-top: 1px solid var(--line); list-style: none; }
+.ac-more > summary::-webkit-details-marker { display: none; }
+.ac-more[open] > summary { display: none; }
+@media (max-width: 720px) {
+  .ac-row { gap: 8px; }
+  .ac-row-photos a:nth-child(n + 3) { display: none; } /* two photos on a phone; all of them on the aircraft page */
+  .ac-row-photos img { width: 44px; height: 32px; }
+}
+.view-switch { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; margin: 0 0 12px; background: var(--card, #fff); }
+.view-switch a { padding: 6px 14px; font-size: 13.5px; color: var(--text); text-decoration: none; }
+.view-switch a + a { border-left: 1px solid var(--line); }
+.view-switch a.on { background: var(--accent); color: #fff; }
+details.op-card > summary { cursor: pointer; list-style: none; }
+details.op-card > summary::-webkit-details-marker { display: none; }
+details.op-card > summary::before { content: "▸ "; color: var(--muted); }
+details.op-card[open] > summary::before { content: "▾ "; }
+.op-names { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.op-names .chip { text-decoration: none; }
 .place-picker { position: relative; }
 .place-chips { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 4px; }
 .place-chip { display: inline-flex; align-items: center; gap: 2px; padding: 2px 4px 2px 10px; border-radius: 999px; background: var(--chip, #eef4ff); font-size: 13px; }
