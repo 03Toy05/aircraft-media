@@ -175,6 +175,17 @@ export default function ChatClient() {
   sendRef.current = (t) => send({ text: t });
   autoSendRef.current = autoSend;
 
+  // "/?ask=…": a spoken command from another page (the Ask Chocks microphone). Send it once, then tidy the address.
+  const asked = useRef(false);
+  useEffect(() => {
+    if (asked.current) return;
+    asked.current = true;
+    const ask = new URLSearchParams(window.location.search).get("ask");
+    if (!ask) return;
+    window.history.replaceState(null, "", "/");
+    setTimeout(() => sendRef.current(ask), 0);
+  }, []);
+
   // Voice: keeps listening through pauses until you press Stop (the browser ends a session after a short silence,
   // so it is restarted and the words are joined together). With "Send when I stop speaking", a quiet spell of 3 seconds sends.
   const wantListening = useRef(false);

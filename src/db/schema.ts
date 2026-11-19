@@ -114,6 +114,8 @@ export const organisations = pgTable(
     region: text("region"),
     /** The operator's usual base, free text ("Hong Kong, Singapore"). New aircraft for this operator start with it. */
     base: text("base"),
+    /** 1–5 when the owner pinned this operator as a preferred one (shown first on the Quote page); null otherwise. */
+    preferredRank: integer("preferred_rank"),
     active: boolean("active").notNull().default(true),
     createdAt: created(),
     updatedAt: updated(),

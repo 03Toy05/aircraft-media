@@ -542,6 +542,10 @@ describe("Chocks: 'give me X's G550 and Y's G650ER template and photos'", () => 
     expect(parseQuoteRequest("send the G550 template to Mr Chan")).toBeNull();
     expect(parseQuoteRequest("show me what Tag aviation offers")).toBeNull();
     expect(parseQuoteRequest("quote for Capa Jet's G550, Tag G650ER")).toEqual({ what: ["Capa Jet's G550", "Tag G650ER"] });
+    expect(parseQuoteRequest("Give me G280 quote and photo")).toEqual({ what: ["G280"] });
+    expect(parseQuoteRequest("make a quote for the G650 and B-KXX")).toEqual({ what: ["G650", "B-KXX"] });
+    expect(parseQuoteRequest("G280 quotation with photos please")).toEqual({ what: ["G280"] });
+    expect(parseQuoteRequest("quote")).toEqual({ what: [] });
 
     const g550 = (await createAircraftType(t.db, t.actor, key(), { manufacturer: "Gulfstream", model: "G550", category: "heavy_jet" })).result.aircraftTypeId;
     const g650 = (await createAircraftType(t.db, t.actor, key(), { manufacturer: "Gulfstream", model: "G650ER", category: "ultra_long_range_jet" })).result.aircraftTypeId;

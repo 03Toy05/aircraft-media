@@ -141,6 +141,37 @@ export function setOrganisationRegion(db: Db, actor: Actor, key: string, input: 
   });
 }
 
+export const MAX_PREFERRED_OPERATORS = 5;
+
+/** The owner's preferred operators, in order (shown first on the Quote page). Replaces the whole list. */
+export function setPreferredOperators(db: Db, actor: Actor, key: string, input: { organisationIds: string[] }) {
+  return runAction({
+    db,
+    actor,
+    name: "organisation.setPreferred",
+    idempotencyKey: key,
+    input,
+    handler: async (tx) => {
+      const ids = [...new Set(input.organisationIds.filter(Boolean))];
+      if (ids.length > MAX_PREFERRED_OPERATORS) throw invalid(`You can pick up to ${MAX_PREFERRED_OPERATORS} preferred operators`);
+      const orgs = await tx.select().from(organisations).where(eq(organisations.tenantId, actor.tenantId));
+      for (const id of ids) if (!orgs.some((o) => o.id === id && o.active)) throw notFound("Organisation");
+      for (const o of orgs) {
+        const rank = ids.indexOf(o.id);
+        const next = rank < 0 ? null : rank + 1;
+        if (o.preferredRank !== next) await tx.update(organisations).set({ preferredRank: next, updatedAt: new Date() }).where(eq(organisations.id, o.id));
+      }
+      return { organisationIds: ids };
+    },
+  });
+}
+
+/** Preferred operator ids, in order. */
+export async function getPreferredOperators(db: Q, tenantId: string): Promise<string[]> {
+  const orgs = await db.select({ id: organisations.id, rank: organisations.preferredRank, active: organisations.active }).from(organisations).where(eq(organisations.tenantId, tenantId));
+  return orgs.filter((o) => o.active && o.rank != null).sort((a, b) => (a.rank ?? 0) - (b.rank ?? 0)).map((o) => o.id);
+}
+
 /** The operator's usual base as a list of locations, for pre-filling a new aircraft. */
 export async function getOrganisationBase(db: Q, tenantId: string, organisationId: string): Promise<string[]> {
   const [o] = await db.select({ base: organisations.base }).from(organisations).where(and(eq(organisations.id, organisationId), eq(organisations.tenantId, tenantId)));

@@ -3,7 +3,8 @@
 import { useMemo, useState } from "react";
 import Icon from "./Icon";
 import { copyText, openAfterCopy, shareText } from "./copyText";
-import { CONTACT_APPS, contactApp, contactLink, type ContactApp } from "@/domain/messengers";
+import MessengerButtons from "./MessengerButtons";
+import { contactApp, contactLink, type ContactApp } from "@/domain/messengers";
 
 export interface ShareItem {
   classification: string;
@@ -128,13 +129,7 @@ export function ShareBox({ aircraftId, tail, cardText, items, contact }: { aircr
       {!contact && (
         <>
           <p className="small muted" style={{ marginBottom: 4 }}>Or send just the card to:</p>
-          <div className="apps">
-            {CONTACT_APPS.map((a) => (
-              <button key={a.id} type="button" className="app" onClick={() => openApp(a)}>
-                <span className="dot" style={{ background: a.colour }}>{a.mark}</span>{a.label}
-              </button>
-            ))}
-          </div>
+          <MessengerButtons onPick={(id) => { const a = contactApp(id); if (a) openApp(a); }} />
         </>
       )}
       {msg && <p className="small" role="status">{msg}</p>}

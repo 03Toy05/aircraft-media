@@ -6,6 +6,7 @@ import { STANDARD_LIST_VERSION } from "@/domain/standardTypes";
 import { signOutAction } from "../actions";
 import Icon from "../_components/Icon";
 import MobileNav from "../_components/MobileNav";
+import VoiceCommand from "../_components/VoiceCommand";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const { email, actor } = await requireOwner(); // redirects to /login unless the owner is signed in
@@ -32,6 +33,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         </form>
       </nav>
       <main>{children}</main>
+      <VoiceCommand />
       <MobileNav email={email} signOut={signOutAction} />
     </>
   );

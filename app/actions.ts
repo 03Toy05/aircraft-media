@@ -462,6 +462,28 @@ export async function deactivateNumberAction(fd: FormData) {
   await run("/settings", "Number deactivated", () => settings.deactivateNumber(db, actor, key(fd), { numberId: str(fd, "numberId") }));
 }
 
+export async function setPreferredOperatorsAction(fd: FormData) {
+  const { actor, db } = await ctx();
+  const ids = fd.getAll("organisationId").map(String).filter(Boolean);
+  await run(str(fd, "returnTo") || "/settings", "Preferred operators saved", () => dir.setPreferredOperators(db, actor, key(fd), { organisationIds: ids }));
+}
+
+/** Star or unstar an operator from the Quote page, without leaving it. Returns the new list, or a message. */
+export async function togglePreferredOperator(organisationId: string): Promise<{ ids: string[]; error?: string }> {
+  const { actor, db } = await ctx();
+  const cur = await dir.getPreferredOperators(db, actor.tenantId);
+  const next = cur.includes(organisationId) ? cur.filter((x) => x !== organisationId) : [...cur, organisationId];
+  if (next.length > dir.MAX_PREFERRED_OPERATORS) return { ids: cur, error: `You already have ${dir.MAX_PREFERRED_OPERATORS} preferred operators. Remove one first (tap its star).` };
+  try {
+    await dir.setPreferredOperators(db, actor, randomUUID(), { organisationIds: next });
+  } catch (e) {
+    if (e instanceof DomainError) return { ids: cur, error: e.message };
+    throw e;
+  }
+  revalidatePath("/settings");
+  return { ids: next };
+}
+
 export async function setLanguageAction(fd: FormData) {
   const { actor, db } = await ctx();
   await run("/settings", "Language saved", () => settings.setPreferredLanguage(db, actor, key(fd), { language: str(fd, "language") }));

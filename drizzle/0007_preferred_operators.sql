@@ -1,0 +1,1 @@
+ALTER TABLE "organisations" ADD COLUMN "preferred_rank" integer;

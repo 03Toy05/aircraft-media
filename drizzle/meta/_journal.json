@@ -50,6 +50,13 @@
       "when": 1794981700877,
       "tag": "0006_thin_cobalt_man",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1795065983485,
+      "tag": "0007_preferred_operators",
+      "breakpoints": true
     }
   ]
 }

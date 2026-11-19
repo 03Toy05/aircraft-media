@@ -1,9 +1,10 @@
 import { desc, eq, and } from "drizzle-orm";
 import { getDb } from "@/db/client";
-import { actionExecutions, users, verifiedWhatsappNumbers } from "@/db/schema";
+import { actionExecutions, organisations, users, verifiedWhatsappNumbers } from "@/db/schema";
 import { requireOwner } from "@/lib/session";
 import { LANGUAGES } from "@/domain/settings";
-import { addNumberAction, deactivateNumberAction, setLanguageAction } from "../../actions";
+import { MAX_PREFERRED_OPERATORS, getPreferredOperators } from "@/domain/directory";
+import { addNumberAction, deactivateNumberAction, setLanguageAction, setPreferredOperatorsAction } from "../../actions";
 import { Flash, Key, one, type SP } from "../../_components/ui";
 
 const LANGUAGE_NAMES: Record<string, string> = {
@@ -17,7 +18,9 @@ export default async function Settings({ searchParams }: { searchParams: SP }) {
   const [me] = await db.select().from(users).where(eq(users.id, actor.id));
   const numbers = await db.select().from(verifiedWhatsappNumbers).where(and(eq(verifiedWhatsappNumbers.tenantId, actor.tenantId), eq(verifiedWhatsappNumbers.active, true)));
   const history = await db.select().from(actionExecutions).where(eq(actionExecutions.tenantId, actor.tenantId)).orderBy(desc(actionExecutions.createdAt)).limit(60);
-  const configured = (name: string) => (process.env[name] ? "configured" : "not configured");
+  const orgs = (await db.select().from(organisations).where(and(eq(organisations.tenantId, actor.tenantId), eq(organisations.active, true)))).sort((a, b) => a.canonicalName.localeCompare(b.canonicalName));
+  const preferred = await getPreferredOperators(db, actor.tenantId);
+  const configured =(name: string) => (process.env[name] ? "configured" : "not configured");
   return (
     <>
       <h1>Settings</h1>
@@ -31,6 +34,21 @@ export default async function Settings({ searchParams }: { searchParams: SP }) {
             <div><label>Reply language default</label>
               <select name="language" defaultValue={me?.preferredLanguage ?? "en"}>{LANGUAGES.map((l) => <option key={l} value={l}>{LANGUAGE_NAMES[l]}</option>)}</select></div>
             <div style={{ flex: "0 0 auto" }}><button className="secondary" type="submit">Save</button></div>
+          </form>
+        </div>
+        <div className="card" id="preferred">
+          <h3>Preferred operators</h3>
+          <p className="muted small">Up to {MAX_PREFERRED_OPERATORS}. They are shown first on the Quote page, in this order. You can also tap the star next to an operator there.</p>
+          <form action={setPreferredOperatorsAction}>
+            <Key />
+            {Array.from({ length: MAX_PREFERRED_OPERATORS }, (_, i) => (
+              <div key={i}><label>{i + 1}.</label>
+                <select name="organisationId" defaultValue={preferred[i] ?? ""}>
+                  <option value="">None</option>
+                  {orgs.map((o) => <option key={o.id} value={o.id}>{o.canonicalName}{o.region ? ` (${o.region})` : ""}</option>)}
+                </select></div>
+            ))}
+            <div style={{ marginTop: 10 }}><button type="submit">Save preferred operators</button></div>
           </form>
         </div>
         <div className="card">

@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import TextBox, { Styled } from "./TextBox";
 import { resetQuoteTemplateAction, saveQuoteTemplateAction } from "../actions";
 import { TEMPLATE_PLACEHOLDERS, buildQuote, validateQuoteTemplate, type QuoteAircraft, type QuoteLanguage, type QuoteTemplate } from "@/domain/quote";
 
@@ -28,14 +29,14 @@ export default function QuoteTemplateEditor({ language, defaults, saved, submitK
         <input type="hidden" name="key" value={submitKey} />
         <input type="hidden" name="language" value={language} />
         <label>Greeting (top of the message; leave empty for none)</label>
-        <textarea dir={dir} name="greeting" rows={2} value={t.greeting} onChange={set("greeting")} />
+        <TextBox dir={dir} name="greeting" rows={2} value={t.greeting} onChange={(v) => setT({ ...t, greeting: v })} />
         <label>Each aircraft</label>
-        <textarea dir={dir} name="block" rows={11} value={t.block} onChange={set("block")} style={{ fontFamily: "monospace" }} />
+        <TextBox dir={dir} name="block" rows={11} value={t.block} onChange={(v) => setT({ ...t, block: v })} />
         <p className="small muted" style={{ margin: "2px 0 8px" }}>
-          Write it the way you want it to look. Change a label, reorder the lines, add your own lines. The words in curly brackets are filled in from the aircraft. A line whose fields are all empty is left out; the line with {"{price}"} always stays.
+          Write it the way you want it to look. Select words and tap B, I or U to style them (WhatsApp shows *bold* and _italic_). Change a label, reorder the lines, add your own lines. The words in curly brackets are filled in from the aircraft. A line whose fields are all empty is left out; the line with {"{price}"} always stays.
         </p>
         <label>Closing (bottom of the message; leave empty for none)</label>
-        <textarea dir={dir} name="closing" rows={2} value={t.closing} onChange={set("closing")} />
+        <TextBox dir={dir} name="closing" rows={2} value={t.closing} onChange={(v) => setT({ ...t, closing: v })} />
         <div className="row">
           <div><label>WIFI: yes</label><input dir={dir} name="yes" value={t.yes} onChange={set("yes")} /></div>
           <div><label>WIFI: no</label><input dir={dir} name="no" value={t.no} onChange={set("no")} /></div>
@@ -74,7 +75,7 @@ export default function QuoteTemplateEditor({ language, defaults, saved, submitK
               <label key={k} style={{ margin: 0, flex: "0 0 auto" }}><input type="checkbox" checked={show[k]} onChange={(e) => setShow({ ...show, [k]: e.target.checked })} /> {k}</label>
             ))}
           </div>
-          <pre className="cardtext" dir={dir} style={{ whiteSpace: "pre-wrap" }}>{preview || "Fix the problem above to see the preview."}</pre>
+          <pre className="cardtext" dir={dir} style={{ whiteSpace: "pre-wrap" }}>{preview ? <Styled text={preview} /> : "Fix the problem above to see the preview."}</pre>
         </div>
       </div>
     </div>
