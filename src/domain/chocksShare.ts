@@ -1,6 +1,6 @@
 import type { Db } from "../db/client";
 import { getCatalogue } from "./catalogue";
-import { normalizeKey } from "./constants";
+import { normalizeKey, type Classification } from "./constants";
 import { mentions } from "./chocksLookup";
 
 /** "send the G280 photos to Mr Chan" -> { what: "G280", who: "Mr Chan" }. Single-line messages only. */
@@ -43,14 +43,116 @@ export async function findAircraftsForShare(db: Db, tenantId: string, text: stri
 const QUOTE_WORD = /\b(?:quote|quotation|quoting)s?\b/i;
 const TRAILING_WORDS = /\s*\b(?:(?:quote|quotation|template|templates|message|text|photos?|pictures?|pics?|images?)\b\s*(?:,|&|\band\b|\bplus\b|\bwith\b)?\s*)+$/i;
 
+export interface QuoteRequest {
+  /** What the broker named for each option, in order ("Advance aviation G280"). */
+  what: string[];
+  /** The price typed for each option, as typed ("USD 90,000"); "" when none. Only present when a price was given. */
+  prices?: string[];
+  /** The photo kinds asked for ("with EXT and cabin photos"); [] for "no photos". Only present when asked. */
+  kinds?: Classification[];
+}
+
+const CURRENCY = "USD|US\\$|HKD|HK\\$|EUR|GBP|SGD|RMB|CNY|JPY|AUD|CAD|CHF|AED|THB|€|£|¥|\\$";
+const CURRENCY_AFTER = "USD|HKD|EUR|GBP|SGD|RMB|CNY|JPY|AUD|CAD|CHF|AED|THB|美元|美金|港元|港幣|港币|人民幣|人民币|歐元|欧元";
+const AMOUNT = "(?<![A-Za-z\\d.,-])\\d[\\d,.]*(?:\\s?(?:k|m|mn|million|萬|万))?";
+const PER = "(?:\\s*(?:per|/|一)\\s*(?:hour|hr|h|flight|leg|trip|way|小時|小时))?";
+const PRICE_LEAD = "(?:\\b(?:price[sd]?|cost|rate|fare|at|for|is|of)\\b|@|:|：|=|價錢|价钱|價格|价格|報價|报价|價|价|\\s)*";
+const MONEY = new RegExp(`${PRICE_LEAD}((?:${CURRENCY})\\s?${AMOUNT}${PER}|${AMOUNT}\\s?(?:${CURRENCY_AFTER})${PER})`, "i");
+// A bare number only counts as a price right after a price word: "price 90,000", "價錢 90000".
+const BARE_PRICE = new RegExp(`(?:\\b(?:price[sd]?|cost|rate)\\b|價錢|价钱|價格|价格)\\s*(?:\\b(?:at|is|of)\\b|:|：|=)?\\s*(${AMOUNT}${PER})`, "i");
+
+const KIND_WORDS: [Classification, RegExp][] = [
+  ["exterior", /\b(?:ext|exteriors?|outside)\b|外觀|外观|外部/gi],
+  ["cabin", /\b(?:cabins?|int|interiors?|inside)\b|客艙|客舱|機艙|机舱|內部|内部|內艙|内舱/gi],
+  ["floor_plan", /\bfloor\s*-?\s*plans?\b|\blayouts?\b|\bfp\b|平面圖|平面图|佈局圖|布局图|佈局|布局/gi],
+  ["combined", /\b(?:combined|combo|collage)\b|組合圖|组合图|組合|组合|合併圖|合并图/gi],
+];
+const NO_PHOTOS = /\b(?:no|without)\s+(?:photos?|pictures?|pics?|images?)\b|\b(?:text|message)\s+only\b|不要(?:相片|照片|圖片|图片)|唔要相|只要(?:訊息|信息|文字)/i;
+const ALL_PHOTOS = /\ball\s+(?:the\s+)?(?:photos?|pictures?|pics?|images?)\b|所有(?:相片|照片|圖片|图片)|全部(?:相片|照片|圖片|图片)/i;
+
+const KIND_ANY = KIND_WORDS.map(([, re]) => `(?:${re.source})`).join("|");
+const PHOTO_NOUN = "(?:\\b(?:photos?|pictures?|pics?|images?|views?)\\b|相片|照片|圖片|图片)";
+/** "with EXT, cabin and floor plan photos only", "plus combined photo", "要外觀同客艙相片": the whole phrase, joining words included. */
+const KIND_PHRASE = new RegExp(
+  `(?:(?:\\b(?:with|only|just|plus|and|include|including|send)\\b|[,，&+]|只要|要|加|和|及|同)\\s*)*(?:${KIND_ANY})` +
+  `(?:\\s*(?:,|，|、|&|\\+|\\band\\b|\\bplus\\b|和|及|同|與|与)?\\s*(?:${KIND_ANY}))*` +
+  `(?:\\s*(?:的|嘅)?\\s*${PHOTO_NOUN})?(?:\\s*\\bonly\\b)?`, "gi");
+
+/** Takes the photo kinds out of a line: "G280 with EXT and cabin photos" -> exterior, cabin; "G280". */
+function takeKinds(line: string): { kinds: Classification[] | null; rest: string } {
+  if (NO_PHOTOS.test(line)) return { kinds: [], rest: line.replace(NO_PHOTOS, " ") };
+  if (ALL_PHOTOS.test(line)) return { kinds: ["exterior", "cabin", "floor_plan"], rest: line.replace(ALL_PHOTOS, " ") };
+  const phrases = line.match(KIND_PHRASE);
+  if (!phrases) return { kinds: null, rest: line };
+  const said = phrases.join(" ");
+  const kinds = KIND_WORDS.filter(([, re]) => new RegExp(re.source, "i").test(said)).map(([k]) => k);
+  return { kinds, rest: line.replace(KIND_PHRASE, " ") };
+}
+
+/** Takes a price out of a line: "Price at USD 90,000" -> "USD 90,000"; "G280 at HKD 700k per hour" -> "HKD 700k per hour". */
+function takePrice(line: string): { price: string | null; rest: string } {
+  const m = line.match(MONEY) ?? line.match(BARE_PRICE);
+  if (!m) return { price: null, rest: line };
+  return { price: m[1].trim(), rest: line.replace(m[0], " ") };
+}
+
+const COUNT_ONLY = /^(?:\d+|one|two|three|four|five|six|some|a few|few|several|multiple|these|following|the following|below|兩|两|二|三|四|五|幾|几)?\s*(?:options?|aircraft|jets?|份|個|个)?$/i;
+const POLITE = /^(?:thanks?|thank you|please|pls|cheers|ok|okay|謝謝|谢谢|唔該|唔该|麻煩你|麻烦你)$/i;
+
+/** A line with no quote word, inside a quote request: just the aircraft ("Tag aviation G650ER", "G280 and G550"). */
+function aircraftOnly(line: string): string[] {
+  return line
+    .replace(/^\s*(?:[-*•·]|\d+[.)、]|(?:option|aircraft|選項|选项)\s*\d+\s*[:：.)-]?)\s*/i, "")
+    .replace(/\b(?:quotes?|quotations?|photos?|pictures?|pics?|images?|template|message)\b|報價|报价|相片|照片/gi, " ")
+    .replace(/\s{2,}/g, " ")
+    .split(/\s*(?:,|，|、|&|\band\b|\bplus\b|和|及)\s*/i)
+    .map((x) => x.replace(/^(?:the|my|a|an)\s+/i, "").replace(/[.!?。！？:：]+$/, "").trim())
+    .filter((x) => x && !COUNT_ONLY.test(x) && !POLITE.test(x));
+}
+
+/**
+ * Reads a quote request, on one line or several:
+ *   "Give me Advance aviation G280 quote" / "Price at USD 90,000"
+ *   "Can you prepare 2 quotes?" / "Advance aviation G280 USD 90,000" / "Tag aviation G650ER, EXT and cabin photos"
+ * Each line may carry an aircraft, a price (for that aircraft, or for the one above when the line has only a price)
+ * and the photo kinds wanted. The first line must ask for a quote.
+ */
+export function parseQuoteRequest(message: string): QuoteRequest | null {
+  const lines = message.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+  if (!lines.length) return null;
+  const what: string[] = [];
+  const prices: string[] = [];
+  let kinds: Classification[] | null = null;
+  let pending: string | null = null; // a price typed before its aircraft
+  for (const [n, raw] of lines.entries()) {
+    const k = takeKinds(raw);
+    if (k.kinds) kinds = [...new Set([...(kinds ?? []), ...k.kinds])];
+    const p = takePrice(k.rest);
+    const head = n === 0 ? parseOneQuoteLine(p.rest) : null;
+    if (n === 0 && !head) return null;
+    const names = (head ? head.what : aircraftOnly(p.rest)).filter((x) => !COUNT_ONLY.test(x) && !POLITE.test(x));
+    if (names.length) {
+      for (const x of names) { what.push(x); prices.push(p.price ?? pending ?? ""); }
+      pending = null;
+    } else if (p.price) {
+      // "Price at USD 90,000" under an aircraft is its price; before any aircraft it waits for the next one.
+      if (what.length) prices[prices.length - 1] = p.price;
+      else pending = p.price;
+    }
+  }
+  return {
+    what,
+    ...(prices.some(Boolean) ? { prices } : {}),
+    ...(kinds ? { kinds } : {}),
+  };
+}
+
 /**
  * "make a quote for the G650 and B-KXX" -> ["G650", "B-KXX"]; plain "quote" -> [].
  * "give me CapaJet's G550 and Tag's G650ER template and photos" -> ["CapaJet's G550", "Tag's G650ER"].
- * Single-line messages only.
  */
-export function parseQuoteRequest(message: string): { what: string[] } | null {
-  const m = message.trim().replace(/[.!?。！？]+$/, "");
-  if (/\r?\n/.test(m)) return null;
+function parseOneQuoteLine(message: string): { what: string[] } | null {
+  const m = message.trim().replace(/[.!?。！？]+$/, "").replace(/\s{2,}/g, " ").replace(/\s+,/g, ",").replace(/(?:^|\s)[,，]+\s*$/, "").trim();
   // Chinese: "給我 CapacJet 的 G550 和 Tag 的 G650ER 的模板和相片", "幫我整 CapaJet G550 嘅報價"
   if (/報價|报价|模板|範本|范本|訊息|信息|消息|資料卡|资料卡/.test(m) && /[\u3400-\u9fff]/.test(m)) {
     const lead = m.replace(/^(?:請|请)?(?:幫我|帮我|給我|给我|俾我|我要|我想要|我需要|我想|傳給我|传给我)?\s*(?:生成|整|做|準備|准备|預備|预备)?\s*(?:一份|一個|一个)?/, "");

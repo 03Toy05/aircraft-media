@@ -105,8 +105,9 @@ const KINDS: Classification[] = ["exterior", "cabin", "floor_plan", "combined"];
  * The quote's photos with what to send: tick the kinds (EXT, CABIN, FLOOR PLAN, COMBINED), then share option by
  * option (option 1's photos and message, then option 2's...), or everything at once.
  */
-function QuoteSend({ photos, options, text, ui, lang }: { photos: ChocksPhoto[]; options: { title: string; text: string }[]; text?: string; ui: UI; lang: ChatLang }) {
-  const [kinds, setKinds] = useState<Set<string>>(new Set(["exterior", "cabin", "floor_plan", "unclassified"]));
+function QuoteSend({ photos, options, text, ui, lang, asked }: { photos: ChocksPhoto[]; options: { title: string; text: string }[]; text?: string; ui: UI; lang: ChatLang; asked?: string[] }) {
+  // The kinds the broker asked for ("with EXT and cabin photos"), or every single view.
+  const [kinds, setKinds] = useState<Set<string>>(() => new Set(asked ?? ["exterior", "cabin", "floor_plan", "unclassified"]));
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState<string | null>(null);
   const present = KINDS.filter((k) => photos.some((p) => p.classification === k));
@@ -204,7 +205,7 @@ function SharePanel({ aircraftId, contactId }: { aircraftId: string; contactId: 
 
 type Msg =
   | { id: string; role: "user"; text: string; files: string[] }
-  | { id: string; role: "chocks"; say: string[]; chips: { label: string; send: string }[]; draft: Draft; done?: boolean; aircraftId?: string | null; failures: string[]; share?: { aircraftId: string; contactId: string }; link?: { href: string; label: string }; photos?: ChocksPhoto[]; copy?: string; options?: { title: string; text: string }[] };
+  | { id: string; role: "chocks"; say: string[]; chips: { label: string; send: string }[]; draft: Draft; done?: boolean; aircraftId?: string | null; failures: string[]; share?: { aircraftId: string; contactId: string }; link?: { href: string; label: string }; photos?: ChocksPhoto[]; copy?: string; options?: { title: string; text: string }[]; kinds?: string[] };
 
 // Browser speech APIs (Chrome, Edge, Safari). Typed minimally because they are not in the standard DOM typings.
 interface Recognition {
@@ -284,7 +285,7 @@ export default function ChatClient() {
         return;
       }
       setDraft(JSON.stringify(r.draft));
-      setMsgs((m) => [...m, { id: crypto.randomUUID(), role: "chocks", say: r.reply.say, chips: r.reply.chips, draft: r.draft, done: r.reply.done, aircraftId: r.applied?.aircraftId, failures: r.failures, share: r.reply.share, link: r.reply.link, photos: r.reply.photos, copy: r.reply.copy, options: r.reply.options }]);
+      setMsgs((m) => [...m, { id: crypto.randomUUID(), role: "chocks", say: r.reply.say, chips: r.reply.chips, draft: r.draft, done: r.reply.done, aircraftId: r.applied?.aircraftId, failures: r.failures, share: r.reply.share, link: r.reply.link, photos: r.reply.photos, copy: r.reply.copy, options: r.reply.options, kinds: r.reply.kinds }]);
       if (speak && "speechSynthesis" in window) {
         window.speechSynthesis.cancel();
         const u = new SpeechSynthesisUtterance(r.reply.say.join(" ").replace(/[•“”]/g, ""));
@@ -427,7 +428,7 @@ export default function ChatClient() {
                 ))}
               </div>
             )}
-            {m.photos && m.photos.length > 0 && m.options && m.options.length > 0 && <QuoteSend photos={m.photos} options={m.options} text={m.copy} ui={ui} lang={chatLang} />}
+            {m.photos && m.photos.length > 0 && m.options && m.options.length > 0 && <QuoteSend photos={m.photos} options={m.options} text={m.copy} ui={ui} lang={chatLang} asked={m.kinds} />}
             {m.photos && m.photos.length > 0 && !(m.options && m.options.length > 0) && (
               <div className="thumbs" style={{ margin: "8px 0" }}>
                 {m.photos.map((p) => (

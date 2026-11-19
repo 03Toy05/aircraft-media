@@ -51,11 +51,19 @@ export default async function Quote({ searchParams }: { searchParams: SP }) {
   }));
   const preferred = await getPreferredOperators(db, actor.tenantId);
   const initial = (one(sp.ids) ?? "").split(",").filter((id) => options.some((o) => o.id === id));
+  // From Chocks: the prices it read ({"<aircraftId>": "USD 90,000"}) and the photo kinds asked for ("exterior,cabin" or "none").
+  let initialPrices: Record<string, string> = {};
+  try {
+    const p = JSON.parse(one(sp.prices) ?? "{}") as unknown;
+    if (p && typeof p === "object") initialPrices = Object.fromEntries(Object.entries(p).filter(([id, v]) => initial.includes(id) && typeof v === "string").map(([id, v]) => [id, (v as string).slice(0, 80)]));
+  } catch { /* ignore a broken link */ }
+  const photosParam = one(sp.photos);
+  const initialKinds = photosParam === undefined ? undefined : photosParam === "none" ? [] : photosParam.split(",").filter((k) => k in CLASSIFICATION_LABEL);
   return (
     <>
       <h1>Quote</h1>
       <p className="muted">Find the operator, tick the aircraft, then edit and send the message with the photos. Or tap the microphone and say it. <a href="/quote/template">Change the standard wording</a>.</p>
-      <QuoteBuilder aircraft={options} operators={operators} preferred={preferred} initialIds={initial} templates={await getQuoteTemplates(db, actor.tenantId)} />
+      <QuoteBuilder aircraft={options} operators={operators} preferred={preferred} initialIds={initial} initialPrices={initialPrices} initialKinds={initialKinds} templates={await getQuoteTemplates(db, actor.tenantId)} />
     </>
   );
 }

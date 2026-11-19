@@ -60,7 +60,7 @@ export interface Draft {
 export interface Chip { label: string; send: string }
 /** A photo Chocks shows with a quote: which option (aircraft, from 0) it belongs to and what view it is. */
 export interface ChocksPhoto { id: string; label: string; classification?: Classification; option?: number }
-export interface ChocksReply { say: string[]; chips: Chip[]; ready: boolean; done?: boolean; link?: { href: string; label: string }; photos?: ChocksPhoto[]; copy?: string; options?: { title: string; text: string }[]; share?: { aircraftId: string; contactId: string } }
+export interface ChocksReply { say: string[]; chips: Chip[]; ready: boolean; done?: boolean; link?: { href: string; label: string }; photos?: ChocksPhoto[]; copy?: string; options?: { title: string; text: string }[]; /** Photo kinds the broker asked for ([] = none). */ kinds?: Classification[]; share?: { aircraftId: string; contactId: string } }
 
 export function emptyDraft(submitKey: string): Draft {
   return {
@@ -169,18 +169,40 @@ export async function converse(
     const ids: string[] = [];
     const names: string[] = [];
     const missing: string[] = [];
-    for (const what of quoteReq.what) {
+    const prices: Record<string, string> = {};
+    for (const [i, what] of quoteReq.what.entries()) {
       const found = await findAircraftsForShare(db, tenantId, what);
       if (!found.length) missing.push(what);
-      for (const f of found.slice(0, 4)) if (!ids.includes(f.id)) { ids.push(f.id); names.push(f.label); }
+      for (const f of found.slice(0, 4)) {
+        if (!ids.includes(f.id)) { ids.push(f.id); names.push(f.label); }
+        const price = quoteReq.prices?.[i];
+        if (price) prices[f.id] = price;
+      }
     }
     if (asked) d.asked = asked;
-    const preview = ids.length ? await quotePreview(db, tenantId, ids, L) : null;
+    const preview = ids.length ? await quotePreview(db, tenantId, ids, L, prices) : null;
+    const priced = Object.keys(prices).length > 0;
+    const kinds = quoteReq.kinds;
+    const kindsLine = !kinds ? null : kinds.length === 0 ? tr(L, "No photos, just the message.")
+      : tr(L, "Photos ticked: {kinds}.", { kinds: kinds.map((k) => trClassification(L, k, CLASSIFICATION_LABEL[k])).join(isChinese(L) ? "、" : ", ") });
     const say = preview
-      ? [[tr(L, "Here is the message and photos for:"), ...names.map((n) => `• ${n}`)].join(String.fromCharCode(10)), preview.text, tr(L, "Open the quote to add prices, change the language, edit the wording and send it with the photos.")]
+      ? [
+        [tr(L, "Here is the message and photos for:"), ...names.map((n) => `• ${n}`)].join(String.fromCharCode(10)),
+        preview.text,
+        ...(kindsLine ? [kindsLine] : []),
+        priced
+          ? tr(L, "Prices are filled in. Tap Copy message to paste it into the chat, or share it with the photos below.")
+          : tr(L, "Tap Copy message, or share it with the photos below. To add prices, write them in the chat (e.g. “G280 USD 90,000”) or open the quote."),
+      ]
       : [quoteReq.what.length ? tr(L, "I couldn't find {names}.", { names: missing.join(isChinese(L) ? "、" : " or ") }) : tr(L, "Open the Quote page to choose the aircraft.")];
     if (ids.length && missing.length) say.push(tr(L, "I couldn't find: {names}.", { names: missing.join(", ") }));
-    return { draft: d, reply: { say, chips: [], ready: false, photos: preview?.photos, copy: preview?.text, options: preview?.options, link: { href: ids.length ? `/quote?ids=${ids.join(",")}` : "/quote", label: tr(L, "Open the quote") } }, confirm: false };
+    // The Quote page opens with the same aircraft, prices and photo kinds.
+    const q = new URLSearchParams();
+    if (ids.length) q.set("ids", ids.join(","));
+    if (priced) q.set("prices", JSON.stringify(prices));
+    if (kinds) q.set("photos", kinds.length ? kinds.join(",") : "none");
+    const href = q.size ? `/quote?${q.toString().replace(/%2C/g, ",")}` : "/quote";
+    return { draft: d, reply: { say, chips: [], ready: false, photos: preview?.photos, copy: preview?.text, options: preview?.options, kinds, link: { href, label: tr(L, "Open the quote") } }, confirm: false };
   }
 
   // A question about what you already have ("show me what aircraft Capa Jet has"): answer it, change nothing.

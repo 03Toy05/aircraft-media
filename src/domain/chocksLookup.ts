@@ -153,7 +153,7 @@ export async function fleetBasics(db: Db, tenantId: string) {
  * The quotation message (in your saved wording, in the chat language) and a few photos for each chosen aircraft,
  * so Chocks can show "template and photos" right in the chat.
  */
-export async function quotePreview(db: Db, tenantId: string, ids: string[], lang?: ChatLang): Promise<{
+export async function quotePreview(db: Db, tenantId: string, ids: string[], lang?: ChatLang, prices: Record<string, string> = {}): Promise<{
   text: string;
   photos: { id: string; label: string; classification: Classification; option: number }[];
   /** Each option's own message (opening line on the first, closing line on the last), to send option by option. */
@@ -168,7 +168,7 @@ export async function quotePreview(db: Db, tenantId: string, ids: string[], lang
     const card = await getAircraftCard(db, id);
     if (!r || !card) continue;
     const option = items.length;
-    items.push({ type: card.aircraft, yom: card.yom, yor: card.yor, capacity: card.capacity, wifi: card.wifi, wifiDetail: card.wifiDetail });
+    items.push({ type: card.aircraft, yom: card.yom, yor: card.yor, capacity: card.capacity, wifi: card.wifi, wifiDetail: card.wifiDetail, price: prices[id] ?? "" });
     const lineup = await getLineup(db, { aircraftId: id, aircraftTypeId: r.aircraftTypeId });
     // Every approved photo of each aircraft (the combined photo among them); the broker picks which kinds to send.
     for (const l of lineup) photos.push({ id: l.contentVersionId, label: `${card.aircraft} ${l.label}`, classification: l.classification, option });

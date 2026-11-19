@@ -51,17 +51,35 @@ type Sort = "name" | "aircraft" | "recent";
  * closing line. Every box has Bold / Italic / Underline and a microphone. The Ask Chocks microphone runs spoken
  * commands on this page ("add the G280, Chinese, price 40,000").
  */
-export default function QuoteBuilder({ aircraft, operators, preferred: preferredInitial, initialIds, templates }: {
+export default function QuoteBuilder({ aircraft, operators, preferred: preferredInitial, initialIds, initialPrices, initialKinds, templates }: {
   aircraft: QuoteAircraftOption[]; operators: QuoteOperator[]; preferred: string[]; initialIds: string[]; templates: SavedTemplates;
+  /** From Chocks: prices per aircraft, and the photo kinds asked for ([] = no photos). */
+  initialPrices?: Record<string, string>; initialKinds?: string[];
 }) {
   const [ids, setIds] = useState<string[]>(initialIds);
   const [lang, setLang] = useState<QuoteLanguage>("en");
   const [inc, setInc] = useState({ operator: false, tail: false, base: false, notes: false, greeting: true, closing: true });
   // Typed for this quote, per aircraft. They are values, not text, so they survive changing the details or the language.
-  const [prices, setPrices] = useState<Record<string, string>>({});
+  const [prices, setPrices] = useState<Record<string, string>>(initialPrices ?? {});
   const [extras, setExtras] = useState<Record<string, string>>({});
   const [edits, setEdits] = useState<Record<string, string>>({}); // "greeting" | "closing" | "block:<aircraftId>" -> the broker's own text
-  const [flip, setFlip] = useState<Set<string>>(new Set()); // photos ("<aircraftId>|<photo url>") ticked or unticked by hand, against their default
+  // Photos ("<aircraftId>|<photo url>") ticked or unticked by hand, against their default (singles on, combined off).
+  // Chocks may ask for some kinds only; an aircraft without the combined photo asked for sends its single photos.
+  const [flip, setFlip] = useState<Set<string>>(() => {
+    const n = new Set<string>();
+    if (!initialKinds) return n;
+    for (const id of initialIds) {
+      const a = aircraft.find((x) => x.id === id);
+      if (!a) continue;
+      const hasAsked = a.photos.some((p) => initialKinds.includes(p.classification));
+      const singlesInstead = !hasAsked && initialKinds.length === 1 && initialKinds[0] === "combined";
+      for (const p of a.photos) {
+        const want = singlesInstead ? p.classification !== "combined" : initialKinds.includes(p.classification);
+        if (want !== (p.classification !== "combined")) n.add(`${a.id}|${p.url}`);
+      }
+    }
+    return n;
+  });
   const [msg, setMsg] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [app, setApp] = useState<SendApp>("whatsapp");
