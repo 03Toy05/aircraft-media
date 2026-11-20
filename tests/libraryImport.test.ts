@@ -3,7 +3,7 @@ import { readFileSync, readdirSync } from "node:fs";
 import { setup, makeImage } from "./helpers";
 import { getCatalogue } from "../src/domain/catalogue";
 import { getAircraftCard } from "../src/domain/directory";
-import { getLineup } from "../src/domain/media";
+import { getLineup, ingestUpload, retireMedia } from "../src/domain/media";
 import { randomUUID } from "node:crypto";
 import { users } from "../src/db/schema";
 import { LIBRARY_TENANT_ID, addingNow, copiedLibraryAircraft, importLibraryPack, isMaskedTail, queueAdds, type LibraryPack } from "../src/domain/library";
@@ -144,5 +144,27 @@ describe("Library import", () => {
     expect(ac.tail).toBe("VP-CTL");
     const kinds = (await getLineup(t.db, { aircraftId: ac.aircraftId, aircraftTypeId: ac.aircraftTypeId })).map((p) => p.classification).sort();
     expect(kinds).toEqual(["cabin", "cabin", "combined", "exterior", "floor_plan"]);
+  }, 60_000);
+
+  it("adds a library aircraft whose photo the workspace has retired elsewhere", async () => {
+    const t = await setup();
+    const files = new Map<string, Uint8Array>();
+    for (const [i, n] of ["e", "c1", "c2", "f"].entries()) files.set(`${n}.png`, await makeImage(400, 300, 1100 + i));
+    await importLibraryPack(t.db, t.store, t.actor, { operator: "TAG Aviation", aircraft: [
+      { type: "Gulfstream G650ER", tail: "VP-CTL", base: ["Singapore"], yom: 2019, photos: { exterior: ["e.png"], cabin: ["c1.png", "c2.png"], floor_plan: ["f.png"] } },
+    ] }, files);
+    const [libAc] = await getCatalogue(t.db, LIBRARY_TENANT_ID);
+    const tenantId = randomUUID();
+    const [u] = await t.db.insert(users).values({ tenantId, email: "broker5@example.test", displayName: "Broker 5" }).returning({ id: users.id });
+    const broker = { id: u.id, tenantId };
+    // The same exterior was on another aircraft in this workspace and was retired there.
+    const up = (await ingestUpload(t.db, t.store, broker, { filename: "old.png", bytes: files.get("e.png")! })).result;
+    await retireMedia(t.db, broker, randomUUID(), { mediaId: up.mediaId });
+
+    await queueAdds(t.db, t.store, broker, [libAc.aircraftId]).done;
+    const [mine] = await getCatalogue(t.db, tenantId);
+    const kinds = (await getLineup(t.db, { aircraftId: mine.aircraftId, aircraftTypeId: mine.aircraftTypeId })).map((p) => p.classification).sort();
+    expect(kinds).toEqual(["cabin", "cabin", "combined", "exterior", "floor_plan"]);
+    expect((await copiedLibraryAircraft(t.db, tenantId)).has(libAc.aircraftId)).toBe(true);
   }, 60_000);
 });

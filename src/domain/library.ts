@@ -372,6 +372,13 @@ export async function setLibraryAccess(db: Db, userId: string, on: boolean) {
 
 // ---------------------------------------------------------------- "Add to my workspace"
 
+/** Whether a photo is attached to this aircraft now. */
+async function isOn(db: Db, mediaId: string, aircraftId: string): Promise<boolean> {
+  const [a] = await db.select({ id: mediaAssociations.id }).from(mediaAssociations)
+    .where(and(eq(mediaAssociations.aircraftMediaId, mediaId), eq(mediaAssociations.aircraftId, aircraftId), eq(mediaAssociations.active, true)));
+  return !!a;
+}
+
 /** Copies the library aircraft's approved photos (and its combined photo) onto an aircraft in the user's workspace. */
 async function copyPhotosInto(db: Db, store: FileStore, actor: Actor, libraryAircraftId: string, targetAircraftId: string, only?: Set<string>) {
   const [la] = await db.select({ t: aircraft.aircraftTypeId }).from(aircraft).where(eq(aircraft.id, libraryAircraftId));
@@ -379,8 +386,15 @@ async function copyPhotosInto(db: Db, store: FileStore, actor: Actor, libraryAir
   const pairs: { libraryMediaId: string; mediaId: string }[] = [];
   for (const l of lineup) {
     const { bytes } = await readContentBytes(db, store, l.contentVersionId);
-    const up = (await ingestUpload(db, store, actor, { filename: `${l.label}.jpg`, bytes, batchLabel: "From the Aircraft Media library" })).result;
-    const [cur] = await db.select().from(aircraftMedia).where(eq(aircraftMedia.id, up.mediaId));
+    let up = (await ingestUpload(db, store, actor, { filename: `${l.label}.jpg`, bytes, batchLabel: "From the Aircraft Media library" })).result;
+    let [cur] = await db.select().from(aircraftMedia).where(eq(aircraftMedia.id, up.mediaId));
+    // The workspace already has this exact photo, but retired or on another aircraft (e.g. it was wrongly put on a
+    // sister aircraft and taken off again): a photo belongs to one aircraft, so this one gets its own copy.
+    if (cur.lifecycleState !== "active" || (cur.reviewState === "approved" && !(await isOn(db, cur.id, targetAircraftId)))) {
+      const copy = new Uint8Array(await sharp(bytes).jpeg({ quality: 92 }).toBuffer());
+      up = (await ingestUpload(db, store, actor, { filename: `${l.label}.jpg`, bytes: copy, batchLabel: "From the Aircraft Media library" })).result;
+      [cur] = await db.select().from(aircraftMedia).where(eq(aircraftMedia.id, up.mediaId));
+    }
     if (cur.reviewState !== "approved" || cur.lifecycleState !== "active") {
       const version = async () => (await db.select({ v: aircraftMedia.version }).from(aircraftMedia).where(eq(aircraftMedia.id, up.mediaId)))[0].v;
       await updateMediaMetadata(db, actor, randomUUID(), { mediaId: up.mediaId, expectedVersion: await version(), classification: l.classification });
