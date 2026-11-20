@@ -750,3 +750,80 @@ export async function collectLibraryNowAction() {
   revalidatePath("/library/review");
   redirect(withParam("/library/review", "ok", n ? `${n} new photo${n === 1 ? "" : "s"} offered.` : "Nothing new to offer."));
 }
+
+/** Users page: share (or stop sharing) the library with one person. */
+export async function setLibraryAccessAction(fd: FormData) {
+  await requireAdmin();
+  const on = str(fd, "on") === "1";
+  await library.setLibraryAccess(await getDb(), str(fd, "userId"), on);
+  revalidatePath("/admin");
+  redirect(withParam("/admin", "ok", on ? "Library shared with them." : "Library no longer shared with them."));
+}
+
+/** Library page: add one aircraft (or a whole operator) to my workspace, with its photos. */
+export async function addFromLibraryAction(fd: FormData) {
+  const session = await requireWriter().catch((e) => { if (e instanceof DomainError) redirect(withParam("/library", "error", e.message)); throw e; });
+  const db = await getDb();
+  if (!(await library.hasLibraryAccess(db, session))) redirect(withParam("/library", "error", "The library is not shared with you yet."));
+  let msg: string;
+  try {
+    const operatorId = str(fd, "libraryOperatorId");
+    if (operatorId) {
+      const n = await library.addOperatorToWorkspace(db, getFileStore(), session.actor, operatorId);
+      msg = `Added ${n} aircraft to your workspace, with their photos.`;
+    } else {
+      const r = await library.addToWorkspace(db, getFileStore(), session.actor, str(fd, "libraryAircraftId"));
+      msg = r.existed ? `You already had this aircraft: ${r.photos} library photo${r.photos === 1 ? "" : "s"} added to it.` : `Added to your workspace with ${r.photos} photo${r.photos === 1 ? "" : "s"}.`;
+    }
+  } catch (e) {
+    redirect(withParam("/library", "error", (e as Error).message));
+  }
+  exportAfterResponse(session);
+  revalidatePath("/", "layout");
+  redirect(withParam(`/library${str(fd, "q") ? `?q=${encodeURIComponent(str(fd, "q"))}` : ""}`, "ok", msg));
+}
+
+/** Aircraft page: bring a copy from the library up to date with the library's newer photos. */
+export async function updateLibraryCopyAction(fd: FormData) {
+  const { actor, db, store } = await ctx();
+  const id = str(fd, "aircraftId");
+  let msg: string;
+  try {
+    const r = await library.updateCopy(db, store, actor, id);
+    msg = `Updated from the library: ${r.added} newer photo${r.added === 1 ? "" : "s"} added${r.retired ? `, ${r.retired} older one${r.retired === 1 ? "" : "s"} retired` : ""}.`;
+  } catch (e) {
+    redirect(withParam(`/aircraft/${id}`, "error", (e as Error).message));
+  }
+  exportAfterResponse(await requireUser());
+  revalidatePath(`/aircraft/${id}`);
+  redirect(withParam(`/aircraft/${id}`, "ok", msg));
+}
+
+/** Aircraft page: offer my photos as newer ones for the library aircraft with the same tail. */
+export async function offerLibraryUpdateAction(fd: FormData) {
+  const { actor, db } = await ctx();
+  const id = str(fd, "aircraftId");
+  let n = 0;
+  try {
+    n = await library.offerUpdate(db, actor, id, fd.getAll("mediaId").map(String));
+  } catch (e) {
+    redirect(withParam(`/aircraft/${id}`, "error", (e as Error).message));
+  }
+  revalidatePath(`/aircraft/${id}`);
+  redirect(withParam(`/aircraft/${id}`, "ok", n ? `Thank you. ${n} photo${n === 1 ? "" : "s"} offered to the library; the Aircraft Media team will compare them with the current ones.` : "Nothing new to offer (tick at least one photo that was not offered before)."));
+}
+
+/** Library review: newer photos, each replacing the library photo chosen for it (or added, or not used). */
+export async function acceptLibraryUpdatesAction(fd: FormData) {
+  const { admin, db, store } = await libraryAdmin();
+  const choices = fd.getAll("contributionId").map(String).map((id) => ({ contributionId: id, replace: str(fd, `replace-${id}`) || "skip" }));
+  let msg: string;
+  try {
+    const r = await library.acceptUpdates(db, store, admin, { matchKey: str(fd, "matchKey"), choices });
+    msg = `Library updated: ${r.replaced} photo${r.replaced === 1 ? "" : "s"} replaced${r.added ? `, ${r.added} added` : ""}. The old ones are kept in its history.`;
+  } catch (e) {
+    redirect(withParam("/library/review", "error", (e as Error).message));
+  }
+  revalidatePath("/library");
+  redirect(withParam("/library/review", "ok", msg));
+}

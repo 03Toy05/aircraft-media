@@ -30,8 +30,10 @@ export interface QuoteAircraftOption {
   cleaningFee: string | null;
   notes: string | null;
   photos: ShareItem[];
+  /** From the shared platform library, not the broker's own workspace. */
+  library?: boolean;
 }
-export interface QuoteOperator { id: string; name: string; region: string | null; addedAt: string; count: number }
+export interface QuoteOperator { id: string; name: string; region: string | null; addedAt: string; count: number; library?: boolean }
 export type SavedTemplates = Partial<Record<QuoteLanguage, Partial<QuoteTemplate>>>;
 
 const EXT: Record<string, string> = { "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp" };
@@ -100,6 +102,10 @@ export default function QuoteBuilder({ aircraft, operators, preferred: preferred
   const [region, setRegion] = useState("");
   const [sort, setSort] = useState<Sort>("name");
   const [withAircraft, setWithAircraft] = useState(true);
+  // Whose aircraft to show: the broker's own, the platform library's, or both (only offered when the library is shared with them).
+  const hasLibrary = aircraft.some((a) => a.library);
+  const [source, setSource] = useState<"both" | "mine" | "library">("both");
+  const fromSource = (lib: boolean | undefined) => source === "both" || (source === "library") === !!lib;
   const [starMsg, setStarMsg] = useState<string | null>(null);
   const shareBtn = useRef<HTMLButtonElement>(null);
   const messageRef = useRef<HTMLDivElement>(null);
@@ -143,11 +149,11 @@ export default function QuoteBuilder({ aircraft, operators, preferred: preferred
   const regions = [...new Set(operators.map((o) => o.region).filter((r): r is string => !!r))].sort();
   const q = search.trim().toLowerCase();
   const browse = operators
-    .filter((o) => (!withAircraft || o.count > 0) && (!region || o.region === region) && (!q || o.name.toLowerCase().includes(q)))
+    .filter((o) => fromSource(o.library) && (!withAircraft || o.count > 0) && (!region || o.region === region) && (!q || o.name.toLowerCase().includes(q)))
     .sort((a, b) => sort === "aircraft" ? b.count - a.count || a.name.localeCompare(b.name) : sort === "recent" ? b.addedAt.localeCompare(a.addedAt) : a.name.localeCompare(b.name));
   const rank = (a: QuoteAircraftOption) => { const i = a.operatorId ? preferred.indexOf(a.operatorId) : -1; return i < 0 ? 99 : i; };
   const shown = aircraft
-    .filter((a) => (!opId || a.operatorId === opId) && (!q || `${a.type} ${a.tail ?? ""} ${a.operator ?? ""}`.toLowerCase().includes(q)))
+    .filter((a) => fromSource(a.library) && (!opId || a.operatorId === opId) && (!q || `${a.type} ${a.tail ?? ""} ${a.operator ?? ""}`.toLowerCase().includes(q)))
     .sort((a, b) => rank(a) - rank(b) || (a.operator ?? "~").localeCompare(b.operator ?? "~") || a.type.localeCompare(b.type));
   const opChosen = (id: string) => ids.some((x) => aircraft.find((a) => a.id === x)?.operatorId === id);
   const pickOp = (id: string) => setOpId((cur) => (cur === id ? "" : id));
@@ -330,7 +336,7 @@ export default function QuoteBuilder({ aircraft, operators, preferred: preferred
 
   const opChip = (o: QuoteOperator, starred: boolean) => (
     <button key={o.id} type="button" className={`chip${opId === o.id ? " on" : ""}`} aria-pressed={opId === o.id} onClick={() => pickOp(o.id)}>
-      {starred && "★ "}{o.name} ({o.count}){opChosen(o.id) && <span aria-label="has chosen aircraft"> ✓</span>}
+      {starred && "★ "}{o.name}{o.library ? " · Library" : ""} ({o.count}){opChosen(o.id) && <span aria-label="has chosen aircraft"> ✓</span>}
     </button>
   );
 
@@ -388,6 +394,15 @@ export default function QuoteBuilder({ aircraft, operators, preferred: preferred
                   ))}
                 </span>
               </div>
+              {hasLibrary && (
+                <div className="group-row"><span>Aircraft from</span>
+                  <span className="seg" role="radiogroup" aria-label="Aircraft from">
+                    {([["both", "Mine + library"], ["mine", "Mine"], ["library", "Library"]] as const).map(([v, l]) => (
+                      <button key={v} type="button" role="radio" aria-checked={source === v} className={source === v ? "on" : ""} onClick={() => setSource(v)}>{l}</button>
+                    ))}
+                  </span>
+                </div>
+              )}
               <label className="group-row">Only operators with aircraft
                 <input type="checkbox" className="switch" checked={withAircraft} onChange={(e) => setWithAircraft(e.target.checked)} />
               </label>
@@ -427,7 +442,7 @@ export default function QuoteBuilder({ aircraft, operators, preferred: preferred
                 <label key={a.id} className={`ac-card${on ? " on" : ""}`}>
                   <input type="checkbox" checked={on} onChange={() => toggle(a.id)} />
                   <span>
-                    <b>{a.type}</b>{!opId && <> · {a.operator ?? "No operator"}</>}
+                    <b>{a.type}</b>{!opId && <> · {a.operator ?? "No operator"}</>}{a.library && <span className="pill wait">Library</span>}
                     <span className="small muted" style={{ display: "block" }}>
                       {[a.tail ?? "no tail yet", a.base].filter(Boolean).join(" · ")}{facts ? ` · ${facts}` : ""} · {a.photos.length} photo{a.photos.length === 1 ? "" : "s"}
                     </span>

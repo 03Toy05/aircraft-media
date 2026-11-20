@@ -9,7 +9,8 @@ import { formatAircraftCard } from "@/domain/card";
 import { getLineup } from "@/domain/media";
 import { CLASSIFICATIONS, CLASSIFICATION_LABEL } from "@/domain/constants";
 import { COMBINED_NEEDS, combinedSources, existingCombined } from "@/domain/combinedPhoto";
-import { addInfoVersionAction, addManagementAction, changeTailAction, makeCombinedAction, setBasesAction, setOperatorAction } from "../../../actions";
+import { addInfoVersionAction, addManagementAction, changeTailAction, makeCombinedAction, offerLibraryUpdateAction, setBasesAction, setOperatorAction, updateLibraryCopyAction } from "../../../actions";
+import { copyStatus, libraryTwin, offerablePhotos } from "@/domain/library";
 import { Flash, Key, one, type SP } from "../../../_components/ui";
 import { ShareBox } from "../../../_components/ShareBox";
 import PlacePicker from "../../../_components/PlacePicker";
@@ -44,6 +45,10 @@ export default async function AircraftDetail({ params, searchParams }: { params:
   const canCombine = !!(await combinedSources(db, actor.tenantId, scope));
   const current = infos.find((i) => i.isCurrent);
   const tailInUse = (one(sp.error) ?? "").includes("another aircraft");
+  // The platform library: an aircraft added from it can take its newer photos; one whose tail the library has can offer newer ones to it.
+  const copy = await copyStatus(db, actor.tenantId, id);
+  const twin = await libraryTwin(db, actor.tenantId, id);
+  const offerable = twin ? await offerablePhotos(db, actor.tenantId, id) : [];
 
   return (
     <>
@@ -89,6 +94,41 @@ export default async function AircraftDetail({ params, searchParams }: { params:
         </div>
 
         <div>
+          {(copy || (twin && offerable.length > 0)) && (
+            <div className="card">
+              <h3>Aircraft Media library</h3>
+              {copy && (
+                <>
+                  <p className="small muted" style={{ marginTop: 0 }}>Added from the library on {copy.addedAt.toISOString().slice(0, 10)}.</p>
+                  {copy.newer > 0 ? (
+                    <form action={updateLibraryCopyAction} className="row" style={{ alignItems: "center" }}>
+                      <input type="hidden" name="aircraftId" value={id} />
+                      <div className="small">The library has {copy.newer} newer photo{copy.newer === 1 ? "" : "s"} for this aircraft.</div>
+                      {!readOnly && <div style={{ flex: "0 0 auto" }}><button type="submit" className="small-btn">Update my copy</button></div>}
+                    </form>
+                  ) : <p className="small" style={{ margin: 0 }}>Your photos match the library&apos;s.</p>}
+                  <p className="small muted">Updating swaps only the photos that came from the library; photos you uploaded yourself are never touched.</p>
+                </>
+              )}
+              {twin && offerable.length > 0 && (
+                <form action={offerLibraryUpdateAction}>
+                  <input type="hidden" name="aircraftId" value={id} />
+                  <p className="small" style={{ marginTop: copy ? 8 : 0 }}>The library has this aircraft. Are your photos newer (after a refurbishment, say)? Offer them, and the Aircraft Media team will compare them with the library&apos;s.</p>
+                  <div className="lib-tiles">
+                    {offerable.map((p) => (
+                      <label key={p.mediaId} className="lib-tile">
+                        <input type="checkbox" name="mediaId" value={p.mediaId} disabled={p.offered || readOnly} aria-label={`Offer this ${p.classification}`} />
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={`/api/media/${p.contentVersionId}`} alt={p.classification} />
+                        <span>{CLASSIFICATION_LABEL[p.classification as keyof typeof CLASSIFICATION_LABEL] ?? p.classification}{p.offered ? " · offered" : ""}</span>
+                      </label>
+                    ))}
+                  </div>
+                  {!readOnly && <button type="submit" className="secondary small-btn">Offer ticked photos as newer ones</button>}
+                </form>
+              )}
+            </div>
+          )}
           <div className="card">
             <h3>Tail number</h3>
             <form action={changeTailAction}>

@@ -153,13 +153,13 @@ export async function fleetBasics(db: Db, tenantId: string) {
  * The quotation message (in your saved wording, in the chat language) and a few photos for each chosen aircraft,
  * so Chocks can show "template and photos" right in the chat.
  */
-export async function quotePreview(db: Db, tenantId: string, ids: string[], lang?: ChatLang, prices: Record<string, string> = {}): Promise<{
+export async function quotePreview(db: Db, tenantId: string, ids: string[], lang?: ChatLang, prices: Record<string, string> = {}, alsoTenants: string[] = []): Promise<{
   text: string;
   photos: { id: string; label: string; classification: Classification; option: number }[];
   /** Each option's own message (opening line on the first, closing line on the last), to send option by option. */
   options: { title: string; text: string }[];
 }> {
-  const rows = await getCatalogue(db, tenantId);
+  const rows = (await getCatalogue(db, tenantId)).concat(...(await Promise.all(alsoTenants.map((t) => getCatalogue(db, t)))));
   const templates = await getQuoteTemplates(db, tenantId);
   const items = [];
   const photos: { id: string; label: string; classification: Classification; option: number }[] = [];

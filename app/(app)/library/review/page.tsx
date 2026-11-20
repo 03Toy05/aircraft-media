@@ -3,7 +3,8 @@ import { getDb } from "@/db/client";
 import { requireAdmin } from "@/lib/session";
 import { LIBRARY_NEEDS, libraryOperators, reviewGroups } from "@/domain/library";
 import { CLASSIFICATION_LABEL, type Classification } from "@/domain/constants";
-import { acceptLibraryAction, collectLibraryNowAction, rejectLibraryAction } from "../../../actions";
+import { acceptLibraryAction, acceptLibraryUpdatesAction, collectLibraryNowAction, rejectLibraryAction } from "../../../actions";
+import Choice from "../../../_components/Choice";
 import { Flash, one, type SP } from "../../../_components/ui";
 import SearchSelect from "../../../_components/SearchSelect";
 
@@ -34,9 +35,61 @@ export default async function LibraryReview({ searchParams }: { searchParams: SP
       {groups.map((g) => {
         const title = [g.operatorName ?? "No operator", g.aircraftType, g.tail].filter(Boolean).join(" · ");
         const need = (Object.keys(LIBRARY_NEEDS) as Classification[]).map((k) => `${CLASSIFICATION_LABEL[k]} ${g.have[k] ?? 0}/${LIBRARY_NEEDS[k]}`).join(" · ");
-        const formId = `lib-${g.matchKey.replace(/[^a-z0-9]/gi, "")}`;
+        const formId = `lib-${g.kind}-${g.matchKey.replace(/[^a-z0-9]/gi, "")}`;
+        if (g.kind === "update") {
+          // Newer photos: each one replaces the library photo chosen for it (the n-th offered cabin replaces CABIN n).
+          const seen: Record<string, number> = {};
+          return (
+            <div key={formId} className="card">
+              <div className="person-head">
+                <div style={{ minWidth: 0 }}>
+                  <b>{title}</b> <span className="pill warn">Newer photos</span>
+                  <div className="small muted">Offered by {g.contributor} on {day(g.createdAt)}{g.note ? ` · ${g.note}` : ""}</div>
+                </div>
+              </div>
+              <div className="group-title">In the library now</div>
+              <div className="lib-tiles">
+                {g.current.map((c) => (
+                  <a key={c.mediaId} className="lib-tile" href={`/api/media/${c.contentVersionId}`} target="_blank">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={`/api/media/${c.contentVersionId}`} alt={c.label} />
+                    <span>{c.label}</span>
+                  </a>
+                ))}
+              </div>
+              <form id={formId} action={acceptLibraryUpdatesAction}>
+                <input type="hidden" name="matchKey" value={g.matchKey} />
+                <div className="group-title">Offered</div>
+                {g.photos.map((p) => {
+                  const same = g.current.filter((c) => c.classification === p.classification);
+                  const nth = (seen[p.classification] = (seen[p.classification] ?? 0) + 1) - 1;
+                  const options = [...same.map((c) => ({ value: c.mediaId, label: `Replace ${c.label}` })), { value: "add", label: "Add" }, { value: "skip", label: "Don't use" }];
+                  return (
+                    <div key={p.id} className="row" style={{ alignItems: "center", marginBottom: 8 }}>
+                      <input type="hidden" name="contributionId" value={p.id} />
+                      <div style={{ flex: "0 0 140px" }}>
+                        <div className="lib-tile">
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img src={`/api/media/${p.contentVersionId}`} alt={p.classification} />
+                          <span>{CLASSIFICATION_LABEL[p.classification as Classification] ?? p.classification}</span>
+                        </div>
+                      </div>
+                      <div><Choice name={`replace-${p.id}`} defaultValue={same[nth]?.mediaId ?? same[0]?.mediaId ?? "add"} ariaLabel="What to do with this photo" options={options} /></div>
+                    </div>
+                  );
+                })}
+                <p className="small muted" style={{ margin: "4px 0 8px" }}>Replaced photos are retired, not deleted, so they stay in the library&apos;s history. The combined photo is made again from the new set. People who added this aircraft to their workspace are offered the newer photos.</p>
+                <div className="person-actions">
+                  <button type="submit" className="small-btn">Apply</button>
+                  <span className="spacer" />
+                  <button type="submit" formAction={rejectLibraryAction} className="danger small-btn">Turn all down</button>
+                </div>
+              </form>
+            </div>
+          );
+        }
         return (
-          <div key={g.matchKey} className="card">
+          <div key={formId} className="card">
             <div className="person-head">
               <div style={{ minWidth: 0 }}>
                 <b>{title}</b>{" "}

@@ -5,11 +5,12 @@ import { aircraftMedia, libraryContributions, mediaContentVersions } from "@/db/
 import { getFileStore } from "@/storage";
 import { readContentBytes } from "@/domain/media";
 import { requireOwner } from "@/lib/session";
-import { LIBRARY_TENANT_ID } from "@/domain/library";
+import { LIBRARY_TENANT_ID, hasLibraryAccess } from "@/domain/library";
 
 /** Authenticated, server-side streaming of exact stored bytes. No unrestricted storage URLs are exposed. */
 export async function GET(_req: Request, ctx: { params: Promise<{ versionId: string }> }) {
-  const { actor, isAdmin } = await requireOwner();
+  const session = await requireOwner();
+  const { actor, isAdmin } = session;
   const { versionId } = await ctx.params;
   if (!/^[0-9a-f-]{36}$/.test(versionId)) return new NextResponse("Not found", { status: 404 });
   const db = await getDb();
@@ -19,11 +20,12 @@ export async function GET(_req: Request, ctx: { params: Promise<{ versionId: str
     .innerJoin(aircraftMedia, eq(aircraftMedia.id, mediaContentVersions.aircraftMediaId))
     .where(eq(mediaContentVersions.id, versionId));
   if (!row) return new NextResponse("Not found", { status: 404 });
-  // Your own workspace's photos. The admin also sees the platform library and photos offered to it (to review them).
+  // Your own workspace's photos. The library's, for people it is shared with. Photos offered to it, for the admin.
   let allowed = row.tenantId === actor.tenantId;
+  // The library: everyone it is shared with.
+  if (!allowed && row.tenantId === LIBRARY_TENANT_ID) allowed = await hasLibraryAccess(db, session);
   if (!allowed && isAdmin) {
-    allowed = row.tenantId === LIBRARY_TENANT_ID
-      || (await db.select({ id: libraryContributions.id }).from(libraryContributions).where(eq(libraryContributions.sourceContentVersionId, versionId)).limit(1)).length > 0;
+    allowed = (await db.select({ id: libraryContributions.id }).from(libraryContributions).where(eq(libraryContributions.sourceContentVersionId, versionId)).limit(1)).length > 0;
   }
   if (!allowed) return new NextResponse("Not found", { status: 404 });
   try {

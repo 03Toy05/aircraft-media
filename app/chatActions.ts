@@ -10,6 +10,7 @@ import { requireUser } from "@/lib/session";
 import { exportAfterResponse } from "@/lib/cbosExportRunner";
 import { DomainError } from "@/domain/errors";
 import { ingestPdf } from "@/domain/intake";
+import { hasLibraryAccess } from "@/domain/library";
 import { ingestUpload } from "@/domain/media";
 import { applyChatProposal, suggestClassification, type ApplyResult } from "@/domain/chat";
 import { parseChatLang, tr, trStep } from "@/domain/chocksText";
@@ -84,7 +85,7 @@ export async function chocksTurnAction(fd: FormData): Promise<TurnResult> {
     }
   }
 
-  const turn = await converse(db, actor.tenantId, draft, message, photos);
+  const turn = await converse(db, actor.tenantId, draft, message, photos, { library: await hasLibraryAccess(db, session) });
   revalidatePath("/", "layout");
   if (!turn.confirm) return { draft: turn.draft, reply: turn.reply, failures };
   if (readOnlyWhy) return { draft: turn.draft, reply: { ...turn.reply, say: [readOnlyWhy], ready: false }, failures };

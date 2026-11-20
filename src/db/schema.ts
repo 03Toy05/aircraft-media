@@ -66,6 +66,8 @@ export const users = pgTable(
     invitedBy: uuid("invited_by"),
     /** Shares this workspace's approved photos with the platform library (off until the user turns it on). */
     libraryOptIn: boolean("library_opt_in").notNull().default(false),
+    /** May use the platform library (browse, quote from it, add to their workspace). The admin turns it on per person. */
+    libraryAccess: boolean("library_access").notNull().default(false),
     createdAt: created(),
     updatedAt: updated(),
   },
@@ -517,6 +519,10 @@ export const libraryContributions = pgTable(
     tail: text("tail"),
     /** pending | accepted | rejected | superseded (the library set filled up first) */
     status: text("status").notNull().default("pending"),
+    /** new: fills an empty place in the library set | update: newer photos offered to replace library ones */
+    kind: text("kind").notNull().default("new"),
+    /** For an accepted update: the library photo it replaced. */
+    replacesMediaId: uuid("replaces_media_id"),
     libraryAircraftId: uuid("library_aircraft_id"),
     libraryMediaId: uuid("library_media_id"),
     decidedBy: uuid("decided_by"),
@@ -525,6 +531,22 @@ export const libraryContributions = pgTable(
     createdAt: created(),
   },
   (t) => [uniqueIndex("library_contrib_media_uq").on(t.sourceMediaId), index("library_contrib_status_idx").on(t.status, t.matchKey)],
+);
+
+// ---- aircraft a user added to their workspace from the library, and which library photos they copied ----
+export const libraryCopies = pgTable(
+  "library_copies",
+  {
+    id: pk(),
+    tenantId: uuid("tenant_id").notNull(),
+    aircraftId: uuid("aircraft_id").notNull(),
+    libraryAircraftId: uuid("library_aircraft_id").notNull(),
+    /** Each copied photo: the library photo and the copy in the user's workspace. */
+    copied: jsonb("copied").$type<{ libraryMediaId: string; mediaId: string }[]>().notNull().default([]),
+    createdAt: created(),
+    updatedAt: updated(),
+  },
+  (t) => [uniqueIndex("library_copy_aircraft_uq").on(t.tenantId, t.aircraftId)],
 );
 
 // ---- CBOS export: the CBOS-named copy of each approved photo (import assistance only, never identity) ----

@@ -5,7 +5,7 @@ import { requireAdmin } from "@/lib/session";
 import { TRIAL_DAYS, accessFor } from "@/domain/accounts";
 import { quoteShareStats, type QuoteShareStats } from "@/domain/quoteShares";
 import {
-  extendTrialAction, inviteUserAction, setBlockedAction, setPlanAction, viewAsAction, withdrawInviteAction,
+  extendTrialAction, inviteUserAction, setBlockedAction, setLibraryAccessAction, setPlanAction, viewAsAction, withdrawInviteAction,
 } from "../../actions";
 import { Flash, Key, one, type SP } from "../../_components/ui";
 import Choice from "../../_components/Choice";
@@ -73,6 +73,7 @@ export default async function Admin({ searchParams }: { searchParams: SP }) {
                 {q?.lastAt ? ` · last quote shared ${day(q.lastAt)}` : ""}
                 {trialNote ? ` · ${trialNote}` : ""}
                 {u.libraryOptIn ? " · shares photos with the library" : ""}
+                {u.libraryAccess ? " · can use the library" : " · no library access"}
               </div>
               <div className="person-actions">
                 {u.plan === "trial" && (
@@ -82,6 +83,8 @@ export default async function Admin({ searchParams }: { searchParams: SP }) {
                     <button className="secondary small-btn" type="submit">Extend trial</button>
                   </form>
                 )}
+                <form action={setLibraryAccessAction}><input type="hidden" name="userId" value={u.id} /><input type="hidden" name="on" value={u.libraryAccess ? "0" : "1"} />
+                  <button className="secondary small-btn" type="submit">{u.libraryAccess ? "Stop sharing the library" : "Share the library"}</button></form>
                 <form action={setPlanAction}><Key /><input type="hidden" name="userId" value={u.id} /><input type="hidden" name="plan" value={u.plan === "full" ? "trial" : "full"} />
                   <button className="secondary small-btn" type="submit">{u.plan === "full" ? "Make trial" : "Make full"}</button></form>
                 <span className="spacer" />

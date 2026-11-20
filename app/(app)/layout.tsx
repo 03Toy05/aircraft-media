@@ -2,6 +2,7 @@ import Link from "next/link";
 import { requireUser } from "@/lib/session";
 import { getDb } from "@/db/client";
 import { loadStandardAircraftTypes } from "@/domain/directory";
+import { hasLibraryAccess } from "@/domain/library";
 import { STANDARD_LIST_VERSION } from "@/domain/standardTypes";
 import { signOutAction, stopViewingAction } from "../actions";
 import Icon from "../_components/Icon";
@@ -20,6 +21,8 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       console.error("Could not load standard aircraft types", e);
     }
   }
+  let libraryOn = s.isAdmin;
+  try { libraryOn = await hasLibraryAccess(await getDb(), s); } catch { /* the menu must not fail */ }
   return (
     <>
       <nav className="top">
@@ -30,7 +33,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         <Link href="/quote"><Icon name="quote" />Quote</Link>
         <Link href="/contacts"><Icon name="contacts" />Contacts</Link>
         <Link href="/settings"><Icon name="settings" />Settings</Link>
-        {s.isAdmin && <Link href="/library"><Icon name="plane" />Library</Link>}
+        {libraryOn && <Link href="/library"><Icon name="plane" />Library</Link>}
         {s.isAdmin && <Link href="/admin"><Icon name="contacts" />Users</Link>}
         <span className="spacer" />
         <span className="muted small">{email}</span>
@@ -51,7 +54,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       <main>{children}</main>
       <VoiceCommand />
       <TableLabels />
-      <MobileNav email={email} signOut={signOutAction} isAdmin={s.isAdmin} />
+      <MobileNav email={email} signOut={signOutAction} isAdmin={s.isAdmin} library={libraryOn} />
     </>
   );
 }
