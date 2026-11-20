@@ -33,7 +33,7 @@ export interface QuoteAircraftOption {
   /** From the shared platform library, not the broker's own workspace. */
   library?: boolean;
 }
-export interface QuoteOperator { id: string; name: string; region: string | null; addedAt: string; count: number; library?: boolean }
+export interface QuoteOperator { id: string; name: string; region: string | null; addedAt: string; count: number; library?: boolean; /** Yours, and the library has aircraft of it you do not. */ alsoLibrary?: boolean; /** How many of those library aircraft there are. */ libraryCount?: number }
 export type SavedTemplates = Partial<Record<QuoteLanguage, Partial<QuoteTemplate>>>;
 
 const EXT: Record<string, string> = { "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp" };
@@ -106,6 +106,8 @@ export default function QuoteBuilder({ aircraft, operators, preferred: preferred
   const hasLibrary = aircraft.some((a) => a.library);
   const [source, setSource] = useState<"both" | "mine" | "library">("both");
   const fromSource = (lib: boolean | undefined) => source === "both" || (source === "library") === !!lib;
+  /** An operator's aircraft in the chosen view: yours, the library's you do not have, or both. */
+  const countOf = (o: QuoteOperator) => (source === "mine" ? (o.library ? 0 : o.count) : source === "library" ? (o.library ? o.count : o.libraryCount ?? 0) : o.count + (o.libraryCount ?? 0));
   const [starMsg, setStarMsg] = useState<string | null>(null);
   const shareBtn = useRef<HTMLButtonElement>(null);
   const messageRef = useRef<HTMLDivElement>(null);
@@ -145,11 +147,11 @@ export default function QuoteBuilder({ aircraft, operators, preferred: preferred
 
   const opById = useMemo(() => new Map(operators.map((o) => [o.id, o])), [operators]);
   const preferredOps = preferred.map((id) => opById.get(id)).filter((o): o is QuoteOperator => !!o);
-  const recentOps = [...operators].filter((o) => !preferred.includes(o.id) && o.count > 0).sort((a, b) => b.addedAt.localeCompare(a.addedAt)).slice(0, 5);
+  const recentOps = [...operators].filter((o) => !preferred.includes(o.id) && o.count + (o.libraryCount ?? 0) > 0).sort((a, b) => b.addedAt.localeCompare(a.addedAt)).slice(0, 5);
   const regions = [...new Set(operators.map((o) => o.region).filter((r): r is string => !!r))].sort();
   const q = search.trim().toLowerCase();
   const browse = operators
-    .filter((o) => fromSource(o.library) && (!withAircraft || o.count > 0) && (!region || o.region === region) && (!q || o.name.toLowerCase().includes(q)))
+    .filter((o) => (fromSource(o.library) || (source === "library" && o.alsoLibrary)) && (!withAircraft || countOf(o) > 0) && (!region || o.region === region) && (!q || o.name.toLowerCase().includes(q)))
     .sort((a, b) => sort === "aircraft" ? b.count - a.count || a.name.localeCompare(b.name) : sort === "recent" ? b.addedAt.localeCompare(a.addedAt) : a.name.localeCompare(b.name));
   const rank = (a: QuoteAircraftOption) => { const i = a.operatorId ? preferred.indexOf(a.operatorId) : -1; return i < 0 ? 99 : i; };
   const shown = aircraft
@@ -336,7 +338,7 @@ export default function QuoteBuilder({ aircraft, operators, preferred: preferred
 
   const opChip = (o: QuoteOperator, starred: boolean) => (
     <button key={o.id} type="button" className={`chip${opId === o.id ? " on" : ""}`} aria-pressed={opId === o.id} onClick={() => pickOp(o.id)}>
-      {starred && "★ "}{o.name}{o.library ? " · Library" : ""} ({o.count}){opChosen(o.id) && <span aria-label="has chosen aircraft"> ✓</span>}
+      {starred && "★ "}{o.name}{o.library ? " · Library" : ""} ({countOf(o)}){opChosen(o.id) && <span aria-label="has chosen aircraft"> ✓</span>}
     </button>
   );
 
@@ -414,7 +416,7 @@ export default function QuoteBuilder({ aircraft, operators, preferred: preferred
                   <button type="button" className="star" onClick={() => star(o.id)} aria-pressed={preferred.includes(o.id)} aria-label={preferred.includes(o.id) ? `Remove ${o.name} from preferred` : `Add ${o.name} to preferred`} title="Preferred">{preferred.includes(o.id) ? "★" : "☆"}</button>
                   <button type="button" className="op-name" onClick={() => pickOp(o.id)}>
                     <span>{o.name}{o.region ? <span className="muted small"> · {o.region}</span> : null}</span>
-                    <span className="muted small">{o.count} aircraft{opChosen(o.id) ? " ✓" : ""}</span>
+                    <span className="muted small">{countOf(o)} aircraft{opChosen(o.id) ? " ✓" : ""}</span>
                   </button>
                 </div>
               ))}

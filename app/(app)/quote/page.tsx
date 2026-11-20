@@ -6,7 +6,8 @@ import { organisations } from "@/db/schema";
 import { getAircraftCard, getPreferredOperators } from "@/domain/directory";
 import { getLineup } from "@/domain/media";
 import { getQuoteTemplates } from "@/domain/quoteTemplates";
-import { LIBRARY_TENANT_ID, hasLibraryAccess } from "@/domain/library";
+import { LIBRARY_TENANT_ID, copiedLibraryAircraft, hasLibraryAccess } from "@/domain/library";
+import { normalizeKey, normalizeRegistration } from "@/domain/constants";
 import { CLASSIFICATION_LABEL } from "@/domain/constants";
 import QuoteBuilder, { type QuoteAircraftOption, type QuoteOperator } from "../../_components/QuoteBuilder";
 import { one, type SP } from "../../_components/ui";
@@ -22,12 +23,24 @@ export default async function Quote({ searchParams }: { searchParams: SP }) {
   // The broker's own aircraft, then (when the library is shared with them) the platform library's.
   const sources = [{ tenantId: actor.tenantId, library: false }];
   if (await hasLibraryAccess(db, session)) sources.push({ tenantId: LIBRARY_TENANT_ID, library: true });
+  // The same aircraft once: a library aircraft the broker already has (added from the library, or their own with
+  // the same operator, type and tail, or YOM when there is no tail) is left out of the library's list.
+  const sameKey = (o: { operator: string | null; type: string; tail: string | null; yom: number | null }) =>
+    `${normalizeKey(o.operator ?? "")}|${normalizeKey(o.type)}|${o.tail ? `t:${normalizeRegistration(o.tail)}` : `y:${o.yom ?? ""}`}`;
+  const ownKeys = new Set<string>();
+  const copied = await copiedLibraryAircraft(db, actor.tenantId);
+  // An operator the broker has under the same name is one operator: library aircraft go under the broker's own.
+  const ownOrgByName = new Map<string, QuoteOperator>();
   for (const src of sources) {
     const rows = await getCatalogue(db, src.tenantId);
     const mine: QuoteAircraftOption[] = [];
     for (const r of rows) {
+      if (src.library && copied.has(r.aircraftId)) continue;
       const card = await getAircraftCard(db, r.aircraftId);
       if (!card) continue;
+      const k = sameKey({ operator: card.operator, type: card.aircraft, tail: card.tailNumber, yom: card.yom });
+      if (!src.library) ownKeys.add(k);
+      else if (ownKeys.has(k)) continue;
       const lineup = await getLineup(db, { aircraftId: r.aircraftId, aircraftTypeId: r.aircraftTypeId });
       mine.push({
         id: r.aircraftId,
@@ -56,12 +69,22 @@ export default async function Quote({ searchParams }: { searchParams: SP }) {
         library: src.library,
       });
     }
-    options.push(...mine);
     const orgRows = await db.select().from(organisations).where(and(eq(organisations.tenantId, src.tenantId), eq(organisations.active, true)));
-    operators.push(...orgRows.map((o) => ({
-      id: o.id, name: o.canonicalName, region: o.region, addedAt: o.createdAt.toISOString(),
-      count: mine.filter((a) => a.operatorId === o.id).length, library: src.library,
-    })));
+    for (const o of orgRows) {
+      const count = mine.filter((a) => a.operatorId === o.id).length;
+      const own = src.library ? ownOrgByName.get(normalizeKey(o.canonicalName)) : undefined;
+      if (own) {
+        // Merged: its library aircraft are listed under the broker's operator, still marked Library.
+        for (const a of mine) if (a.operatorId === o.id) a.operatorId = own.id;
+        own.libraryCount = (own.libraryCount ?? 0) + count;
+        if (count) own.alsoLibrary = true;
+        continue;
+      }
+      const op: QuoteOperator = { id: o.id, name: o.canonicalName, region: o.region, addedAt: o.createdAt.toISOString(), count, library: src.library };
+      if (!src.library) ownOrgByName.set(normalizeKey(o.canonicalName), op);
+      operators.push(op);
+    }
+    options.push(...mine);
   }
   const preferred = await getPreferredOperators(db, actor.tenantId);
   const initial = (one(sp.ids) ?? "").split(",").filter((id) => options.some((o) => o.id === id));
