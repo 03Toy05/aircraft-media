@@ -7,7 +7,7 @@ import { TEMPLATE_PLACEHOLDERS, buildQuote, validateQuoteTemplate, type QuoteAir
 
 // Two made-up aircraft, so the preview shows how several aircraft look and how an empty value drops its line.
 const SAMPLE: QuoteAircraft[] = [
-  { type: "Gulfstream G550", yom: 2013, yor: 2020, capacity: 13, wifi: "yes", wifiDetail: "at USD 10/MB", tail: "B-XXX", operator: "Sample Jet", base: "Hong Kong", notes: "Subject to owner's approval", price: "USD 5,200 per hour" },
+  { type: "Gulfstream G550", yom: 2013, yor: 2020, capacity: 13, wifi: "yes", wifiDetail: "at USD 10/MB", smoking: "no", pets: "yes", cleaningFee: "USD 500", tail: "B-XXX", operator: "Sample Jet", base: "Hong Kong", notes: "Subject to owner's approval", price: "USD 5,200 per hour" },
   { type: "Bombardier Global 6000", yom: 2015, yor: null, capacity: 14, wifi: "no", tail: "B-YYY", operator: "Sample Jet", base: "Singapore", notes: null, price: "" },
 ];
 

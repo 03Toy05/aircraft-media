@@ -2,7 +2,7 @@ import { and, eq } from "drizzle-orm";
 import type { Db } from "../db/client";
 import { aircraft, aircraftTypes, organisations } from "../db/schema";
 import { parseAircraftCard } from "./card";
-import { AIRCRAFT_CATEGORY_LABEL, CLASSIFICATION_LABEL, normalizeKey, parseClassification, type AircraftCategory, type Classification, type WifiStatus } from "./constants";
+import { AIRCRAFT_CATEGORY_LABEL, CLASSIFICATION_LABEL, normalizeKey, parseClassification, type AircraftCategory, type Classification, type WifiStatus, type YesNoStatus } from "./constants";
 import { isChinese, plural, tr, trCategory, trClassification, trLoose, trWifi, type ChatLang } from "./chocksText";
 import { parseShareRequest, parseQuoteRequest, findAircraftsForShare } from "./chocksShare";
 import { normalizeRegion } from "./places";
@@ -48,6 +48,10 @@ export interface Draft {
   wifi: WifiStatus;
   /** Optional on drafts saved by older versions. */
   wifiDetail?: string;
+  /** Optional on drafts saved by older versions. */
+  smoking?: YesNoStatus;
+  pets?: YesNoStatus;
+  cleaningFee?: string;
   notes: string;
   base: { mode: "based" | "floating"; locations: string[] } | null;
   asked: Asked | null;
@@ -327,6 +331,9 @@ export async function converse(
     if (c.yor != null) d.yor = c.yor;
     if (c.capacity != null) d.capacity = c.capacity;
     if (c.wifi) { d.wifi = c.wifi; if (c.wifiDetail) d.wifiDetail = c.wifiDetail; }
+    if (c.smoking) d.smoking = c.smoking;
+    if (c.pets) d.pets = c.pets;
+    if (c.cleaningFee) d.cleaningFee = c.cleaningFee;
     if (c.notes) d.notes = c.notes;
     if (c.base) d.base = c.base;
     if (c.region) d.region = normalizeRegion(c.region); // "HK" shows as "Hong Kong", as it will be saved
@@ -509,6 +516,9 @@ export function summary(d: Draft): string[] {
     d.yor && tr(L, "YOR {n}", { n: d.yor }),
     d.capacity && tr(L, "{n} seats", { n: d.capacity }),
     d.wifi !== "unknown" && tr(L, "WIFI {status}", { status: `${trWifi(L, d.wifi)}${d.wifiDetail ? `, ${d.wifiDetail}` : ""}` }),
+    d.smoking && d.smoking !== "unknown" && (d.smoking === "yes" ? tr(L, "smoking allowed") : tr(L, "no smoking")),
+    d.pets && d.pets !== "unknown" && (d.pets === "yes" ? tr(L, "pets allowed") : tr(L, "no pets")),
+    d.cleaningFee && tr(L, "cleaning fee {x}", { x: d.cleaningFee }),
     d.notes && tr(L, "notes “{text}”", { text: d.notes }),
   ].filter(Boolean);
   if (facts.length && d.aircraft.kind === "new") lines.push(tr(L, "• Details: {facts}", { facts: facts.join(", ") }));

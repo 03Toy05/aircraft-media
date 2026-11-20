@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useRef, useState, useTransition } from "react";
 import { chocksTurnAction, type TurnResult } from "../chatActions";
+import { recordQuoteShareAction } from "../actions";
 import type { ChocksPhoto, Draft } from "@/domain/chocks";
 import { CLASSIFICATION_LABEL, type Classification } from "@/domain/constants";
 import { prepareShareAction, type SharePayload } from "../shareActions";
@@ -84,12 +85,15 @@ const VOICES: { id: string; name: string }[] = [
 ];
 
 /** "Copy message": puts the quotation text Chocks just showed on the clipboard. */
-function CopyButton({ text, ui }: { text: string; ui: UI }) {
+function CopyButton({ text, ui, quote }: { text: string; ui: UI; quote?: { key: string; options: number } }) {
   const [done, setDone] = useState<string | null>(null);
   return (
     <p style={{ margin: "6px 0" }}>
       <button type="button" onClick={async () => {
-        setDone((await copyText(text)) ? ui.copied : ui.copyFail);
+        const ok = await copyText(text);
+        setDone(ok ? ui.copied : ui.copyFail);
+        // A quote copied to paste into a chat counts as shared out (once per quote).
+        if (ok && quote) void recordQuoteShareAction({ quoteKey: quote.key, how: "copy", options: quote.options });
       }}>{ui.copy}</button>
       {done && <span className="small muted"> {done}</span>}
     </p>
@@ -105,7 +109,7 @@ const KINDS: Classification[] = ["exterior", "cabin", "floor_plan", "combined"];
  * The quote's photos with what to send: tick the kinds (EXT, CABIN, FLOOR PLAN, COMBINED), then share option by
  * option (option 1's photos and message, then option 2's...), or everything at once.
  */
-function QuoteSend({ photos, options, text, ui, lang, asked }: { photos: ChocksPhoto[]; options: { title: string; text: string }[]; text?: string; ui: UI; lang: ChatLang; asked?: string[] }) {
+function QuoteSend({ photos, options, text, ui, lang, asked, quoteKey }: { photos: ChocksPhoto[]; options: { title: string; text: string }[]; text?: string; ui: UI; lang: ChatLang; asked?: string[]; quoteKey: string }) {
   // The kinds the broker asked for ("with EXT and cabin photos"), or every single view.
   const [kinds, setKinds] = useState<Set<string>>(() => new Set(asked ?? ["exterior", "cabin", "floor_plan", "unclassified"]));
   const [busy, setBusy] = useState(false);
@@ -135,6 +139,7 @@ function QuoteSend({ photos, options, text, ui, lang, asked }: { photos: ChocksP
       if (files.length && (!navigator.canShare || !navigator.canShare({ files }))) { setDone(ui.cannotShare); return; }
       // WhatsApp shows the photos first, then the message.
       await navigator.share(files.length ? (message ? { files, text: message } : { files }) : { text: message ?? "" });
+      void recordQuoteShareAction({ quoteKey, how: "share", options: options.length });
       after();
     } catch (e) {
       if ((e as Error).name !== "AbortError") setDone((e as Error).message || ui.photoFail);
@@ -428,7 +433,7 @@ export default function ChatClient() {
                 ))}
               </div>
             )}
-            {m.photos && m.photos.length > 0 && m.options && m.options.length > 0 && <QuoteSend photos={m.photos} options={m.options} text={m.copy} ui={ui} lang={chatLang} asked={m.kinds} />}
+            {m.photos && m.photos.length > 0 && m.options && m.options.length > 0 && <QuoteSend photos={m.photos} options={m.options} text={m.copy} ui={ui} lang={chatLang} asked={m.kinds} quoteKey={m.id} />}
             {m.photos && m.photos.length > 0 && !(m.options && m.options.length > 0) && (
               <div className="thumbs" style={{ margin: "8px 0" }}>
                 {m.photos.map((p) => (
@@ -439,7 +444,7 @@ export default function ChatClient() {
                 ))}
               </div>
             )}
-            {m.copy && <CopyButton text={m.copy} ui={ui} />}
+            {m.copy && <CopyButton text={m.copy} ui={ui} quote={m.options?.length ? { key: m.id, options: m.options.length } : undefined} />}
             {m.link && <p className="small"><Link href={m.link.href}>{m.link.label} →</Link></p>}
             {m.share && <SharePanel aircraftId={m.share.aircraftId} contactId={m.share.contactId} />}
             {m.done && !m.share && (

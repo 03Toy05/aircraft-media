@@ -33,6 +33,9 @@ export default async function Quote({ searchParams }: { searchParams: SP }) {
       capacity: card.capacity,
       wifi: card.wifi,
       wifiDetail: card.wifiDetail,
+      smoking: card.smoking,
+      pets: card.pets,
+      cleaningFee: card.cleaningFee,
       notes: card.notes,
       photos: lineup.map((l) => ({
         classification: l.classification,

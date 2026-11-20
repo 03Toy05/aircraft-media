@@ -1,11 +1,11 @@
-import type { WifiStatus } from "./constants";
+import type { WifiStatus, YesNoStatus } from "./constants";
 
 /**
  * Compact aircraft card (handoff section 8). Parsing is deterministic and AI-free.
  * Canonical field keys are stored once; only the visible labels vary by language.
  * English is implemented now; further languages are added to CARD_LABELS in phase 4.
  */
-export const CARD_FIELDS = ["operator", "region", "aircraft", "tail", "base", "yom", "yor", "capacity", "wifi", "notes"] as const;
+export const CARD_FIELDS = ["operator", "region", "aircraft", "tail", "base", "yom", "yor", "capacity", "wifi", "smoking", "pets", "cleaningFee", "notes"] as const;
 export type CardField = (typeof CARD_FIELDS)[number];
 
 export const CARD_LABELS: Record<string, Record<CardField, string[]>> = {
@@ -19,6 +19,9 @@ export const CARD_LABELS: Record<string, Record<CardField, string[]>> = {
     yor: ["yor", "year of refurbishment"],
     capacity: ["capacity", "seats", "pax"],
     wifi: ["wifi", "wi-fi", "wi fi"],
+    smoking: ["smoking"],
+    pets: ["pets", "pet", "pets allowed", "pet friendly"],
+    cleaningFee: ["cleaning fee", "cleaning charge", "cleaning"],
     notes: ["notes", "note"],
   },
   // Traditional and Simplified Chinese. Both scripts are always recognised, whichever language the chat is set to.
@@ -32,6 +35,9 @@ export const CARD_LABELS: Record<string, Record<CardField, string[]>> = {
     yor: ["翻新年份", "改裝年份", "改装年份", "翻新"],
     capacity: ["載客量", "载客量", "座位數", "座位数", "座位", "乘客數", "乘客数", "人數", "人数"],
     wifi: ["無線網絡", "无线网络", "無線上網", "无线上网"],
+    smoking: ["吸煙", "吸烟", "抽煙", "抽烟"],
+    pets: ["寵物", "宠物"],
+    cleaningFee: ["清潔費", "清洁费"],
     notes: ["備註", "备注"],
   },
 };
@@ -56,6 +62,9 @@ export const CARD_DISPLAY_LABELS: Record<string, Record<CardField, string>> = {
     yor: "YOR",
     capacity: "Capacity",
     wifi: "WIFI",
+    smoking: "Smoking",
+    pets: "Pets",
+    cleaningFee: "Cleaning fee",
     notes: "Notes",
   },
 };
@@ -73,6 +82,9 @@ export interface ParsedCard {
   wifi?: WifiStatus;
   /** What follows Yes/No on the WIFI line: "WIFI: Yes, at USD 10/MB" -> "at USD 10/MB". */
   wifiDetail?: string;
+  smoking?: YesNoStatus;
+  pets?: YesNoStatus;
+  cleaningFee?: string;
   notes?: string;
   /** Lines that were not recognised, kept so nothing is silently dropped. */
   unrecognised: string[];
@@ -176,6 +188,23 @@ function parseWifiValue(value: string): { status: WifiStatus; detail: string } |
   return { status, detail: zh[2].trim() };
 }
 
+/** "Yes", "No", "Yes, cleaning fee USD 500", "可以", "禁止" -> yes / no, and anything after as detail. */
+function parseYesNoValue(value: string): { status: YesNoStatus; detail: string } | null {
+  const en = value.match(/^(yes|allowed|ok|no|not allowed|unknown)\b[\s,;:\-–—]*(.*)$/i);
+  if (en) {
+    const w = en[1].toLowerCase();
+    return { status: w === "unknown" ? "unknown" : /^(no|not allowed)$/.test(w) ? "no" : "yes", detail: en[2].trim() };
+  }
+  const zh = value.match(/^(不可以|不可|不允許|不允许|不准|禁止|不能|不行|否|無|无|冇|唔得|可以|允許|允许|准許|准许|有|是|得|不明|未知)[\s,，;；:：\-–—]*(.*)$/);
+  if (!zh) return null;
+  const w = zh[1];
+  const status: YesNoStatus = /^(不明|未知)$/.test(w) ? "unknown" : /^(不|禁止|否|無|无|冇|唔得)/.test(w) ? "no" : "yes";
+  return { status, detail: zh[2].trim() };
+}
+
+/** "cleaning fee USD 500" inside a Smoking or Pets line: the fee part. */
+const feeIn = (detail: string) => detail.match(/(?:cleaning\s*(?:fee|charge)?|清潔費|清洁费)\s*[:：]?\s*(.+)$/i)?.[1].trim() ?? null;
+
 export function parseAircraftCard(text: string, lang = "en"): ParsedCard {
   text = splitInlineLabels(normalizeSpoken(text), lang);
   const labels = allLabels();
@@ -234,6 +263,19 @@ export function parseAircraftCard(text: string, lang = "en"): ParsedCard {
         } else out.problems.push(`WIFI must start with Yes, No, TBC or Unknown: ${value}`);
         break;
       }
+      case "smoking":
+      case "pets": {
+        const v = parseYesNoValue(value);
+        if (v) {
+          out[field] = v.status;
+          const fee = feeIn(v.detail);
+          if (fee && !out.cleaningFee) out.cleaningFee = fee;
+        } else out.problems.push(`${CARD_DISPLAY_LABELS.en[field]} must be Yes or No: ${value}`);
+        break;
+      }
+      case "cleaningFee":
+        out.cleaningFee = value;
+        break;
     }
   }
   return out;
@@ -251,6 +293,9 @@ export function formatAircraftCard(
     capacity: number | null;
     wifi: WifiStatus;
     wifiDetail?: string | null;
+    smoking?: YesNoStatus;
+    pets?: YesNoStatus;
+    cleaningFee?: string | null;
     notes: string | null;
   },
   lang = "en",
@@ -266,6 +311,10 @@ export function formatAircraftCard(
     `${L.yor}: ${card.yor ?? ""}`,
     `${L.capacity}: ${card.capacity ?? ""}`,
     `${L.wifi}: ${wifi}${card.wifiDetail && card.wifi !== "unknown" ? `, ${card.wifiDetail}` : ""}`,
+    // Smoking, pets and the cleaning fee only once recorded, so older cards read as before.
+    ...(card.smoking && card.smoking !== "unknown" ? [`${L.smoking}: ${card.smoking === "yes" ? "Yes" : "No"}`] : []),
+    ...(card.pets && card.pets !== "unknown" ? [`${L.pets}: ${card.pets === "yes" ? "Yes" : "No"}`] : []),
+    ...(card.cleaningFee ? [`${L.cleaningFee}: ${card.cleaningFee}`] : []),
     `${L.notes}: ${card.notes ?? ""}`,
   ].join("\n");
 }

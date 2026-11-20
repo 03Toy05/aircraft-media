@@ -168,7 +168,7 @@ export async function quotePreview(db: Db, tenantId: string, ids: string[], lang
     const card = await getAircraftCard(db, id);
     if (!r || !card) continue;
     const option = items.length;
-    items.push({ type: card.aircraft, yom: card.yom, yor: card.yor, capacity: card.capacity, wifi: card.wifi, wifiDetail: card.wifiDetail, price: prices[id] ?? "" });
+    items.push({ type: card.aircraft, yom: card.yom, yor: card.yor, capacity: card.capacity, wifi: card.wifi, wifiDetail: card.wifiDetail, smoking: card.smoking, pets: card.pets, cleaningFee: card.cleaningFee, price: prices[id] ?? "" });
     const lineup = await getLineup(db, { aircraftId: id, aircraftTypeId: r.aircraftTypeId });
     // Every approved photo of each aircraft (the combined photo among them); the broker picks which kinds to send.
     for (const l of lineup) photos.push({ id: l.contentVersionId, label: `${card.aircraft} ${l.label}`, classification: l.classification, option });

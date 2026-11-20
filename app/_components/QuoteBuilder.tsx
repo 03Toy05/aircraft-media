@@ -6,11 +6,11 @@ import Icon from "./Icon";
 import TextBox, { Styled } from "./TextBox";
 import { copyText, fetchPhoto } from "./copyText";
 import { registerCommands, type CommandResult } from "./voice";
-import { togglePreferredOperator } from "../actions";
+import { recordQuoteShareAction, togglePreferredOperator } from "../actions";
 import { QUOTE_LANGUAGES, QUOTE_WORDS, buildQuoteParts, renumberBlock, type QuoteLanguage, type QuoteTemplate } from "@/domain/quote";
 import { forOtherApps, parseStyled } from "@/domain/textStyle";
 import { parseQuoteCommands, type QuoteCommand } from "@/domain/quoteCommands";
-import { COMBINED_NEEDS, type WifiStatus } from "@/domain/constants";
+import { COMBINED_NEEDS, type WifiStatus, type YesNoStatus } from "@/domain/constants";
 import type { ShareItem } from "./ShareBox";
 
 export interface QuoteAircraftOption {
@@ -25,6 +25,9 @@ export interface QuoteAircraftOption {
   capacity: number | null;
   wifi: WifiStatus;
   wifiDetail: string | null;
+  smoking: YesNoStatus;
+  pets: YesNoStatus;
+  cleaningFee: string | null;
   notes: string | null;
   photos: ShareItem[];
 }
@@ -41,6 +44,8 @@ const DRAFT_DAYS = 14;
 interface Draft {
   savedAt: number; ids: string[]; lang: QuoteLanguage; inc: Record<string, boolean>; prices: Record<string, string>;
   extras: Record<string, string>; edits: Record<string, string>; flip: string[]; app: SendApp; opId: string;
+  /** Set at the first share, so sharing the same quote again (or option by option) counts once. */
+  quoteKey?: string;
 }
 const SPEECH: Partial<Record<QuoteLanguage, string>> = { en: "en-US", "zh-Hant": "zh-HK", "zh-Hans": "zh-CN", ja: "ja-JP", ko: "ko-KR", vi: "vi-VN", th: "th-TH", id: "id-ID", fr: "fr-FR", de: "de-DE", ru: "ru-RU", ar: "ar-SA" };
 type Sort = "name" | "aircraft" | "recent";
@@ -104,13 +109,14 @@ export default function QuoteBuilder({ aircraft, operators, preferred: preferred
   // -- the draft: brought back when the page opens without aircraft chosen elsewhere, saved on every change
   const [loaded, setLoaded] = useState(false);
   const [restored, setRestored] = useState(false);
+  const [quoteKey, setQuoteKey] = useState("");
   useEffect(() => {
     try {
       const d = JSON.parse(localStorage.getItem(DRAFT) ?? "null") as Draft | null;
       const known = d ? d.ids.filter((id) => aircraft.some((a) => a.id === id)) : [];
       if (d && initialIds.length === 0 && Date.now() - d.savedAt < DRAFT_DAYS * 864e5 && (known.length || Object.keys(d.edits).length)) {
         setIds(known); setLang(d.lang); setInc((cur) => ({ ...cur, ...d.inc })); setPrices(d.prices); setExtras(d.extras);
-        setEdits(d.edits); setFlip(new Set(d.flip)); setApp(d.app); setOpId(d.opId);
+        setEdits(d.edits); setFlip(new Set(d.flip)); setApp(d.app); setOpId(d.opId); setQuoteKey(d.quoteKey ?? "");
         if (known.length) setSteps({ op: false, ac: true, lang: false });
         setRestored(true);
       }
@@ -120,14 +126,14 @@ export default function QuoteBuilder({ aircraft, operators, preferred: preferred
   useEffect(() => {
     if (!loaded) return;
     try {
-      const d: Draft = { savedAt: Date.now(), ids, lang, inc, prices, extras, edits, flip: [...flip], app, opId };
+      const d: Draft = { savedAt: Date.now(), ids, lang, inc, prices, extras, edits, flip: [...flip], app, opId, quoteKey };
       localStorage.setItem(DRAFT, JSON.stringify(d));
     } catch { /* storage full or blocked */ }
-  }, [loaded, ids, lang, inc, prices, extras, edits, flip, app, opId]);
+  }, [loaded, ids, lang, inc, prices, extras, edits, flip, app, opId, quoteKey]);
   const startOver = () => {
     if (!window.confirm("Clear this quote and start a new one?")) return;
     try { localStorage.removeItem(DRAFT); } catch { /* ignore */ }
-    setIds([]); setPrices({}); setExtras({}); setEdits({}); setFlip(new Set()); setOpId(""); setRestored(false); setMsg(null);
+    setIds([]); setPrices({}); setExtras({}); setEdits({}); setFlip(new Set()); setOpId(""); setRestored(false); setMsg(null); setQuoteKey("");
     setSteps({ op: true, ac: true, lang: false });
   };
 
@@ -228,8 +234,16 @@ export default function QuoteBuilder({ aircraft, operators, preferred: preferred
   const dir = lang === "ar" ? "rtl" : "ltr";
   const speech = SPEECH[lang];
 
+  /** Counts this quote as shared out (the Users page shows how many). Sharing it again counts once. */
+  const counted = (how: "share" | "copy") => {
+    const k = quoteKey || crypto.randomUUID();
+    if (!quoteKey) setQuoteKey(k);
+    void recordQuoteShareAction({ quoteKey: k, how, options: chosen.length });
+  };
+
   async function copy(mode = styleFor) {
     const ok = await copyText(textFor(mode));
+    if (ok && chosen.length) counted("copy");
     setMsg(ok ? "Message copied. Paste it into your chat or email, then share the photos." : "Could not copy automatically. Select the message and copy it.");
     return ok;
   }
@@ -247,16 +261,17 @@ export default function QuoteBuilder({ aircraft, operators, preferred: preferred
     setBusy(true); setMsg(null);
     try {
       const message = option === null ? textFor(styleFor) : optionText(option, styleFor);
-      if (what === "message") { await navigator.share({ text: message }); return; }
+      if (what === "message") { await navigator.share({ text: message }); counted("share"); return; }
       const mine = option === null ? photos : photos.filter((x) => x.i === option);
       const files = await Promise.all(mine.map(async ({ a, i, p }) => {
         const blob = await fetchPhoto(p.url, `${a.type} ${p.label}`);
         return new File([blob], `Option ${i + 1} - ${a.type} - ${p.label}${p.representative ? " (representative)" : ""}.${EXT[p.mimeType] ?? "jpg"}`, { type: p.mimeType });
       }));
       if (files.length && (!navigator.canShare || !navigator.canShare({ files }))) { setMsg("This browser cannot share photos directly. Open this page on your phone, or save the photos from each aircraft page."); return; }
-      if (what === "photos") { await navigator.share({ files }); return; }
+      if (what === "photos") { await navigator.share({ files }); counted("share"); return; }
       // WhatsApp shows the photos first, then the message.
       await navigator.share(files.length ? { files, text: message } : { text: message });
+      counted("share");
       // The phone does not say whether the message was actually sent in WhatsApp, so nothing is marked as sent.
       if (option === null && files.length) setMsg(app === "other" ? "If the app kept only the photos, tap Message only and send it to the same chat." : "If the message text did not come through, paste it from Copy message.");
     } catch (e) {

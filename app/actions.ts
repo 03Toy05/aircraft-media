@@ -16,13 +16,14 @@ import type { Actor } from "@/domain/action";
 import * as dir from "@/domain/directory";
 import * as contacts from "@/domain/contacts";
 import * as quoteTemplates from "@/domain/quoteTemplates";
+import * as quoteShares from "@/domain/quoteShares";
 import * as media from "@/domain/media";
 import * as settings from "@/domain/settings";
 import { applyChatProposal } from "@/domain/chat";
 import { makeCombinedPhoto } from "@/domain/combinedPhoto";
 import { and, eq } from "drizzle-orm";
 import { aircraft as aircraftTable } from "@/db/schema";
-import { CLASSIFICATIONS, type Classification, type OrgRole, type RightsStatus, type WifiStatus } from "@/domain/constants";
+import { CLASSIFICATIONS, type Classification, type OrgRole, type RightsStatus, type WifiStatus, type YesNoStatus } from "@/domain/constants";
 import { signOut } from "@/auth";
 
 // ------------------------------------------------------------------ helpers
@@ -261,6 +262,9 @@ function infoFrom(fd: FormData) {
     capacity: optNum(fd, "capacity"),
     wifiStatus: (str(fd, "wifiStatus") || "unknown") as WifiStatus,
     wifiDetail: optStr(fd, "wifiDetail"),
+    smoking: (str(fd, "smoking") || "unknown") as YesNoStatus,
+    pets: (str(fd, "pets") || "unknown") as YesNoStatus,
+    cleaningFee: optStr(fd, "cleaningFee"),
     notes: optStr(fd, "notes"),
   };
 }
@@ -669,4 +673,18 @@ export async function exportCbosAction() {
     error = `Export failed: ${e instanceof Error ? e.message : "unknown error"}`;
   }
   redirect(withParam("/photos", error ? "error" : "ok", error ?? ok));
+}
+
+/**
+ * A quote was handed to another app (share sheet completed) or its message copied. Counted for the Users page.
+ * Not counted while the admin is looking at someone else's workspace. Never fails the share.
+ */
+export async function recordQuoteShareAction(input: { quoteKey: string; how: "share" | "copy"; options: number }): Promise<void> {
+  try {
+    const s = await requireUser();
+    if (s.viewingAs) return;
+    await quoteShares.recordQuoteShare(await getDb(), s.actor, input);
+  } catch (e) {
+    console.error("recordQuoteShare failed", e);
+  }
 }

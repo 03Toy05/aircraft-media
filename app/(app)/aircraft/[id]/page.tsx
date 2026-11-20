@@ -14,7 +14,7 @@ import { Flash, Key, one, type SP } from "../../../_components/ui";
 import { ShareBox } from "../../../_components/ShareBox";
 import PlacePicker from "../../../_components/PlacePicker";
 import SearchSelect from "../../../_components/SearchSelect";
-import Choice, { WIFI_CHOICES } from "../../../_components/Choice";
+import Choice, { WIFI_CHOICES, YES_NO_CHOICES } from "../../../_components/Choice";
 
 export default async function AircraftDetail({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: SP }) {
   const { id } = await params;
@@ -69,6 +69,11 @@ export default async function AircraftDetail({ params, searchParams }: { params:
               <label>WIFI</label>
               <Choice name="wifiStatus" defaultValue={current?.wifiStatus ?? "unknown"} options={WIFI_CHOICES} ariaLabel="WIFI" />
               <label>WIFI details (optional, shown in quotes)</label><input name="wifiDetail" defaultValue={current?.wifiDetail ?? ""} placeholder="e.g. at USD 10/MB" />
+              <div className="row">
+                <div><label>Smoking</label><Choice name="smoking" defaultValue={current?.smoking ?? "unknown"} options={YES_NO_CHOICES} ariaLabel="Smoking" /></div>
+                <div><label>Pets</label><Choice name="pets" defaultValue={current?.pets ?? "unknown"} options={YES_NO_CHOICES} ariaLabel="Pets" /></div>
+              </div>
+              <label>Cleaning fee (optional, shown in quotes)</label><input name="cleaningFee" defaultValue={current?.cleaningFee ?? ""} placeholder="e.g. USD 500 for pets or smoking" />
               <label>Notes</label><input name="notes" defaultValue={current?.notes ?? ""} />
               <label>Effective / observed date (optional)</label><input name="effectiveDate" type="date" />
               <p><button type="submit">Save new version</button></p>
@@ -76,9 +81,9 @@ export default async function AircraftDetail({ params, searchParams }: { params:
           </div>
           <div className="card">
             <h3>Information versions</h3>
-            <table><thead><tr><th>#</th><th>YOM</th><th>YOR</th><th>Cap.</th><th>WIFI</th><th>Notes</th><th>Recorded</th></tr></thead>
+            <table><thead><tr><th>#</th><th>YOM</th><th>YOR</th><th>Cap.</th><th>WIFI</th><th>Smoking</th><th>Pets</th><th>Notes</th><th>Recorded</th></tr></thead>
               <tbody>{[...infos].reverse().map((i) => (
-                <tr key={i.id}><td>{i.versionNumber}{i.isCurrent ? " ●" : ""}</td><td>{i.yom ?? ""}</td><td>{i.yor ?? ""}</td><td>{i.capacity ?? ""}</td><td>{i.wifiStatus}</td><td>{i.notes}</td><td className="small">{i.createdAt.toISOString().slice(0, 10)}</td></tr>
+                <tr key={i.id}><td>{i.versionNumber}{i.isCurrent ? " ●" : ""}</td><td>{i.yom ?? ""}</td><td>{i.yor ?? ""}</td><td>{i.capacity ?? ""}</td><td>{i.wifiStatus}</td><td>{i.smoking === "unknown" ? "" : i.smoking}</td><td>{i.pets === "unknown" ? "" : i.pets}{i.cleaningFee ? ` (fee ${i.cleaningFee})` : ""}</td><td>{i.notes}</td><td className="small">{i.createdAt.toISOString().slice(0, 10)}</td></tr>
               ))}</tbody></table>
           </div>
         </div>

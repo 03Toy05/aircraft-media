@@ -24,11 +24,13 @@ import {
   RIGHTS_STATUSES,
   SOURCE_KINDS,
   WIFI_STATUSES,
+  YES_NO_STATUSES,
 } from "../domain/constants";
 
 // ---- enums (canonical keys stored once; translation is display only) ----
 export const orgRoleEnum = pgEnum("org_role", ORG_ROLES);
 export const wifiEnum = pgEnum("wifi_status", WIFI_STATUSES);
+export const yesNoEnum = pgEnum("yes_no_status", YES_NO_STATUSES);
 export const baseModeEnum = pgEnum("base_mode", BASE_MODES);
 export const sourceKindEnum = pgEnum("source_kind", SOURCE_KINDS);
 export const classificationEnum = pgEnum("media_classification", CLASSIFICATIONS);
@@ -267,6 +269,10 @@ export const aircraftInformationVersions = pgTable(
     wifiStatus: wifiEnum("wifi_status").notNull().default("unknown"),
     /** Free text about the WIFI, e.g. "at USD 10/MB". Shown after Yes/No in the quote. */
     wifiDetail: text("wifi_detail"),
+    /** Smoking and pets allowed on board, and the cleaning fee that goes with them (free text, e.g. "USD 500"). */
+    smoking: yesNoEnum("smoking").notNull().default("unknown"),
+    pets: yesNoEnum("pets").notNull().default("unknown"),
+    cleaningFee: text("cleaning_fee"),
     notes: text("notes"),
     sourceEvidenceId: uuid("source_evidence_id").references(() => sourceEvidence.id),
     effectiveDate: date("effective_date"),
@@ -469,6 +475,25 @@ export const driveSyncState = pgTable(
     updatedAt: updated(),
   },
   (t) => [uniqueIndex("drive_sync_folder_uq").on(t.tenantId, t.folderId)],
+);
+
+// ---- quotes handed to another app (the share sheet completed, or the message copied) ----
+// The phone cannot say whether the message was then sent, so this counts quotes shared out, not quotes delivered.
+export const quoteShares = pgTable(
+  "quote_shares",
+  {
+    id: pk(),
+    tenantId: uuid("tenant_id").notNull(),
+    userId: uuid("user_id").notNull(),
+    /** One quote: shares of the same quote (option by option, or again later) count once. */
+    quoteKey: text("quote_key").notNull(),
+    /** share | copy */
+    how: text("how").notNull(),
+    /** How many aircraft options the quote had. */
+    options: integer("options").notNull().default(1),
+    createdAt: created(),
+  },
+  (t) => [index("quote_shares_tenant_idx").on(t.tenantId, t.createdAt)],
 );
 
 // ---- CBOS export: the CBOS-named copy of each approved photo (import assistance only, never identity) ----

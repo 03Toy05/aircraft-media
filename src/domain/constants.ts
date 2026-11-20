@@ -141,6 +141,10 @@ export type RightsStatus = (typeof RIGHTS_STATUSES)[number];
 export const WIFI_STATUSES = ["yes", "no", "tbc", "unknown"] as const;
 export type WifiStatus = (typeof WIFI_STATUSES)[number];
 
+/** Smoking and pets allowed on board. */
+export const YES_NO_STATUSES = ["yes", "no", "unknown"] as const;
+export type YesNoStatus = (typeof YES_NO_STATUSES)[number];
+
 export const BASE_MODES = ["based", "floating"] as const;
 export type BaseMode = (typeof BASE_MODES)[number];
 

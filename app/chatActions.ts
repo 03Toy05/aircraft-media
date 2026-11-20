@@ -96,7 +96,7 @@ export async function chocksTurnAction(fd: FormData): Promise<TurnResult> {
       d.aircraft.kind === "existing" ? { mode: "existing", aircraftId: d.aircraft.id }
       : d.aircraft.kind === "new" ? { mode: "new", registration: d.tail, distinct: d.aircraft.distinct }
       : { mode: "none" },
-    info: { yom: d.yom, yor: d.yor, capacity: d.capacity, wifiStatus: d.wifi, wifiDetail: d.wifiDetail || null, notes: d.notes || null },
+    info: { yom: d.yom, yor: d.yor, capacity: d.capacity, wifiStatus: d.wifi, wifiDetail: d.wifiDetail || null, smoking: d.smoking ?? "unknown", pets: d.pets ?? "unknown", cleaningFee: d.cleaningFee || null, notes: d.notes || null },
     base: d.base ?? undefined,
     evidenceText: d.evidence.join("\n") || null,
   });

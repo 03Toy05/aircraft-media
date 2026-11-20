@@ -1,4 +1,4 @@
-import type { WifiStatus } from "./constants";
+import type { WifiStatus, YesNoStatus } from "./constants";
 
 /**
  * Quotation text for a client. Pure and client-safe: the page builds it live, the broker edits it, copies it,
@@ -24,6 +24,12 @@ export interface QuoteWords {
   wifiYes: string;
   wifiNo: string;
   wifiTbc: string;
+  smoking: string;
+  pets: string;
+  cleaningFee: string;
+  /** Smoking / pets: allowed or not. */
+  allowed: string;
+  notAllowed: string;
   price: string;
   notes: string;
   colon: string; // ":" or the full-width "："
@@ -37,60 +43,70 @@ export const QUOTE_WORDS: Record<QuoteLanguage, QuoteWords> = {
     name: "English", hello: "Hello, here are the aircraft options:", thanks: "Please let me know if you would like more details or photos.",
     aircraft: "Aircraft", operator: "Operator", tail: "Tail number", base: "Base", yom: "Manufacture", yor: "Refurbished",
     capacity: "Capacity", seats: (n) => `${n} seat${n === 1 ? "" : "s"}`, wifi: "WIFI", wifiYes: "Yes", wifiNo: "No", wifiTbc: "TBC",
+    smoking: "Smoking", pets: "Pets", cleaningFee: "Cleaning fee", allowed: "Allowed", notAllowed: "Not allowed",
     price: "Price", notes: "Notes", colon: ": ",
   },
   "zh-Hant": {
     name: "繁體中文", hello: "您好，以下是飛機選項：", thanks: "如需更多資料或照片，請隨時告訴我。",
     aircraft: "飛機", operator: "營運商", tail: "機尾編號", base: "基地", yom: "出廠年份", yor: "翻新年份",
     capacity: "載客量", seats: (n) => `${n} 座`, wifi: "WIFI", wifiYes: "有", wifiNo: "無", wifiTbc: "待確認",
+    smoking: "吸煙", pets: "寵物", cleaningFee: "清潔費", allowed: "可以", notAllowed: "不可以",
     price: "價格", notes: "備註", colon: "：",
   },
   "zh-Hans": {
     name: "简体中文", hello: "您好，以下是飞机选项：", thanks: "如需更多资料或照片，请随时告诉我。",
     aircraft: "飞机", operator: "运营商", tail: "机尾编号", base: "基地", yom: "出厂年份", yor: "翻新年份",
     capacity: "载客量", seats: (n) => `${n} 座`, wifi: "WIFI", wifiYes: "有", wifiNo: "无", wifiTbc: "待确认",
+    smoking: "吸烟", pets: "宠物", cleaningFee: "清洁费", allowed: "可以", notAllowed: "不可以",
     price: "价格", notes: "备注", colon: "：",
   },
   ja: {
     name: "日本語", hello: "お世話になっております。機体のご案内です。", thanks: "詳細や写真が必要でしたらお知らせください。",
     aircraft: "機体", operator: "運航会社", tail: "登録番号", base: "拠点", yom: "製造年", yor: "改装年",
     capacity: "座席数", seats: (n) => `${n}席`, wifi: "WIFI", wifiYes: "あり", wifiNo: "なし", wifiTbc: "確認中",
+    smoking: "喫煙", pets: "ペット", cleaningFee: "清掃料", allowed: "可", notAllowed: "不可",
     price: "価格", notes: "備考", colon: "：",
   },
   ko: {
     name: "한국어", hello: "안녕하세요, 항공기 옵션을 안내드립니다.", thanks: "자세한 정보나 사진이 필요하시면 말씀해 주세요.",
     aircraft: "항공기", operator: "운항사", tail: "등록번호", base: "기지", yom: "제조 연도", yor: "개조 연도",
     capacity: "좌석 수", seats: (n) => `${n}석`, wifi: "WIFI", wifiYes: "있음", wifiNo: "없음", wifiTbc: "확인 중",
+    smoking: "흡연", pets: "반려동물", cleaningFee: "청소비", allowed: "가능", notAllowed: "불가",
     price: "가격", notes: "비고", colon: ": ",
   },
   vi: {
     name: "Tiếng Việt", hello: "Xin chào, dưới đây là các lựa chọn máy bay:", thanks: "Vui lòng cho tôi biết nếu bạn cần thêm thông tin hoặc hình ảnh.",
     aircraft: "Máy bay", operator: "Nhà khai thác", tail: "Số đăng ký", base: "Căn cứ", yom: "Năm sản xuất", yor: "Năm tân trang",
     capacity: "Sức chứa", seats: (n) => `${n} chỗ`, wifi: "WIFI", wifiYes: "Có", wifiNo: "Không", wifiTbc: "Chưa xác nhận",
+    smoking: "Hút thuốc", pets: "Thú cưng", cleaningFee: "Phí vệ sinh", allowed: "Được phép", notAllowed: "Không được phép",
     price: "Giá", notes: "Ghi chú", colon: ": ",
   },
   th: {
     name: "ไทย", hello: "สวัสดีครับ/ค่ะ นี่คือตัวเลือกเครื่องบิน:", thanks: "หากต้องการข้อมูลหรือรูปภาพเพิ่มเติม โปรดแจ้งได้เลย",
     aircraft: "เครื่องบิน", operator: "ผู้ให้บริการ", tail: "ทะเบียนเครื่อง", base: "ฐานประจำ", yom: "ปีที่ผลิต", yor: "ปีที่ปรับปรุง",
     capacity: "ความจุ", seats: (n) => `${n} ที่นั่ง`, wifi: "WIFI", wifiYes: "มี", wifiNo: "ไม่มี", wifiTbc: "รอยืนยัน",
+    smoking: "การสูบบุหรี่", pets: "สัตว์เลี้ยง", cleaningFee: "ค่าทำความสะอาด", allowed: "อนุญาต", notAllowed: "ไม่อนุญาต",
     price: "ราคา", notes: "หมายเหตุ", colon: ": ",
   },
   id: {
     name: "Bahasa Indonesia", hello: "Halo, berikut pilihan pesawat:", thanks: "Beri tahu saya jika Anda memerlukan detail atau foto tambahan.",
     aircraft: "Pesawat", operator: "Operator", tail: "Nomor registrasi", base: "Pangkalan", yom: "Tahun Produksi", yor: "Tahun Renovasi",
     capacity: "Kapasitas", seats: (n) => `${n} kursi`, wifi: "WIFI", wifiYes: "Ya", wifiNo: "Tidak", wifiTbc: "Menunggu konfirmasi",
+    smoking: "Merokok", pets: "Hewan peliharaan", cleaningFee: "Biaya pembersihan", allowed: "Diizinkan", notAllowed: "Tidak diizinkan",
     price: "Harga", notes: "Catatan", colon: ": ",
   },
   fr: {
     name: "Français", hello: "Bonjour, voici les options d'avions :", thanks: "N'hésitez pas à me demander plus de détails ou des photos.",
     aircraft: "Appareil", operator: "Opérateur", tail: "Immatriculation", base: "Base", yom: "Année de fabrication", yor: "Année de rénovation",
     capacity: "Capacité", seats: (n) => `${n} place${n === 1 ? "" : "s"}`, wifi: "WIFI", wifiYes: "Oui", wifiNo: "Non", wifiTbc: "À confirmer",
+    smoking: "Fumeur", pets: "Animaux", cleaningFee: "Frais de nettoyage", allowed: "Autorisé", notAllowed: "Non autorisé",
     price: "Prix", notes: "Remarques", colon: " : ",
   },
   de: {
     name: "Deutsch", hello: "Guten Tag, hier sind die Flugzeugoptionen:", thanks: "Gerne sende ich Ihnen weitere Details oder Fotos.",
     aircraft: "Flugzeug", operator: "Betreiber", tail: "Kennzeichen", base: "Heimatbasis", yom: "Baujahr", yor: "Renovierungsjahr",
     capacity: "Kapazität", seats: (n) => `${n} ${n === 1 ? "Sitz" : "Sitze"}`, wifi: "WIFI", wifiYes: "Ja", wifiNo: "Nein", wifiTbc: "Noch zu bestätigen",
+    smoking: "Rauchen", pets: "Haustiere", cleaningFee: "Reinigungsgebühr", allowed: "Erlaubt", notAllowed: "Nicht erlaubt",
     price: "Preis", notes: "Hinweise", colon: ": ",
   },
   ru: {
@@ -99,12 +115,14 @@ export const QUOTE_WORDS: Record<QuoteLanguage, QuoteWords> = {
     capacity: "Вместимость",
     seats: (n) => `${n} ${n % 10 === 1 && n % 100 !== 11 ? "место" : [2, 3, 4].includes(n % 10) && ![12, 13, 14].includes(n % 100) ? "места" : "мест"}`,
     wifi: "WIFI", wifiYes: "Да", wifiNo: "Нет", wifiTbc: "Уточняется",
+    smoking: "Курение", pets: "Животные", cleaningFee: "Плата за уборку", allowed: "Разрешено", notAllowed: "Запрещено",
     price: "Цена", notes: "Примечания", colon: ": ",
   },
   ar: {
     name: "العربية", hello: "مرحباً، إليكم خيارات الطائرات:", thanks: "يرجى إبلاغي إن كنتم ترغبون في مزيد من التفاصيل أو الصور.",
     aircraft: "الطائرة", operator: "المشغّل", tail: "رقم التسجيل", base: "القاعدة", yom: "سنة الصنع", yor: "سنة التجديد",
     capacity: "السعة", seats: (n) => `${n} مقعد`, wifi: "WIFI", wifiYes: "نعم", wifiNo: "لا", wifiTbc: "قيد التأكيد",
+    smoking: "التدخين", pets: "الحيوانات الأليفة", cleaningFee: "رسوم التنظيف", allowed: "مسموح", notAllowed: "غير مسموح",
     price: "السعر", notes: "ملاحظات", colon: ": ",
   },
 };
@@ -118,6 +136,10 @@ export interface QuoteAircraft {
   wifi: WifiStatus;
   /** Typed once on the aircraft ("at USD 10/MB") and carried into every quote. Never translated. */
   wifiDetail?: string | null;
+  /** Smoking and pets on board, and the cleaning fee (never translated). */
+  smoking?: YesNoStatus;
+  pets?: YesNoStatus;
+  cleaningFee?: string | null;
   tail?: string | null;
   operator?: string | null;
   base?: string | null;
@@ -170,6 +192,9 @@ export const TEMPLATE_PLACEHOLDERS = [
   { key: "capacity", help: "seats, for example “13 seats”" },
   { key: "capacity_number", help: "just the number of seats" },
   { key: "wifi", help: "Yes / No / TBC, plus the WIFI details you saved" },
+  { key: "smoking", help: "smoking allowed or not" },
+  { key: "pets", help: "pets allowed or not" },
+  { key: "cleaning_fee", help: "the cleaning fee you saved" },
   { key: "notes", help: "notes (only if “Show notes” is ticked)" },
   { key: "price", help: "the price, left empty for you to fill in" },
 ] as const;
@@ -188,6 +213,9 @@ export function defaultQuoteTemplate(language: QuoteLanguage): QuoteTemplate {
       `${w.yor}${c}{yor}`,
       `${w.capacity}${c}{capacity}`,
       `${w.wifi}${c}{wifi}`,
+      `${w.smoking}${c}{smoking}`,
+      `${w.pets}${c}{pets}`,
+      `${w.cleaningFee}${c}{cleaning_fee}`,
       `${w.notes}${c}{notes}`,
       `${w.price}${c}{price}`,
     ].join("\n"),
@@ -233,6 +261,9 @@ export function buildQuoteParts(items: QuoteAircraft[], opts: QuoteOptions): Quo
       capacity: a.capacity != null ? (t.seats ? t.seats.replace(/\{n\}/g, String(a.capacity)) : w.seats(a.capacity)) : "",
       capacity_number: a.capacity != null ? String(a.capacity) : "",
       wifi,
+      smoking: a.smoking === "yes" ? w.allowed : a.smoking === "no" ? w.notAllowed : "",
+      pets: a.pets === "yes" ? w.allowed : a.pets === "no" ? w.notAllowed : "",
+      cleaning_fee: a.cleaningFee?.trim() ?? "",
       notes: opts.includeNotes && a.notes ? a.notes : "",
       price: (a.price ?? "").trim(),
     };

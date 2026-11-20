@@ -22,6 +22,10 @@ export default function Choice({ name, options, defaultValue, ariaLabel, require
   );
 }
 
+export const YES_NO_CHOICES = [
+  { value: "yes", label: "Yes" }, { value: "no", label: "No" }, { value: "unknown", label: "Unknown" },
+] as const;
+
 export const WIFI_CHOICES = [
   { value: "yes", label: "Yes" }, { value: "no", label: "No" }, { value: "tbc", label: "TBC" }, { value: "unknown", label: "Unknown" },
 ] as const;

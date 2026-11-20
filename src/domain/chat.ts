@@ -3,7 +3,7 @@ import type { Db } from "../db/client";
 import { aircraft, aircraftMedia, aircraftTypes, organisationAircraftRelationships } from "../db/schema";
 import type { Actor } from "./action";
 import type { ParsedCard } from "./card";
-import { guessClassificationFromFilename, CLASSIFICATIONS, type Classification, type WifiStatus } from "./constants";
+import { guessClassificationFromFilename, CLASSIFICATIONS, type Classification, type WifiStatus, type YesNoStatus } from "./constants";
 import { addInformationVersion, addOrganisationAlias, setOrganisationRegion, createAircraft, createOrganisation, findAircraftByTail, getAircraftCard, resolveAircraftTypes, resolveAircraftTypesExact, resolveOrganisations, setBases, setOperator } from "./directory";
 import { DomainError } from "./errors";
 import { approveMedia, setMediaAssociation, updateMediaMetadata } from "./media";
@@ -61,7 +61,7 @@ export interface ApplyInput {
   /** The operator name was given as another name for this existing operator: remember it as an alias. */
   aliasOf?: { organisationId: string; alias: string } | null;
   aircraft: { mode: "existing"; aircraftId: string } | { mode: "new"; registration: string; serialNumber?: string | null; distinct?: boolean } | { mode: "none" };
-  info: { yom: number | null; yor: number | null; capacity: number | null; wifiStatus: WifiStatus; wifiDetail?: string | null; notes: string | null };
+  info: { yom: number | null; yor: number | null; capacity: number | null; wifiStatus: WifiStatus; wifiDetail?: string | null; smoking?: YesNoStatus; pets?: YesNoStatus; cleaningFee?: string | null; notes: string | null };
   base?: { mode: "based" | "floating"; locations: string[] };
   evidenceText?: string | null;
 }
@@ -194,6 +194,10 @@ async function updateExistingAircraft(db: Db, actor: Actor, key: string, aircraf
       capacity: input.info.capacity ?? card.capacity,
       wifiStatus: input.info.wifiStatus !== "unknown" ? input.info.wifiStatus : card.wifi,
       wifiDetail: input.info.wifiDetail ?? card.wifiDetail,
+      // Not mentioned = kept as it is (a new version must not reset them).
+      smoking: input.info.smoking && input.info.smoking !== "unknown" ? input.info.smoking : card.smoking,
+      pets: input.info.pets && input.info.pets !== "unknown" ? input.info.pets : card.pets,
+      cleaningFee: input.info.cleaningFee ?? card.cleaningFee,
       notes: input.info.notes ?? card.notes,
     };
     const changed = [
@@ -201,6 +205,9 @@ async function updateExistingAircraft(db: Db, actor: Actor, key: string, aircraf
       next.yor !== card.yor && "YOR",
       next.capacity !== card.capacity && "capacity",
       (next.wifiStatus !== card.wifi || next.wifiDetail !== card.wifiDetail) && "WIFI",
+      next.smoking !== card.smoking && "smoking",
+      next.pets !== card.pets && "pets",
+      next.cleaningFee !== card.cleaningFee && "cleaning fee",
       next.notes !== card.notes && "notes",
     ].filter(Boolean) as string[];
     if (changed.length) {

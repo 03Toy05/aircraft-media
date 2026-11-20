@@ -23,6 +23,8 @@ import {
   type OrgRole,
   type WifiStatus,
   WIFI_STATUSES,
+  YES_NO_STATUSES,
+  type YesNoStatus,
 } from "./constants";
 import { conflict, invalid, notFound } from "./errors";
 import { normalizeBase, normalizeRegion } from "./places";
@@ -374,6 +376,10 @@ export interface InformationInput {
   capacity?: number | null;
   wifiStatus?: WifiStatus;
   wifiDetail?: string | null;
+  smoking?: YesNoStatus;
+  pets?: YesNoStatus;
+  /** Free text, e.g. "USD 500". */
+  cleaningFee?: string | null;
   notes?: string | null;
 }
 
@@ -528,6 +534,8 @@ function validateInfo(info: InformationInput) {
     throw invalid("Capacity must be a whole number between 0 and 1000");
   }
   if (info.wifiStatus && !WIFI_STATUSES.includes(info.wifiStatus)) throw invalid("Wi-Fi must be yes, no, tbc or unknown");
+  if (info.smoking && !YES_NO_STATUSES.includes(info.smoking)) throw invalid("Smoking must be yes, no or unknown");
+  if (info.pets && !YES_NO_STATUSES.includes(info.pets)) throw invalid("Pets must be yes, no or unknown");
 }
 
 async function insertInformationVersion(
@@ -550,6 +558,9 @@ async function insertInformationVersion(
       capacity: info.capacity ?? null,
       wifiStatus: info.wifiStatus ?? "unknown",
       wifiDetail: info.wifiDetail?.trim() || null,
+      smoking: info.smoking ?? "unknown",
+      pets: info.pets ?? "unknown",
+      cleaningFee: info.cleaningFee?.trim() || null,
       notes: info.notes?.trim() || null,
       sourceEvidenceId: evidenceId,
       effectiveDate,
@@ -728,6 +739,9 @@ export interface AircraftCard {
   capacity: number | null;
   wifi: WifiStatus;
   wifiDetail: string | null;
+  smoking: YesNoStatus;
+  pets: YesNoStatus;
+  cleaningFee: string | null;
   notes: string | null;
   informationVersionId: string | null;
   informationVersion: number;
@@ -773,6 +787,9 @@ export async function getAircraftCard(db: Q, aircraftId: string): Promise<Aircra
     capacity: info?.capacity ?? null,
     wifi: info?.wifiStatus ?? "unknown",
     wifiDetail: info?.wifiDetail ?? null,
+    smoking: info?.smoking ?? "unknown",
+    pets: info?.pets ?? "unknown",
+    cleaningFee: info?.cleaningFee ?? null,
     notes: info?.notes ?? null,
     informationVersionId: info?.id ?? null,
     informationVersion: info?.versionNumber ?? 0,

@@ -99,6 +99,13 @@
       "when": 1795100300000,
       "tag": "0013_combined_view",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1795100400000,
+      "tag": "0014_cabin_rules_quote_shares",
+      "breakpoints": true
     }
   ]
 }

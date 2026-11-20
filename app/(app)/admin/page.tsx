@@ -3,6 +3,7 @@ import { getDb } from "@/db/client";
 import { aircraft, aircraftMedia, organisations, users } from "@/db/schema";
 import { requireAdmin } from "@/lib/session";
 import { TRIAL_DAYS, accessFor } from "@/domain/accounts";
+import { quoteShareStats, type QuoteShareStats } from "@/domain/quoteShares";
 import {
   extendTrialAction, inviteUserAction, setBlockedAction, setPlanAction, viewAsAction, withdrawInviteAction,
 } from "../../actions";
@@ -10,8 +11,10 @@ import { Flash, Key, one, type SP } from "../../_components/ui";
 import Choice from "../../_components/Choice";
 
 const day = (d: Date | null) => (d ? d.toISOString().slice(0, 10) : "–");
+const quotesLine = (q: QuoteShareStats | undefined) =>
+  `${q?.quotes ?? 0} quote${q?.quotes === 1 ? "" : "s"} shared${q?.last30 ? ` (${q.last30} in the last 30 days)` : ""}`;
 
-/** Platform admin: invite people, see how their trials stand, extend or turn off access, and look at a workspace. */
+/** Platform admin: invite people, see how their trials stand and how much they use it, extend or turn off access, and look at a workspace. */
 export default async function Admin({ searchParams }: { searchParams: SP }) {
   const sp = await searchParams;
   const me = await requireAdmin();
@@ -21,11 +24,77 @@ export default async function Admin({ searchParams }: { searchParams: SP }) {
   const photos = toMap(await db.select({ t: aircraftMedia.tenantId, n: count() }).from(aircraftMedia).where(eq(aircraftMedia.lifecycleState, "active")).groupBy(aircraftMedia.tenantId));
   const planes = toMap(await db.select({ t: aircraft.tenantId, n: count() }).from(aircraft).where(eq(aircraft.active, true)).groupBy(aircraft.tenantId));
   const ops = toMap(await db.select({ t: organisations.tenantId, n: count() }).from(organisations).where(eq(organisations.active, true)).groupBy(organisations.tenantId));
+  const shares = await quoteShareStats(db);
+  const mine = me.viewingAs ? undefined : shares.get(me.actor.tenantId);
 
   return (
     <>
       <h1>Users</h1>
       <Flash error={one(sp.error)} ok={one(sp.ok)} />
+      <div className="card">
+        <div className="people-head">
+          <h3 style={{ margin: 0 }}>People ({people.length})</h3>
+          {!me.viewingAs && <span className="small muted">Your own workspace: {quotesLine(mine)}</span>}
+        </div>
+        <p className="small muted" style={{ margin: "4px 0 6px" }}>
+          A quote counts as shared when the phone&apos;s share sheet hands it to an app, or its message is copied. Sharing the same quote again, or option by option, counts once. The phone cannot tell whether it was then sent.
+        </p>
+        {people.length === 0 ? <p className="muted">Nobody invited yet.</p> : people.map((u) => {
+          const a = accessFor(u);
+          const status =
+            u.status === "blocked" ? { label: "Turned off", tone: "off" }
+            : !u.firstSignInAt ? { label: "Invited, not signed in yet", tone: "wait" }
+            : u.plan === "full" ? { label: "Full access", tone: "ok" }
+            : a.expired ? { label: "Trial ended (read-only)", tone: "off" }
+            : { label: `Trial · ${a.daysLeft} day${a.daysLeft === 1 ? "" : "s"} left`, tone: a.daysLeft != null && a.daysLeft <= 3 ? "warn" : "ok" };
+          const trialNote = u.plan !== "trial" ? null
+            : u.trialEndsAt ? `trial ${a.expired ? "ended" : "ends"} ${day(u.trialEndsAt)}`
+            : `${TRIAL_DAYS}-day trial starts at first sign-in`;
+          const q = shares.get(u.tenantId);
+          return (
+            <div key={u.id} className="person">
+              <div className="person-head">
+                <div style={{ minWidth: 0 }}>
+                  <b>{u.displayName}</b> <span className={`pill ${status.tone}`}>{status.label}</span>
+                  <div className="small muted">{u.email}</div>
+                </div>
+                {u.firstSignInAt && (
+                  <form action={viewAsAction}><input type="hidden" name="userId" value={u.id} /><button className="secondary small-btn" type="submit">Look</button></form>
+                )}
+              </div>
+              <div className="stats">
+                <div className="stat"><span className="stat-n">{q?.quotes ?? 0}</span><span className="stat-l">quotes shared{q?.last30 ? ` · ${q.last30} in 30 days` : ""}</span></div>
+                <div className="stat"><span className="stat-n">{photos.get(u.tenantId) ?? 0}</span><span className="stat-l">photos</span></div>
+                <div className="stat"><span className="stat-n">{planes.get(u.tenantId) ?? 0}</span><span className="stat-l">aircraft</span></div>
+                <div className="stat"><span className="stat-n">{ops.get(u.tenantId) ?? 0}</span><span className="stat-l">operators</span></div>
+              </div>
+              <div className="small muted">
+                {u.firstSignInAt ? `Signed in first ${day(u.firstSignInAt)}, last ${day(u.lastSignInAt)}` : "Has not signed in yet"}
+                {q?.lastAt ? ` · last quote shared ${day(q.lastAt)}` : ""}
+                {trialNote ? ` · ${trialNote}` : ""}
+              </div>
+              <div className="person-actions">
+                {u.plan === "trial" && (
+                  <form action={extendTrialAction} className="inline-form">
+                    <Key /><input type="hidden" name="userId" value={u.id} />
+                    <Choice name="days" defaultValue="14" ariaLabel="Days to add" options={[{ value: "7", label: "+7" }, { value: "14", label: "+14" }, { value: "30", label: "+30 days" }]} />
+                    <button className="secondary small-btn" type="submit">Extend trial</button>
+                  </form>
+                )}
+                <form action={setPlanAction}><Key /><input type="hidden" name="userId" value={u.id} /><input type="hidden" name="plan" value={u.plan === "full" ? "trial" : "full"} />
+                  <button className="secondary small-btn" type="submit">{u.plan === "full" ? "Make trial" : "Make full"}</button></form>
+                <span className="spacer" />
+                {u.firstSignInAt ? (
+                  <form action={setBlockedAction}><Key /><input type="hidden" name="userId" value={u.id} /><input type="hidden" name="blocked" value={u.status === "blocked" ? "0" : "1"} />
+                    <button className={`${u.status === "blocked" ? "secondary" : "danger"} small-btn`} type="submit">{u.status === "blocked" ? "Turn on" : "Turn off"}</button></form>
+                ) : (
+                  <form action={withdrawInviteAction}><Key /><input type="hidden" name="userId" value={u.id} /><button className="danger small-btn" type="submit">Withdraw invite</button></form>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
       <div className="grid g2">
         <form action={inviteUserAction} className="card">
           <h3>Invite someone</h3>
@@ -48,55 +117,6 @@ export default async function Admin({ searchParams }: { searchParams: SP }) {
             <li>“Look” opens their workspace read-only for you. Use “Back to my workspace” at the top to return.</li>
           </ul>
         </div>
-      </div>
-      <div className="card">
-        <h3>People ({people.length})</h3>
-        {people.length === 0 ? <p className="muted">Nobody invited yet.</p> : (
-          <table>
-            <thead><tr><th>Person</th><th>Access</th><th>Signed in</th><th>Photos · aircraft · operators</th><th>Actions</th></tr></thead>
-            <tbody>
-              {people.map((u) => {
-                const a = accessFor(u);
-                const access =
-                  u.status === "blocked" ? "Turned off"
-                  : u.plan === "full" ? "Full"
-                  : !u.trialEndsAt ? `Trial, ${TRIAL_DAYS} days from first sign-in`
-                  : a.expired ? `Trial ended ${day(u.trialEndsAt)} (read-only)`
-                  : `Trial, ${a.daysLeft} day${a.daysLeft === 1 ? "" : "s"} left (ends ${day(u.trialEndsAt)})`;
-                return (
-                  <tr key={u.id}>
-                    <td><b>{u.displayName}</b><div className="small muted">{u.email}</div></td>
-                    <td className="small">{access}</td>
-                    <td className="small">{u.firstSignInAt ? `First ${day(u.firstSignInAt)}, last ${day(u.lastSignInAt)}` : "Not yet"}</td>
-                    <td className="small">{photos.get(u.tenantId) ?? 0} · {planes.get(u.tenantId) ?? 0} · {ops.get(u.tenantId) ?? 0}</td>
-                    <td>
-                      <div className="row" style={{ gap: 6, flexWrap: "wrap", alignItems: "center" }}>
-                        {u.firstSignInAt && (
-                          <form action={viewAsAction}><input type="hidden" name="userId" value={u.id} /><button className="secondary small-btn" type="submit">Look</button></form>
-                        )}
-                        {u.plan === "trial" && (
-                          <form action={extendTrialAction} className="row" style={{ gap: 4 }}>
-                            <Key /><input type="hidden" name="userId" value={u.id} />
-                            <Choice name="days" defaultValue="14" ariaLabel="Days to add" options={[{ value: "7", label: "+7" }, { value: "14", label: "+14" }, { value: "30", label: "+30 days" }]} />
-                            <button className="secondary small-btn" type="submit">Extend</button>
-                          </form>
-                        )}
-                        <form action={setPlanAction}><Key /><input type="hidden" name="userId" value={u.id} /><input type="hidden" name="plan" value={u.plan === "full" ? "trial" : "full"} />
-                          <button className="secondary small-btn" type="submit">{u.plan === "full" ? "Make trial" : "Make full"}</button></form>
-                        {u.firstSignInAt ? (
-                          <form action={setBlockedAction}><Key /><input type="hidden" name="userId" value={u.id} /><input type="hidden" name="blocked" value={u.status === "blocked" ? "0" : "1"} />
-                            <button className={`${u.status === "blocked" ? "secondary" : "danger"} small-btn`} type="submit">{u.status === "blocked" ? "Turn on" : "Turn off"}</button></form>
-                        ) : (
-                          <form action={withdrawInviteAction}><Key /><input type="hidden" name="userId" value={u.id} /><button className="danger small-btn" type="submit">Withdraw</button></form>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        )}
       </div>
     </>
   );
