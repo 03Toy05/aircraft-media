@@ -3,6 +3,7 @@ import { getDb } from "@/db/client";
 import { getDriveClient, getFileStore } from "@/storage";
 import { exportRootFor, exportToDrive, type ExportSummary } from "@/domain/cbosExport";
 import { ensureCombinedPhotos } from "@/domain/combinedPhoto";
+import { collectContributions, isOptedIn } from "@/domain/library";
 import type { Session } from "./session";
 import { devBypassEnabled } from "./owner";
 
@@ -31,7 +32,8 @@ export function runCombine(s: Pick<Session, "actor">) {
 /**
  * After photos are approved or changed, once the response has gone out (so saving stays fast):
  *  1. make the combined photo for any aircraft that now has enough photos, then
- *  2. refresh the CBOS export.
+ *  2. refresh the CBOS export, then
+ *  3. offer new approved photos to the platform library, if this user shares with it.
  * Best effort: a failure is logged and the next change (or the buttons) catches up.
  */
 export function exportAfterResponse(s: Pick<Session, "actor" | "isAdmin" | "email">) {
@@ -40,7 +42,6 @@ export function exportAfterResponse(s: Pick<Session, "actor" | "isAdmin" | "emai
   const dev = devBypassEnabled();
   const combine = !dev || getFileStore().kind === "local";
   const exportNow = !!getDriveClient() && !dev;
-  if (!combine && !exportNow) return;
   after(async () => {
     if (combine) {
       try {
@@ -57,6 +58,12 @@ export function exportAfterResponse(s: Pick<Session, "actor" | "isAdmin" | "emai
       } catch (e) {
         console.error("CBOS export failed", e);
       }
+    }
+    try {
+      const db = await getDb();
+      if (await isOptedIn(db, s.actor.id)) await queued(s.actor.tenantId, () => collectContributions(db, s.actor.tenantId, s.actor.id));
+    } catch (e) {
+      console.error("Library contributions failed", e);
     }
   });
 }

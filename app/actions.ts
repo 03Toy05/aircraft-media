@@ -17,6 +17,8 @@ import * as dir from "@/domain/directory";
 import * as contacts from "@/domain/contacts";
 import * as quoteTemplates from "@/domain/quoteTemplates";
 import * as quoteShares from "@/domain/quoteShares";
+import * as library from "@/domain/library";
+import { after } from "next/server";
 import * as media from "@/domain/media";
 import * as settings from "@/domain/settings";
 import { applyChatProposal } from "@/domain/chat";
@@ -687,4 +689,64 @@ export async function recordQuoteShareAction(input: { quoteKey: string; how: "sh
   } catch (e) {
     console.error("recordQuoteShare failed", e);
   }
+}
+
+// ------------------------------------------------------------------ platform library
+
+/** Settings: share (or stop sharing) this workspace's approved photos with the platform library. */
+export async function setLibraryOptInAction(fd: FormData) {
+  const s = await requireUser();
+  if (s.viewingAs) redirect(withParam("/settings", "error", "You are looking at someone else's workspace."));
+  const on = str(fd, "libraryOptIn") === "yes";
+  const db = await getDb();
+  await library.setOptIn(db, s.actor.id, on);
+  // Offer what is already approved, once the page has answered.
+  if (on) after(async () => {
+    try { await library.collectContributions(await getDb(), s.actor.tenantId, s.actor.id); } catch (e) { console.error("Library contributions failed", e); }
+  });
+  revalidatePath("/settings");
+  redirect(withParam("/settings", "ok", on ? "Thank you. Your approved photos will help build the library." : "Your photos are no longer offered to the library."));
+}
+
+async function libraryAdmin() {
+  const s = await requireAdmin();
+  if (s.viewingAs) redirect(withParam("/library/review", "error", "Go back to your own workspace first."));
+  return { admin: s.actor, db: await getDb(), store: getFileStore() };
+}
+
+/** Library review: accept the ticked photos of one aircraft, under the chosen library operator. */
+export async function acceptLibraryAction(fd: FormData) {
+  const { admin, db, store } = await libraryAdmin();
+  const ids = fd.getAll("contributionId").map(String);
+  const op = str(fd, "operator");
+  let msg: string;
+  try {
+    if (!ids.length) throw new Error("Tick at least one photo to accept.");
+    const r = await library.acceptContributions(db, store, admin, {
+      matchKey: str(fd, "matchKey"),
+      contributionIds: ids,
+      operator: op && op !== "new" ? { kind: "existing", id: op } : { kind: "new", name: str(fd, "newOperatorName") },
+    });
+    msg = `Added ${r.accepted} photo${r.accepted === 1 ? "" : "s"} to the library${r.skipped.length ? ` (passed over: ${r.skipped.join("; ")})` : ""}.`;
+  } catch (e) {
+    redirect(withParam("/library/review", "error", (e as Error).message));
+  }
+  revalidatePath("/library");
+  redirect(withParam("/library/review", "ok", msg));
+}
+
+/** Library review: turn the ticked photos down (their places open again for others). */
+export async function rejectLibraryAction(fd: FormData) {
+  const { admin, db } = await libraryAdmin();
+  const n = await library.rejectContributions(db, admin, fd.getAll("contributionId").map(String));
+  revalidatePath("/library/review");
+  redirect(withParam("/library/review", "ok", `${n} photo${n === 1 ? "" : "s"} turned down.`));
+}
+
+/** Library review: look through every workspace that shares with the library for photos it still needs. */
+export async function collectLibraryNowAction() {
+  const { db } = await libraryAdmin();
+  const n = await library.collectAll(db);
+  revalidatePath("/library/review");
+  redirect(withParam("/library/review", "ok", n ? `${n} new photo${n === 1 ? "" : "s"} offered.` : "Nothing new to offer."));
 }

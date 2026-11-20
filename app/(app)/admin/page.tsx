@@ -72,6 +72,7 @@ export default async function Admin({ searchParams }: { searchParams: SP }) {
                 {u.firstSignInAt ? `Signed in first ${day(u.firstSignInAt)}, last ${day(u.lastSignInAt)}` : "Has not signed in yet"}
                 {q?.lastAt ? ` · last quote shared ${day(q.lastAt)}` : ""}
                 {trialNote ? ` · ${trialNote}` : ""}
+                {u.libraryOptIn ? " · shares photos with the library" : ""}
               </div>
               <div className="person-actions">
                 {u.plan === "trial" && (

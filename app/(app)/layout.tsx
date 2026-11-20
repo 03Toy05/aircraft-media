@@ -30,6 +30,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         <Link href="/quote"><Icon name="quote" />Quote</Link>
         <Link href="/contacts"><Icon name="contacts" />Contacts</Link>
         <Link href="/settings"><Icon name="settings" />Settings</Link>
+        {s.isAdmin && <Link href="/library"><Icon name="plane" />Library</Link>}
         {s.isAdmin && <Link href="/admin"><Icon name="contacts" />Users</Link>}
         <span className="spacer" />
         <span className="muted small">{email}</span>

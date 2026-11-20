@@ -359,3 +359,14 @@ code.ref { font-size: 12px; padding: 1px 6px; border: 1px solid var(--line); bor
   .pill.wait { background: #252b33; color: #c2c8d0; }
   .pill.off { background: #3b1616; color: #f3a5a5; }
 }
+
+/* Platform library */
+.lib-tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 8px; margin: 8px 0; }
+.lib-tile { position: relative; display: block; margin: 0; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; background: var(--card); cursor: pointer; }
+.lib-tile img { display: block; width: 100%; height: 90px; object-fit: cover; }
+.lib-tile.combined { grid-column: span 2; }
+.lib-tile.combined img { object-fit: contain; background: #fff; }
+.lib-tile input { position: absolute; top: 6px; left: 6px; width: 18px; height: 18px; margin: 0; }
+.lib-tile span { display: block; padding: 2px 6px; font-size: 12px; color: var(--muted); }
+.lib-ac { border-top: 1px solid var(--line); padding: 10px 0; }
+.lib-ac:first-of-type { border-top: 0; }

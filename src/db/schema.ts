@@ -64,6 +64,8 @@ export const users = pgTable(
     firstSignInAt: timestamp("first_sign_in_at", { withTimezone: true }),
     lastSignInAt: timestamp("last_sign_in_at", { withTimezone: true }),
     invitedBy: uuid("invited_by"),
+    /** Shares this workspace's approved photos with the platform library (off until the user turns it on). */
+    libraryOptIn: boolean("library_opt_in").notNull().default(false),
     createdAt: created(),
     updatedAt: updated(),
   },
@@ -494,6 +496,35 @@ export const quoteShares = pgTable(
     createdAt: created(),
   },
   (t) => [index("quote_shares_tenant_idx").on(t.tenantId, t.createdAt)],
+);
+
+// ---- the platform library: photos offered from users' workspaces, and what the admin decided ----
+export const libraryContributions = pgTable(
+  "library_contributions",
+  {
+    id: pk(),
+    sourceTenantId: uuid("source_tenant_id").notNull(),
+    contributorUserId: uuid("contributor_user_id").notNull(),
+    /** Each workspace photo is offered at most once. */
+    sourceMediaId: uuid("source_media_id").notNull(),
+    sourceContentVersionId: uuid("source_content_version_id").notNull(),
+    sourceAircraftId: uuid("source_aircraft_id").notNull(),
+    classification: text("classification").notNull(),
+    /** Which library aircraft it is for: "tail:BKXX", or "op:tagaviation|type:gulfstreamg650er" when there is no tail. */
+    matchKey: text("match_key").notNull(),
+    operatorName: text("operator_name"),
+    aircraftType: text("aircraft_type").notNull(),
+    tail: text("tail"),
+    /** pending | accepted | rejected | superseded (the library set filled up first) */
+    status: text("status").notNull().default("pending"),
+    libraryAircraftId: uuid("library_aircraft_id"),
+    libraryMediaId: uuid("library_media_id"),
+    decidedBy: uuid("decided_by"),
+    decidedAt: timestamp("decided_at", { withTimezone: true }),
+    note: text("note"),
+    createdAt: created(),
+  },
+  (t) => [uniqueIndex("library_contrib_media_uq").on(t.sourceMediaId), index("library_contrib_status_idx").on(t.status, t.matchKey)],
 );
 
 // ---- CBOS export: the CBOS-named copy of each approved photo (import assistance only, never identity) ----

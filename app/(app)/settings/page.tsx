@@ -4,7 +4,8 @@ import { actionExecutions, organisations, users, verifiedWhatsappNumbers } from 
 import { requireOwner } from "@/lib/session";
 import { LANGUAGES } from "@/domain/settings";
 import { MAX_PREFERRED_OPERATORS, getPreferredOperators } from "@/domain/directory";
-import { addNumberAction, deactivateNumberAction, setLanguageAction, setPreferredOperatorsAction } from "../../actions";
+import { addNumberAction, deactivateNumberAction, setLanguageAction, setLibraryOptInAction, setPreferredOperatorsAction } from "../../actions";
+import Choice from "../../_components/Choice";
 import { Flash, Key, one, type SP } from "../../_components/ui";
 import SearchSelect from "../../_components/SearchSelect";
 
@@ -48,6 +49,20 @@ export default async function Settings({ searchParams }: { searchParams: SP }) {
                   options={orgs.map((o) => ({ value: o.id, label: o.canonicalName, hint: o.region ?? undefined }))} /></div>
             ))}
             <div style={{ marginTop: 10 }}><button type="submit">Save preferred operators</button></div>
+          </form>
+        </div>
+        <div className="card" id="library">
+          <h3>Aircraft Media library</h3>
+          <p className="muted small">
+            Help build a shared library of aircraft photos. When this is on, your approved photos are offered to the library:
+            1 exterior, 2 cabin and 1 floor plan per aircraft, only where the library does not have them yet. The Aircraft Media
+            team reviews each one first. Only the aircraft details and the photos are shared, never your prices, quotes,
+            contacts or notes. Photos you mark as restricted are never shared. Turning it off stops new offers.
+          </p>
+          <form action={setLibraryOptInAction} className="row" style={{ alignItems: "end" }}>
+            <div><label>Share my approved photos with the library</label>
+              <Choice name="libraryOptIn" defaultValue={me?.libraryOptIn ? "yes" : "no"} ariaLabel="Share with the library" options={[{ value: "yes", label: "Yes, share" }, { value: "no", label: "No" }]} /></div>
+            <div style={{ flex: "0 0 auto" }}><button className="secondary" type="submit">Save</button></div>
           </form>
         </div>
         <div className="card">

@@ -40,6 +40,7 @@ export default function MobileNav({ email, signOut, isAdmin = false }: { email: 
           <Link href="/photos"><Icon name="photos" />Approved photos</Link>
           <Link href="/intake"><Icon name="upload" />Upload photos</Link>
           <Link href="/settings"><Icon name="settings" />Settings</Link>
+          {isAdmin && <Link href="/library"><Icon name="plane" />Library</Link>}
           {isAdmin && <Link href="/admin"><Icon name="contacts" />Users</Link>}
           <p className="small muted" style={{ margin: "6px 0" }}>{email}</p>
           <form action={signOut}><button type="submit" className="secondary"><Icon name="signout" />Sign out</button></form>
