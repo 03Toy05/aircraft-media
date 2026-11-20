@@ -24,7 +24,7 @@ import * as settings from "@/domain/settings";
 import { applyChatProposal } from "@/domain/chat";
 import { makeCombinedPhoto } from "@/domain/combinedPhoto";
 import { and, eq } from "drizzle-orm";
-import { aircraft as aircraftTable } from "@/db/schema";
+import { aircraft as aircraftTable, aircraftMedia as mediaTable } from "@/db/schema";
 import { CLASSIFICATIONS, type Classification, type OrgRole, type RightsStatus, type WifiStatus, type YesNoStatus } from "@/domain/constants";
 import { signOut } from "@/auth";
 
@@ -501,7 +501,7 @@ async function assignFromForm(actor: Actor, db: Awaited<ReturnType<typeof getDb>
       newOperatorName: operatorChoice === "new" ? str(fd, "newOperatorName") : null,
       aircraftTypeId: optStr(fd, "aircraftTypeId"),
       aircraft: aircraftChoice === "new" ? { mode: "new", registration: tail } : aircraftChoice === "none" || !aircraftChoice ? { mode: "none" } : { mode: "existing", aircraftId: aircraftChoice },
-      info: { yom: optNum(fd, "yom"), yor: optNum(fd, "yor"), capacity: optNum(fd, "capacity"), wifiStatus: (str(fd, "wifiStatus") || "unknown") as WifiStatus, notes: optStr(fd, "notes") },
+      info: infoFrom(fd),
       base: baseMode === "floating" ? { mode: "floating", locations: [] } : baseMode === "based" && baseLocations.length ? { mode: "based", locations: baseLocations } : undefined,
     });
     // One line per outcome ("3 photos approved as this aircraft"), not one per photo.
@@ -843,4 +843,29 @@ export async function importLibraryPackAction(fd: FormData) {
   }
   revalidatePath("/library");
   redirect(withParam("/library", "ok", msg));
+}
+
+/**
+ * Review: take an unwanted photo out of a set waiting for review (e.g. a logo or a person pulled out of a PDF).
+ * It is marked rejected, so it leaves Review and is never used; it stays under Rejected, where it can be reopened.
+ */
+export async function removeReviewPhotoAction(mediaId: string): Promise<{ ok: boolean; message: string }> {
+  let actor: Actor;
+  try {
+    ({ actor } = await requireWriter());
+  } catch (e) {
+    if (e instanceof DomainError) return { ok: false, message: e.message };
+    throw e;
+  }
+  const db = await getDb();
+  const [m] = await db.select({ version: mediaTable.version, tenantId: mediaTable.tenantId }).from(mediaTable).where(eq(mediaTable.id, mediaId));
+  if (!m || m.tenantId !== actor.tenantId) return { ok: false, message: "That photo is no longer here." };
+  try {
+    await media.rejectMedia(db, actor, randomUUID(), { mediaId, expectedVersion: m.version, reason: "Removed in Review" });
+  } catch (e) {
+    if (e instanceof DomainError) return { ok: false, message: e.message };
+    throw e;
+  }
+  revalidatePath("/", "layout");
+  return { ok: true, message: "Removed" };
 }

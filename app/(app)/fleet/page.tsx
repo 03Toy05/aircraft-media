@@ -19,7 +19,7 @@ import {
 import { Flash, Key, one, type SP } from "../../_components/ui";
 import PlacePicker from "../../_components/PlacePicker";
 import SearchSelect from "../../_components/SearchSelect";
-import Choice, { WIFI_CHOICES } from "../../_components/Choice";
+import Choice, { WIFI_CHOICES, YES_NO_CHOICES } from "../../_components/Choice";
 
 /** The page's filters and view, remembered on each device (see RememberFilters). */
 const FILTER_KEYS = ["q", "region", "category", "base", "wifi", "acsort", "sort", "view"];
@@ -267,7 +267,12 @@ export default async function Fleet({ searchParams }: { searchParams: SP }) {
             </div>
             <label>WIFI</label>
             <Choice name="wifiStatus" defaultValue={one(sp.wifi) ?? "unknown"} options={WIFI_CHOICES} ariaLabel="WIFI" />
-            <label>WIFI details (optional, shown in quotes)</label><input name="wifiDetail" placeholder="e.g. at USD 10/MB" />
+            <label>WIFI details</label><input name="wifiDetail" placeholder="e.g. complimentary, or USD 10/MB" />
+            <div className="row">
+              <div><label>Smoking</label><Choice name="smoking" defaultValue={"unknown"} options={YES_NO_CHOICES} ariaLabel="Smoking" /></div>
+              <div><label>Pets</label><Choice name="pets" defaultValue={"unknown"} options={YES_NO_CHOICES} ariaLabel="Pets" /></div>
+            </div>
+            <label>Cleaning fee</label><input name="cleaningFee" placeholder="e.g. USD 500 for pets or smoking" />
             <label>Notes</label><input name="notes" defaultValue={one(sp.notes)} placeholder="Owner's approval required" />
             {tailInUse && <label style={{ color: "var(--warn)" }}><input type="checkbox" name="tailResolution" value="distinct_aircraft" /> This is a different aircraft that uses the same tail number</label>}
             <p><button type="submit">Create aircraft</button></p>

@@ -181,6 +181,10 @@ export function normalizeSpoken(text: string): string {
 function parseWifiValue(value: string): { status: WifiStatus; detail: string } | null {
   const en = value.match(/^(yes|no|tbc|unknown)\b[\s,;:\-–—]*(.*)$/i);
   if (en) return { status: en[1].toLowerCase() as WifiStatus, detail: en[2].trim() };
+  // How brochures say it: "complimentary", "free", "available" (yes, kept as the detail); "on request" (TBC); "none".
+  if (/^(not available|unavailable|none|n\/a)\b/i.test(value)) return { status: "no", detail: "" };
+  if (/^on request\b/i.test(value)) return { status: "tbc", detail: value.trim() };
+  if (/^(complimentary|free|included|available|on ?board|equipped|fitted)\b/i.test(value)) return { status: "yes", detail: value.trim() };
   const zh = value.match(/^(待確認|待确认|未確認|未确认|待定|不明|未知|已包含|包含|不提供|沒有|没有|提供|有|是|無|无|冇|否)[\s,，;；:：\-–—]*(.*)$/);
   if (!zh) return null;
   const w = zh[1];

@@ -47,7 +47,7 @@ export default async function ReviewQueue({ searchParams }: { searchParams: SP }
       notes: d.notes,
       defaults: {
         operator: d.operator, newOperatorName: d.newOperatorName, aircraft: d.aircraft, type: d.type,
-        tail: p?.tail ?? "", yom: num(p?.yom), yor: num(p?.yor), capacity: num(p?.capacity), wifi: p?.wifi ?? "unknown", notes: p?.notes ?? "",
+        tail: p?.tail ?? "", yom: num(p?.yom), yor: num(p?.yor), capacity: num(p?.capacity), wifi: p?.wifi ?? "unknown", wifiDetail: p?.wifiDetail ?? "", smoking: p?.smoking ?? "unknown", pets: p?.pets ?? "unknown", notes: p?.notes ?? "",
         baseMode: p?.base?.mode ?? "", baseLocations: p?.base?.locations.join(", ") ?? "",
       },
     });

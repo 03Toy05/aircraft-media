@@ -4,10 +4,10 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import type { Classification } from "@/domain/constants";
-import { assignGroupAction } from "../actions";
+import { assignGroupAction, removeReviewPhotoAction } from "../actions";
 import AircraftPicker, { type PickerAircraft, type PickerOperator, type PickerTypeGroup } from "./AircraftPicker";
 import { SetRest, ViewChoice } from "./ViewChoice";
-import Choice, { WIFI_CHOICES } from "./Choice";
+import Choice, { WIFI_CHOICES, YES_NO_CHOICES } from "./Choice";
 
 export interface SheetPhoto { mediaId: string; src: string | null; filename: string | null; classification: Classification; autoReason: string | null }
 export interface SheetGroup {
@@ -19,7 +19,7 @@ export interface SheetGroup {
   notes: { text: string; warn: boolean }[];
   defaults: {
     operator: string; newOperatorName: string; aircraft: string; type: string;
-    tail: string; yom: string; yor: string; capacity: string; wifi: string; notes: string; baseMode: string; baseLocations: string;
+    tail: string; yom: string; yor: string; capacity: string; wifi: string; wifiDetail: string; smoking: string; pets: string; notes: string; baseMode: string; baseLocations: string;
   };
 }
 
@@ -62,9 +62,22 @@ function GroupCard({
   const router = useRouter();
   const [pending, start] = useTransition();
   const [result, setResult] = useState<{ ok: boolean; message: string } | null>(null);
+  const [removed, setRemoved] = useState<string[]>([]);
+  const [removing, setRemoving] = useState<string | null>(null);
   const group = `g-${g.key}`;
   const d = g.defaults;
-  const n = g.photos.length;
+  const photos = g.photos.filter((p) => !removed.includes(p.mediaId));
+  const n = photos.length;
+  if (n === 0) return null;
+
+  // Takes one photo out of this set for good (it goes to Rejected, where it can be reopened).
+  const remove = async (p: SheetPhoto) => {
+    setRemoving(p.mediaId);
+    const r = await removeReviewPhotoAction(p.mediaId);
+    setRemoving(null);
+    if (r.ok) setRemoved((x) => [...x, p.mediaId]);
+    else setResult({ ok: false, message: r.message });
+  };
 
   return (
     <form
@@ -85,20 +98,24 @@ function GroupCard({
     >
       <div className="sheet-head">
         <h3>{g.label ?? `${n} photo${n === 1 ? "" : "s"}`} <span className="muted small">{g.label ? `${n} photo${n === 1 ? "" : "s"} · ` : ""}received {g.receivedAt}</span></h3>
-        <Link className="small" href={`/review/${g.photos[0].mediaId}`}>Open full page (crop, reject)</Link>
+        <Link className="small" href={`/review/${photos[0].mediaId}`}>Open full page (crop, reject)</Link>
       </div>
       {g.cardText && <pre className="cardtext small">{g.cardText}</pre>}
       {g.notes.map((x, i) => <p key={i} className="small" style={{ margin: "2px 0", color: x.warn ? "var(--warn)" : undefined }}>{x.text}</p>)}
       <div className="sheet-body">
         <fieldset className="siblings views">
           <legend>Views</legend>
-          {g.photos.map((p) => (
+          {photos.map((p) => (
             <div key={p.mediaId} className="sibling">
               <input type="checkbox" name="also" value={p.mediaId} defaultChecked aria-label={`Include ${p.filename ?? "photo"}`} />
               {/* eslint-disable-next-line @next/next/no-img-element */}
               {p.src ? <a href={p.src} target="_blank" rel="noreferrer"><img src={p.src} alt="" /></a> : <span />}
               <span className="small sib-name">{p.filename ?? "Photo"}{p.autoReason ? <span className="muted"> · {p.autoReason}</span> : null}</span>
               <ViewChoice name={`cls_${p.mediaId}`} value={p.classification} label={`View of ${p.filename ?? "photo"}`} group={group} />
+              <button type="button" className="secondary small-btn remove-photo" disabled={readOnly || removing === p.mediaId}
+                onClick={() => remove(p)} aria-label={`Remove ${p.filename ?? "this photo"}`} title="Remove this photo (it goes to Rejected)">
+                {removing === p.mediaId ? "…" : "Remove"}
+              </button>
             </div>
           ))}
           {n > 1 && <p style={{ margin: "6px 0 0" }}><SetRest group={group} to="cabin" label="Set the rest to Cabin" /></p>}
@@ -109,6 +126,11 @@ function GroupCard({
           <label htmlFor={`${group}-tail`}>Tail number</label><input id={`${group}-tail`} name="tail" defaultValue={d.tail} placeholder="Optional" />
           <label>WIFI</label>
           <Choice name="wifiStatus" defaultValue={d.wifi} options={WIFI_CHOICES} ariaLabel="WIFI" />
+          <label htmlFor={`${group}-wifid`}>WIFI details</label><input id={`${group}-wifid`} name="wifiDetail" defaultValue={d.wifiDetail} placeholder="e.g. complimentary" />
+          <div className="row">
+            <div><label>Smoking</label><Choice name="smoking" defaultValue={d.smoking} options={YES_NO_CHOICES} ariaLabel="Smoking" /></div>
+            <div><label>Pets</label><Choice name="pets" defaultValue={d.pets} options={YES_NO_CHOICES} ariaLabel="Pets" /></div>
+          </div>
           <div className="row">
             <div><label htmlFor={`${group}-yom`}>YOM</label><input id={`${group}-yom`} name="yom" type="number" inputMode="numeric" defaultValue={d.yom} /></div>
             <div><label htmlFor={`${group}-yor`}>YOR</label><input id={`${group}-yor`} name="yor" type="number" inputMode="numeric" defaultValue={d.yor} /></div>

@@ -18,7 +18,7 @@ import CropTool from "../../../_components/CropTool";
 import AircraftPicker from "../../../_components/AircraftPicker";
 import { SetRest, ViewChoice } from "../../../_components/ViewChoice";
 import SearchSelect from "../../../_components/SearchSelect";
-import Choice, { WIFI_CHOICES } from "../../../_components/Choice";
+import Choice, { WIFI_CHOICES, YES_NO_CHOICES } from "../../../_components/Choice";
 
 export default async function ReviewWorkspace({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: SP }) {
   const { id } = await params;
@@ -171,6 +171,11 @@ export default async function ReviewWorkspace({ params, searchParams }: { params
             </div>
             <label>WIFI</label>
             <Choice name="wifiStatus" defaultValue={parsed?.wifi ?? "unknown"} options={WIFI_CHOICES} ariaLabel="WIFI" />
+            <label>WIFI details</label><input name="wifiDetail" defaultValue={parsed?.wifiDetail ?? ""} placeholder="e.g. complimentary" />
+            <div className="row">
+              <div><label>Smoking</label><Choice name="smoking" defaultValue={parsed?.smoking ?? "unknown"} options={YES_NO_CHOICES} ariaLabel="Smoking" /></div>
+              <div><label>Pets</label><Choice name="pets" defaultValue={parsed?.pets ?? "unknown"} options={YES_NO_CHOICES} ariaLabel="Pets" /></div>
+            </div>
             <label>Notes</label><input name="notes" defaultValue={parsed?.notes ?? ""} />
             <input type="hidden" name="baseMode" value={parsed?.base?.mode ?? ""} /><input type="hidden" name="baseLocations" value={parsed?.base?.locations.join(", ") ?? ""} />
             <p className="muted small">Details are saved on a new aircraft, or added to the existing aircraft you choose (only the fields you fill in). Each photo is approved when it has a view and an aircraft or type.</p>
