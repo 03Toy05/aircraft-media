@@ -13,23 +13,23 @@ import SearchSelect from "./SearchSelect";
 import Icon from "./Icon";
 import { CHAT_LANGUAGES, parseChatLang, toHans, trClassification, type ChatLang } from "@/domain/chocksText";
 
-/** The words on the chat itself. Chocks's own sentences come from the server in the chosen language. */
+/** The words on the chat itself. Toy's own sentences come from the server in the chosen language. */
 const UI_EN = {
-  hi: "Hi, I'm Chocks.",
+  hi: "Hi, I'm Toy.",
   intro: "What can I do for you?",
   doQuote: "Draft a quote", doAdd: "Add an aircraft or photos", doFind: "Find aircraft",
   addHint: "Fill in what you know (leave the rest blank), attach photos if you have them, then press Send. Nothing is saved until you confirm.",
   askHint: "Or just type or say what you need, e.g. “Give me CapaJet's G550 quote and photos”.",
   template: "Operator: \nRegion: \nAircraft type: \nTail number: \nYOM: \nCapacity: ",
-  placeholderNew: "Ask Chocks, or tap Template…",
-  placeholderReply: "Reply to Chocks, or add more details…",
+  placeholderNew: "Ask Toy, or tap Template…",
+  placeholderReply: "Reply to Toy, or add more details…",
   templateBtn: "Template", speak: "Speak", stop: "Stop", send: "Send", attach: "Photos", voiceOptions: "Voice options",
-  readAloud: "Chocks reads replies aloud", autoSend: "Send when I stop speaking", voiceLanguage: "Voice language", language: "Language",
+  readAloud: "Toy reads replies aloud", autoSend: "Send when I stop speaking", voiceLanguage: "Voice language", language: "Language",
   listening: "Listening… keep talking, pauses are fine. Press Stop listening when you are done (or tick “Send when I stop speaking”). Say something like “Operator Advanced Aviation, aircraft type G280, capacity 10”.",
   noVoice: "Voice input isn't available in this browser. Chrome or Edge work best.",
   blocked: "The microphone is blocked. Allow it in the browser's address bar.",
   stopped: "Voice input stopped ({e}).", nothingHeard: "I stopped listening because I heard nothing for a while.",
-  files: "{n} file(s) attached", checking: "Chocks is checking…", sorry: "Sorry, something went wrong on my side. Please try that again.",
+  files: "{n} file(s) attached", checking: "Toy is checking…", sorry: "Sorry, something went wrong on my side. Please try that again.",
   attached: "Attached:", copy: "Copy message", copied: "Copied. Paste it into your chat or email.",
   copyFail: "Could not copy automatically. Select the message above and copy it.",
   openAircraft: "Open the aircraft →", review: "Review queue →", view: "view?",
@@ -47,21 +47,21 @@ const UI_EN = {
 };
 type UI = typeof UI_EN;
 const UI_HANT: UI = {
-  hi: "你好，我是 Chocks。",
+  hi: "你好，我是 Toy。",
   intro: "有什麼可以幫你？",
   doQuote: "草擬報價", doAdd: "新增飛機或相片", doFind: "搜尋飛機",
   addHint: "填上你知道的資料（其餘留空），有相片可一併附上，然後按傳送。確認前不會儲存任何內容。",
   askHint: "也可以直接輸入或說出你的需要，例如「給我 CapaJet 的 G550 報價和相片」。",
   template: "營運商：\n地區：\n機型：\n機尾號：\n出廠年份：\n載客量：",
-  placeholderNew: "問 Chocks，或按「範本」…",
-  placeholderReply: "回覆 Chocks，或補充更多資料…",
+  placeholderNew: "問 Toy，或按「範本」…",
+  placeholderReply: "回覆 Toy，或補充更多資料…",
   templateBtn: "範本", speak: "語音輸入", stop: "停止", send: "傳送", attach: "相片", voiceOptions: "語音選項",
-  readAloud: "由 Chocks 朗讀回覆", autoSend: "停止說話後自動傳送", voiceLanguage: "語音語言", language: "語言",
+  readAloud: "由 Toy 朗讀回覆", autoSend: "停止說話後自動傳送", voiceLanguage: "語音語言", language: "語言",
   listening: "正在收音…請繼續說，停頓沒關係。說完後按「停止收音」（或勾選「停止說話後自動傳送」）。可以這樣說：「營運商 Advanced Aviation，機型 G280，載客量 10」。",
   noVoice: "此瀏覽器不支援語音輸入。建議使用 Chrome 或 Edge。",
   blocked: "麥克風已被封鎖。請在瀏覽器網址列允許使用麥克風。",
   stopped: "語音輸入已停止（{e}）。", nothingHeard: "因為一段時間沒有聽到聲音，已停止收音。",
-  files: "已附上 {n} 個檔案", checking: "Chocks 正在查核…", sorry: "抱歉，我這邊出了問題，請再試一次。",
+  files: "已附上 {n} 個檔案", checking: "Toy 正在查核…", sorry: "抱歉，我這邊出了問題，請再試一次。",
   attached: "附件：", copy: "複製訊息", copied: "已複製。請貼到你的聊天或電郵中。",
   copyFail: "無法自動複製。請選取上面的訊息再複製。",
   openAircraft: "打開飛機 →", review: "審核隊列 →", view: "角度？",
@@ -84,7 +84,7 @@ const VOICES: { id: string; name: string }[] = [
   { id: "zh-HK", name: "廣東話" }, { id: "zh-TW", name: "國語 (台灣)" }, { id: "zh-CN", name: "普通话" },
 ];
 
-/** "Copy message": puts the quotation text Chocks just showed on the clipboard. */
+/** "Copy message": puts the quotation text Toy just showed on the clipboard. */
 function CopyButton({ text, ui, quote }: { text: string; ui: UI; quote?: { key: string; options: number } }) {
   const [done, setDone] = useState<string | null>(null);
   return (
@@ -199,7 +199,7 @@ function QuoteSend({ photos, options, text, ui, lang, asked, quoteKey }: { photo
   );
 }
 
-/** The Send panel Chocks shows after "send the G280 to Mr Chan". */
+/** The Send panel Toy shows after "send the G280 to Mr Chan". */
 function SharePanel({ aircraftId, contactId }: { aircraftId: string; contactId: string }) {
   const [p, setP] = useState<SharePayload | null | undefined>(undefined);
   useEffect(() => { prepareShareAction(aircraftId, contactId).then(setP, () => setP(null)); }, [aircraftId, contactId]);
@@ -302,7 +302,7 @@ export default function ChatClient() {
   sendRef.current = (t) => send({ text: t });
   autoSendRef.current = autoSend;
 
-  // "/?ask=…": a spoken command from another page (the Ask Chocks microphone). Send it once, then tidy the address.
+  // "/?ask=…": a spoken command from another page (the Ask Toy microphone). Send it once, then tidy the address.
   const asked = useRef(false);
   useEffect(() => {
     if (asked.current) return;
@@ -419,7 +419,7 @@ export default function ChatClient() {
           </div>
         ) : (
           <div key={m.id} className="card" style={{ marginRight: "8%" }}>
-            <p className="small" style={{ margin: "0 0 6px" }}><b>Chocks</b></p>
+            <p className="small" style={{ margin: "0 0 6px" }}><b>Toy</b></p>
             {m.failures.map((f, i) => <div key={i} className="flash err">{f}</div>)}
             {m.say.map((l, i) => <p key={i} style={{ margin: "4px 0", whiteSpace: "pre-wrap" }}>{l}</p>)}
             {m === lastChocks && m.draft.photos.length > 0 && !m.done && (

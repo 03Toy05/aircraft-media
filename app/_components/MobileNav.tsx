@@ -7,7 +7,7 @@ import Icon from "./Icon";
 import { getRecognition } from "./voice";
 
 const TABS = [
-  { href: "/", label: "Chocks", icon: "home", match: (p: string) => p === "/" },
+  { href: "/", label: "Toy", icon: "home", match: (p: string) => p === "/" },
   { href: "/fleet", label: "Fleet", icon: "plane", match: (p: string) => p.startsWith("/fleet") || p.startsWith("/aircraft") || p.startsWith("/organisations") },
   { href: "/quote", label: "Quote", icon: "quote", match: (p: string) => p.startsWith("/quote") },
 ] as const;
@@ -49,8 +49,8 @@ export default function MobileNav({ email, signOut, isAdmin = false }: { email: 
         {TABS.map((t, i) => (
           <span key={t.href} style={{ display: "contents" }}>
             {i === 2 && (canTalk ? (
-              // The Ask Chocks microphone: VoiceCommand (or Chocks's own message box on the Chocks page) listens for this.
-              <button type="button" className={`mic-tab${talking ? " on" : ""}`} onClick={() => window.dispatchEvent(new Event("chocks:mic"))} aria-label={talking ? "Stop listening" : "Ask Chocks by voice"} aria-pressed={talking}>
+              // The Ask Toy microphone: VoiceCommand (or Toy's own message box on the Toy page) listens for this.
+              <button type="button" className={`mic-tab${talking ? " on" : ""}`} onClick={() => window.dispatchEvent(new Event("chocks:mic"))} aria-label={talking ? "Stop listening" : "Ask Toy by voice"} aria-pressed={talking}>
                 <span className="mic-dot"><Icon name="mic" size={22} /></span>
               </button>
             ) : (

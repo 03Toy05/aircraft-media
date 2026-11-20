@@ -4,7 +4,7 @@ import type { Db } from "../db/client";
 import type { Actor } from "./action";
 import { ALLOWED_IMAGE_MIME } from "./constants";
 import { DomainError, invalid } from "./errors";
-import { ingestPdf } from "./intake";
+import { ingestPdf, pdfDriveKey } from "./intake";
 import { ingestUpload } from "./media";
 import { DriveClient, DriveError, FOLDER_MIME, type DriveFile } from "../storage/drive";
 import type { FileStore } from "../storage";
@@ -96,7 +96,7 @@ export async function importDriveFolder(
       }
       const revision = revisionOf(f);
       const actionName = isPdf ? "media.uploadPdf" : "media.importDrive";
-      const key = isPdf ? `pdf:drive:${f.id}:${revision}` : `drive:${f.id}:${revision}`;
+      const key = isPdf ? pdfDriveKey(f.id, revision) : `drive:${f.id}:${revision}`;
       const [done] = await db
         .select({ id: actionExecutions.id, status: actionExecutions.status })
         .from(actionExecutions)

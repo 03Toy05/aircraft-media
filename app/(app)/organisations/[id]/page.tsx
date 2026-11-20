@@ -56,7 +56,7 @@ export default async function OrganisationDetail({ params, searchParams }: { par
         <div style={{ flex: "0 0 auto" }}><button className="secondary" type="submit">Save</button></div>
       </form>
 
-      {cards.length === 0 && <div className="card muted">No aircraft yet for this operator. Add one with Chocks or from the Aircraft page.</div>}
+      {cards.length === 0 && <div className="card muted">No aircraft yet for this operator. Add one with Toy or from the Aircraft page.</div>}
       {cards.map(({ row, card, photos, category }) => (
         <div className="card" key={row.aircraftId}>
           <h3 style={{ marginBottom: 2 }}>

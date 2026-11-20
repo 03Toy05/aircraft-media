@@ -104,7 +104,7 @@ button.linkish { background: none; border: 0; padding: 0; margin: 0; min-height:
 .photo-tile.on .tick { background: var(--accent, #2563eb); color: #fff; border-color: transparent; }
 .photo-tile .cap { display: block; font-size: 11px; padding: 2px 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: left; }
 
-/* Dashboard: Chocks on the left, quick actions and recent photos on the right; stacked on narrow screens. */
+/* Dashboard: Toy on the left, quick actions and recent photos on the right; stacked on narrow screens. */
 .dash { display: grid; gap: 14px; grid-template-columns: minmax(0, 2fr) minmax(260px, 1fr); align-items: start; }
 @media (max-width: 800px) { .dash { grid-template-columns: 1fr; } }
 
@@ -226,7 +226,7 @@ details.collapse[open] > summary { margin-bottom: 8px; }
   .small { font-size: 12.5px; }
   .block-btn { font-size: 14px; }
   .step > summary h3 { font-size: 14px; }
-  .qa-card { display: none; } /* the welcome buttons in Chocks already cover these */
+  .qa-card { display: none; } /* the welcome buttons in Toy already cover these */
 
   /* tables become stacked rows; each value carries its column name (see TableLabels) */
   table.stackable thead { display: none; }

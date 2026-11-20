@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { aircraftMedia, mediaContentVersions, processingProposals, sourceEvidence } from "../db/schema";
 import type { Db } from "../db/client";
 import { runAction, type Actor } from "./action";
@@ -11,6 +11,9 @@ import type { FileStore } from "../storage";
 import type { DriveSource } from "./media";
 
 export const MAX_PDF_BYTES = 40 * 1024 * 1024;
+
+/** How a PDF from Drive is recognised as already read. Includes the extraction version: when extraction improves, it is read once more. */
+export const pdfDriveKey = (fileId: string, revision: string | number) => `pdf:drive:${fileId}:${revision}:${PDF_EXTRACTION_VERSION}`;
 
 export interface PdfIntakeResult {
   pdfEvidenceId: string;
@@ -40,7 +43,8 @@ export async function ingestPdf(db: Db, store: FileStore, actor: Actor, input: {
     db,
     actor,
     name: "media.uploadPdf",
-    idempotencyKey: drive ? `pdf:drive:${drive.fileId}:${drive.revision}` : `pdf:sha256:${hash}`,
+    // The extraction version is part of the key: when extraction improves, sending the same PDF again reads it afresh.
+    idempotencyKey: drive ? pdfDriveKey(drive.fileId, drive.revision) : `pdf:sha256:${hash}:${PDF_EXTRACTION_VERSION}`,
     input: drive ? { hash, fileId: drive.fileId, revision: drive.revision } : { hash },
     fingerprintOf: drive ? { fileId: drive.fileId, revision: drive.revision } : { hash },
     statusOf: (r) => (r.status === "partially_processed" ? "partially_succeeded" : "succeeded"),
@@ -81,8 +85,19 @@ export async function ingestPdf(db: Db, store: FileStore, actor: Actor, input: {
 
       const extracted: PdfIntakeResult["extracted"] = [];
       for (const img of extraction.images) {
-        const ref = await store.put(img.bytes, `p${img.page}-${img.objectName}`, "Processing", img.mimeType);
         const imgHash = sha256(img.bytes);
+        // Already in this workspace (the same PDF read again, or the photo sent on its own before): reuse it, no duplicate.
+        const [already] = await tx
+          .select({ mediaId: aircraftMedia.id, cvId: mediaContentVersions.id })
+          .from(mediaContentVersions)
+          .innerJoin(aircraftMedia, eq(aircraftMedia.id, mediaContentVersions.aircraftMediaId))
+          .where(and(eq(aircraftMedia.tenantId, actor.tenantId), eq(mediaContentVersions.contentHash, imgHash), eq(aircraftMedia.lifecycleState, "active")))
+          .limit(1);
+        if (already) {
+          extracted.push({ mediaId: already.mediaId, contentVersionId: already.cvId, page: img.page, objectName: img.objectName, width: img.width, height: img.height });
+          continue;
+        }
+        const ref = await store.put(img.bytes, `p${img.page}-${img.objectName}`, "Processing", img.mimeType);
         const view = await scanView(img.bytes, ""); // brochures often carry the floor plan
         const [ev] = await tx
           .insert(sourceEvidence)

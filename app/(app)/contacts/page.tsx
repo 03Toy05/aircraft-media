@@ -6,7 +6,7 @@ import { Flash, Key, one, type SP } from "../../_components/ui";
 import Icon from "../../_components/Icon";
 import SearchSelect from "../../_components/SearchSelect";
 
-/** People you send aircraft to, and the messenger each one prefers. Chocks reads this list for "send the G280 to Mr Chan". */
+/** People you send aircraft to, and the messenger each one prefers. Toy reads this list for "send the G280 to Mr Chan". */
 export default async function Contacts({ searchParams }: { searchParams: SP }) {
   const sp = await searchParams;
   const { actor, readOnly } = await requireOwner();
@@ -19,7 +19,7 @@ export default async function Contacts({ searchParams }: { searchParams: SP }) {
   return (
     <>
       <h1>Contacts</h1>
-      <p className="muted">Save who you send aircraft to and the messenger each person prefers. Then tell Chocks, for example <i>“send the G280 to Mr Chan”</i>. Chocks opens their chat with the card ready and you press Send.</p>
+      <p className="muted">Save who you send aircraft to and the messenger each person prefers. Then tell Toy, for example <i>“send the G280 to Mr Chan”</i>. Toy opens their chat with the card ready and you press Send.</p>
       <Flash error={one(sp.error)} ok={one(sp.ok)} />
 
       <details className="card" open={list.length === 0 || !!one(sp.error)}>

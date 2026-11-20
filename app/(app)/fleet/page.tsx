@@ -97,7 +97,7 @@ export default async function Fleet({ searchParams }: { searchParams: SP }) {
     </>
   );
 
-  // Filters and sorting are shared with Chocks (src/domain/fleetQuery.ts), so both give the same answer.
+  // Filters and sorting are shared with Toy (src/domain/fleetQuery.ts), so both give the same answer.
   const wifiParam = one(sp.wifi);
   const {
     regions, baseOptions, sort, acSort, q, regionFilter, catFilter, baseFilter, wifiFilter, filtering, groups: shownGroups, unassigned,
@@ -162,7 +162,7 @@ export default async function Fleet({ searchParams }: { searchParams: SP }) {
       )}
       {filtering && <p className="muted small">Showing {shown.length} of {orgs.length} operators.</p>}
 
-      {orgs.length === 0 && rows.length === 0 && <div className="card muted">Nothing here yet. Add an operator or an aircraft, or tell Chocks on the dashboard.</div>}
+      {orgs.length === 0 && rows.length === 0 && <div className="card muted">Nothing here yet. Add an operator or an aircraft, or tell Toy on the dashboard.</div>}
       {rows.length > 0 && (
         <div className="view-switch" role="tablist" aria-label="Show">
           <Link role="tab" aria-selected={view === "operators"} className={view === "operators" ? "on" : ""} href={viewLink("operators")}>By operator</Link>

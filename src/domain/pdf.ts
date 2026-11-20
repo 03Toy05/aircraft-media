@@ -1,13 +1,13 @@
 import zlib from "node:zlib";
 import sharp from "sharp";
-import { PDFArray, PDFBool, PDFDict, PDFDocument, PDFName, PDFNumber, PDFRawStream, type PDFObject } from "pdf-lib";
+import { PDFArray, PDFBool, PDFDict, PDFDocument, PDFName, PDFNumber, PDFRawStream, PDFRef, type PDFObject } from "pdf-lib";
 
-export const PDF_EXTRACTION_VERSION = "pdf-embedded-1";
+export const PDF_EXTRACTION_VERSION = "pdf-embedded-2";
 export const MIN_IMAGE_SIDE = 100; // smaller embedded images (logos, icons, rules) are reported, not imported
 
 export interface ExtractedImage {
   page: number; // 1-based
-  objectName: string; // resource name on the page, e.g. "Im3"
+  objectName: string; // resource name on the page, e.g. "Im3" (or "Fm1/Im3" inside a form)
   width: number;
   height: number;
   mimeType: "image/jpeg" | "image/png";
@@ -38,24 +38,64 @@ function filtersOf(dict: PDFDict): string[] {
   return ["?"];
 }
 
-function channelsOf(dict: PDFDict): number | null {
-  const cs = dict.lookup(PDFName.of("ColorSpace"));
+/** Channels of an ICC profile stream or a Cal space, if it is one we know. */
+function channelsOfSpace(context: PDFDict["context"], cs: PDFObject | undefined): 1 | 3 | 4 | null {
   const n = nameOf(cs);
-  if (n === "DeviceRGB") return 3;
-  if (n === "DeviceGray") return 1;
+  if (n === "DeviceRGB" || n === "CalRGB") return 3;
+  if (n === "DeviceGray" || n === "CalGray") return 1;
+  if (n === "DeviceCMYK") return 4;
   if (cs instanceof PDFArray) {
-    const first = nameOf(dict.context.lookup(cs.get(0)));
+    const first = nameOf(context.lookup(cs.get(0)));
     if (first === "ICCBased") {
-      const profile = dict.context.lookup(cs.get(1));
+      const profile = context.lookup(cs.get(1));
       if (profile instanceof PDFRawStream) {
         const nn = numOf(profile.dict.lookup(PDFName.of("N")));
-        if (nn === 1 || nn === 3) return nn;
+        if (nn === 1 || nn === 3 || nn === 4) return nn;
       }
     }
     if (first === "CalRGB") return 3;
     if (first === "CalGray") return 1;
   }
-  return null; // Indexed, Separation, CMYK, … are not decoded here
+  return null;
+}
+
+/** The colour space of a Flate image, as something we can turn into RGB or gray pixels. */
+type Colour =
+  | { kind: "direct"; channels: 1 | 3 }
+  | { kind: "cmyk" }
+  | { kind: "indexed"; baseChannels: 1 | 3 | 4; palette: Uint8Array; hival: number };
+
+function colourOf(dict: PDFDict): Colour | null {
+  const cs = dict.lookup(PDFName.of("ColorSpace"));
+  const direct = channelsOfSpace(dict.context, cs);
+  if (direct === 1 || direct === 3) return { kind: "direct", channels: direct };
+  if (direct === 4) return { kind: "cmyk" };
+  if (cs instanceof PDFArray && nameOf(dict.context.lookup(cs.get(0))) === "Indexed") {
+    const baseChannels = channelsOfSpace(dict.context, dict.context.lookup(cs.get(1)));
+    const hival = numOf(dict.context.lookup(cs.get(2)));
+    const lookup = dict.context.lookup(cs.get(3));
+    let palette: Uint8Array | null = null;
+    if (lookup instanceof PDFRawStream) {
+      const f = filtersOf(lookup.dict);
+      palette = f.length === 0 ? lookup.contents : f.length === 1 && f[0] === "FlateDecode" ? zlib.inflateSync(lookup.contents) : null;
+    } else if (lookup && typeof (lookup as unknown as { asBytes?: () => Uint8Array }).asBytes === "function") {
+      palette = (lookup as unknown as { asBytes: () => Uint8Array }).asBytes();
+    }
+    if (baseChannels && hival != null && palette) return { kind: "indexed", baseChannels, palette, hival };
+  }
+  return null;
+}
+
+/** CMYK (as stored in PDFs: 0 = no ink) to RGB, 8 bits per channel. */
+function cmykToRgb(raw: Uint8Array, pixels: number): Uint8Array {
+  const out = new Uint8Array(pixels * 3);
+  for (let i = 0; i < pixels; i++) {
+    const c = raw[i * 4], m = raw[i * 4 + 1], y = raw[i * 4 + 2], k = raw[i * 4 + 3];
+    out[i * 3] = Math.round(((255 - c) * (255 - k)) / 255);
+    out[i * 3 + 1] = Math.round(((255 - m) * (255 - k)) / 255);
+    out[i * 3 + 2] = Math.round(((255 - y) * (255 - k)) / 255);
+  }
+  return out;
 }
 
 /** Undo PNG-style predictors (PDF /Predictor 10–15) on already-inflated data. */
@@ -93,81 +133,115 @@ function unpredict(data: Uint8Array, colors: number, columns: number, bpc: numbe
 }
 
 /**
- * Deterministic extraction of embedded photographs (no rendering, no AI). Supports JPEG (DCT) and
- * Flate 8-bit gray/RGB images, with or without PNG predictors. Everything else — and tiny
- * decorative images — is reported in `skipped` with a reason so nothing is silently dropped.
+ * Deterministic extraction of embedded photographs (no rendering, no AI). Supports JPEG (DCT, also behind Flate),
+ * JPEG 2000 where the image library can read it, and Flate images in gray, RGB, CMYK or a palette, with or without
+ * PNG predictors. Photos placed inside form objects (how InDesign, Canva, PowerPoint and Word often export them)
+ * are found too, and a photo used on several pages is taken once. Everything else, and tiny decorative images, is
+ * reported in `skipped` with a reason so nothing is silently dropped.
  * Extraction does not establish aircraft identity, operator, rights or configuration.
  */
 export async function extractPdfImages(bytes: Uint8Array): Promise<PdfExtraction> {
   let pages: ReturnType<PDFDocument["getPages"]>;
   try {
-    pages = (await PDFDocument.load(bytes, { updateMetadata: false })).getPages();
+    pages = (await PDFDocument.load(bytes, { updateMetadata: false, ignoreEncryption: true })).getPages();
   } catch {
     throw new Error("The PDF could not be read (damaged or password-protected).");
   }
   const images: ExtractedImage[] = [];
   const skipped: SkippedImage[] = [];
+  const seen = new Set<string>(); // images and forms already visited, by object number
 
-  for (let p = 0; p < pages.length; p++) {
-    const resources = pages[p].node.Resources();
+  async function takeImage(obj: PDFRawStream, page: number, objectName: string) {
+    const d = obj.dict;
+    const skip = (reason: string) => { skipped.push({ page, objectName, reason }); };
+    const width = numOf(d.lookup(PDFName.of("Width"))) ?? 0;
+    const height = numOf(d.lookup(PDFName.of("Height"))) ?? 0;
+    const mask = d.lookup(PDFName.of("ImageMask"));
+    if (mask instanceof PDFBool && mask.asBoolean()) return skip("image mask (not a photograph)");
+    if (width < MIN_IMAGE_SIDE || height < MIN_IMAGE_SIDE) return skip(`smaller than ${MIN_IMAGE_SIDE}px (${width}×${height}); likely decorative`);
+    let filters = filtersOf(d);
+    let data: Uint8Array = obj.contents;
+    try {
+      // Flate wrapped around a JPEG or JPEG 2000: unwrap first.
+      if (filters.length === 2 && filters[0] === "FlateDecode" && (filters[1] === "DCTDecode" || filters[1] === "JPXDecode")) {
+        data = zlib.inflateSync(data);
+        filters = [filters[1]];
+      }
+      if (filters.length === 1 && filters[0] === "DCTDecode") {
+        const meta = await sharp(data).metadata();
+        if (meta.space === "cmyk") {
+          const rgb = await sharp(data).toColourspace("srgb").jpeg({ quality: 95 }).toBuffer();
+          images.push({ page, objectName, width, height, mimeType: "image/jpeg", bytes: new Uint8Array(rgb) });
+        } else images.push({ page, objectName, width, height, mimeType: "image/jpeg", bytes: data });
+        return;
+      }
+      if (filters.length === 1 && filters[0] === "JPXDecode") {
+        try {
+          const jpg = await sharp(data).toColourspace("srgb").jpeg({ quality: 95 }).toBuffer();
+          images.push({ page, objectName, width, height, mimeType: "image/jpeg", bytes: new Uint8Array(jpg) });
+        } catch {
+          skip("JPEG 2000 photo, which this server cannot read yet");
+        }
+        return;
+      }
+      if (filters.length === 1 && filters[0] === "FlateDecode") {
+        const colour = colourOf(d);
+        const bpc = numOf(d.lookup(PDFName.of("BitsPerComponent"))) ?? 8;
+        if (!colour || bpc !== 8) return skip("unsupported colour format or bit depth");
+        const inChannels = colour.kind === "direct" ? colour.channels : colour.kind === "cmyk" ? 4 : 1;
+        let raw: Uint8Array = zlib.inflateSync(data);
+        const parms = d.lookup(PDFName.of("DecodeParms"));
+        const predictor = parms instanceof PDFDict ? (numOf(parms.lookup(PDFName.of("Predictor"))) ?? 1) : 1;
+        if (predictor >= 10) raw = unpredict(raw, inChannels, width, bpc);
+        else if (predictor !== 1) return skip(`unsupported predictor ${predictor}`);
+        const pixels = width * height;
+        if (raw.length < pixels * inChannels) return skip("image data is shorter than its declared size");
+        let out: Uint8Array;
+        let channels: 1 | 3;
+        if (colour.kind === "direct") { out = raw; channels = colour.channels; }
+        else if (colour.kind === "cmyk") { out = cmykToRgb(raw, pixels); channels = 3; }
+        else {
+          // Palette: look each pixel up, then turn the base colour into RGB.
+          const bc = colour.baseChannels;
+          const expanded = new Uint8Array(pixels * bc);
+          for (let i = 0; i < pixels; i++) {
+            const idx = Math.min(raw[i], colour.hival) * bc;
+            for (let c = 0; c < bc; c++) expanded[i * bc + c] = colour.palette[idx + c] ?? 0;
+          }
+          if (bc === 4) { out = cmykToRgb(expanded, pixels); channels = 3; } else { out = expanded; channels = bc; }
+        }
+        const png = await sharp(out, { raw: { width, height, channels } }).png().toBuffer();
+        images.push({ page, objectName, width, height, mimeType: "image/png", bytes: new Uint8Array(png) });
+        return;
+      }
+      skip(`unsupported image encoding (${filters.join("+") || "none"})`);
+    } catch (e) {
+      skip(`could not be decoded (${(e as Error).message})`);
+    }
+  }
+
+  async function walk(resources: PDFDict | undefined, page: number, depth: number, prefix: string) {
     const xobjects = resources?.lookup(PDFName.of("XObject"));
-    if (!(xobjects instanceof PDFDict)) continue;
-    for (const [key] of xobjects.entries()) {
-      const objectName = key.decodeText();
+    if (!(xobjects instanceof PDFDict) || depth > 8) return;
+    for (const [key, value] of xobjects.entries()) {
+      const id = value instanceof PDFRef ? value.toString() : null;
+      if (id) {
+        if (seen.has(id)) continue;
+        seen.add(id);
+      }
       const obj = xobjects.lookup(key);
       if (!(obj instanceof PDFRawStream)) continue;
-      const d = obj.dict;
-      if (nameOf(d.lookup(PDFName.of("Subtype"))) !== "Image") continue;
-      const skip = (reason: string) => skipped.push({ page: p + 1, objectName, reason });
-
-      const width = numOf(d.lookup(PDFName.of("Width"))) ?? 0;
-      const height = numOf(d.lookup(PDFName.of("Height"))) ?? 0;
-      if (d.lookup(PDFName.of("ImageMask")) instanceof PDFBool && (d.lookup(PDFName.of("ImageMask")) as PDFBool).asBoolean()) {
-        skip("image mask (not a photograph)");
-        continue;
-      }
-      if (width < MIN_IMAGE_SIDE || height < MIN_IMAGE_SIDE) {
-        skip(`smaller than ${MIN_IMAGE_SIDE}px (${width}×${height}); likely decorative`);
-        continue;
-      }
-      const filters = filtersOf(d);
-      try {
-        if (filters.length === 1 && filters[0] === "DCTDecode") {
-          const meta = await sharp(obj.contents).metadata();
-          if (meta.space === "cmyk") {
-            const rgb = await sharp(obj.contents).toColourspace("srgb").jpeg({ quality: 95 }).toBuffer();
-            images.push({ page: p + 1, objectName, width, height, mimeType: "image/jpeg", bytes: new Uint8Array(rgb) });
-          } else {
-            images.push({ page: p + 1, objectName, width, height, mimeType: "image/jpeg", bytes: obj.contents });
-          }
-        } else if (filters.length === 1 && filters[0] === "FlateDecode") {
-          const channels = channelsOf(d);
-          const bpc = numOf(d.lookup(PDFName.of("BitsPerComponent"))) ?? 8;
-          if (!channels || bpc !== 8) {
-            skip("unsupported colour format or bit depth");
-            continue;
-          }
-          let raw: Uint8Array = zlib.inflateSync(obj.contents);
-          const parms = d.lookup(PDFName.of("DecodeParms"));
-          const predictor = parms instanceof PDFDict ? (numOf(parms.lookup(PDFName.of("Predictor"))) ?? 1) : 1;
-          if (predictor >= 10) raw = unpredict(raw, channels, width, bpc);
-          else if (predictor !== 1) {
-            skip(`unsupported predictor ${predictor}`);
-            continue;
-          }
-          if (raw.length < width * height * channels) {
-            skip("image data is shorter than its declared size");
-            continue;
-          }
-          const png = await sharp(raw, { raw: { width, height, channels: channels as 1 | 3 } }).png().toBuffer();
-          images.push({ page: p + 1, objectName, width, height, mimeType: "image/png", bytes: new Uint8Array(png) });
-        } else {
-          skip(`unsupported image encoding (${filters.join("+") || "none"})`);
-        }
-      } catch (e) {
-        skip(`could not be decoded (${(e as Error).message})`);
+      const subtype = nameOf(obj.dict.lookup(PDFName.of("Subtype")));
+      const objectName = `${prefix}${key.decodeText()}`;
+      if (subtype === "Image") await takeImage(obj, page, objectName);
+      else if (subtype === "Form") {
+        // A form without resources of its own uses the page's.
+        const own = obj.dict.lookup(PDFName.of("Resources"));
+        await walk(own instanceof PDFDict ? own : resources, page, depth + 1, `${objectName}/`);
       }
     }
   }
+
+  for (let p = 0; p < pages.length; p++) await walk(pages[p].node.Resources(), p + 1, 0, "");
   return { pageCount: pages.length, images, skipped };
 }

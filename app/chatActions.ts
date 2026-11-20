@@ -65,7 +65,14 @@ export async function chocksTurnAction(fd: FormData): Promise<TurnResult> {
       if (f.type === "application/pdf" || /\.pdf$/i.test(f.name)) {
         const r = await ingestPdf(db, store, actor, { filename: f.name, bytes, cardText: message || null, batchId });
         for (const x of r.result.extracted) photos.push(await photoFor(db, actor.tenantId, x.mediaId, f.name));
-        if (r.result.extracted.length === 0) failures.push(`${f.name}: no embedded photos were found in this PDF (kept as evidence).`);
+        // Say why, so the broker knows what to do: skipped photos with their reasons, or a PDF with no photo files inside.
+        const real = r.result.skipped.filter((s) => !/likely decorative|image mask/.test(s.reason));
+        const why = [...real.reduce((m, s) => m.set(s.reason, (m.get(s.reason) ?? 0) + 1), new Map<string, number>())].map(([reason, n]) => `${n} × ${reason}`).join("; ");
+        if (r.result.extracted.length === 0) {
+          failures.push(why
+            ? `${f.name}: no photos could be taken out of this PDF. Skipped: ${why}. The PDF is kept; send the photos as JPG files instead.`
+            : `${f.name}: this PDF has no photo files inside (its pages are drawn as artwork, or the photos are tiny). The PDF is kept; send the photos as JPG files instead.`);
+        } else if (why) failures.push(`${f.name}: ${r.result.extracted.length} photo${r.result.extracted.length === 1 ? "" : "s"} taken out; some could not be: ${why}.`);
       } else {
         const r = await ingestUpload(db, store, actor, { filename: f.name, bytes, cardText: message || null, batchId });
         if (draft.photos.some((p) => p.mediaId === r.result.mediaId)) continue; // same photo sent twice in this chat

@@ -80,7 +80,7 @@ export function parseQuoteCommands(text: string, aircraft: CommandAircraft[], ch
   };
 
   for (const raw of clauses(text)) {
-    const c = raw.replace(/^(?:please|ok(?:ay)?|chocks)[\s,]+/i, "").replace(/[\s,]+please$/i, "").trim();
+    const c = raw.replace(/^(?:please|ok(?:ay)?|chocks|toy)[\s,]+/i, "").replace(/[\s,]+please$/i, "").trim();
     let m: RegExpMatchArray | null;
     if (/^(?:copy|copy (?:the |it|that|message)|複製|复制)/i.test(c)) { commands.push({ do: "copy" }); continue; }
     if ((m = c.match(/^(?:send|share)(?:\s+it|\s+this|\s+the message)?(?:\s+(?:by|on|to|via|through|with))?\s+(.+)$/i)) && APPS.some(([re]) => re.test(m![1]))) {
