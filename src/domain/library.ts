@@ -438,14 +438,55 @@ export async function addToWorkspace(db: Db, store: FileStore, actor: Actor, lib
   return { aircraftId, photos: pairs.length, existed };
 }
 
-/** Every aircraft of a library operator, added to the user's workspace. */
-export async function addOperatorToWorkspace(db: Db, store: FileStore, actor: Actor, libraryOrganisationId: string): Promise<number> {
+/** The library aircraft of one library operator. */
+export async function libraryOperatorAircraft(db: Db, libraryOrganisationId: string): Promise<string[]> {
   const acs = await db.select({ id: organisationAircraftRelationships.aircraftId }).from(organisationAircraftRelationships)
     .innerJoin(aircraft, eq(aircraft.id, organisationAircraftRelationships.aircraftId))
     .where(and(eq(organisationAircraftRelationships.organisationId, libraryOrganisationId), eq(organisationAircraftRelationships.role, "operator"),
       eq(organisationAircraftRelationships.active, true), eq(aircraft.tenantId, LIBRARY_TENANT_ID), eq(aircraft.active, true)));
-  for (const a of acs) await addToWorkspace(db, store, actor, a.id);
-  return acs.length;
+  return acs.map((a) => a.id);
+}
+
+/** Every aircraft of a library operator, added to the user's workspace. */
+export async function addOperatorToWorkspace(db: Db, store: FileStore, actor: Actor, libraryOrganisationId: string): Promise<number> {
+  const ids = await libraryOperatorAircraft(db, libraryOrganisationId);
+  for (const id of ids) await addToWorkspace(db, store, actor, id);
+  return ids.length;
+}
+
+/*
+ * Adding from the library copies every photo through the file store (Google Drive), which takes a while, so it runs
+ * after the page has answered. Per workspace, adds run one after another (so two adds never both create the same
+ * operator), and an aircraft already being added is not queued twice. This server runs as one process, so the
+ * bookkeeping lives in memory: after a restart, "In your workspace" on the Library page is the source of truth.
+ */
+const adding = new Map<string, Set<string>>();
+const queues = new Map<string, Promise<void>>();
+
+/** Library aircraft being added to this workspace right now. */
+export function addingNow(tenantId: string): Set<string> {
+  return new Set(adding.get(tenantId) ?? []);
+}
+
+/**
+ * Queues library aircraft to be added to a workspace; returns the ones newly queued and a promise that settles once
+ * they are all in. Aircraft already queued are left out; one failing does not stop the rest.
+ */
+export function queueAdds(db: Db, store: FileStore, actor: Actor, libraryAircraftIds: string[]): { queued: string[]; done: Promise<void> } {
+  const set = adding.get(actor.tenantId) ?? new Set<string>();
+  adding.set(actor.tenantId, set);
+  const queued = libraryAircraftIds.filter((id) => !set.has(id));
+  for (const id of queued) set.add(id);
+  const prev = queues.get(actor.tenantId) ?? Promise.resolve();
+  const done = prev.then(async () => {
+    for (const id of queued) {
+      try { await addToWorkspace(db, store, actor, id); }
+      catch (e) { console.error("Adding from the library failed", id, e); }
+      finally { set.delete(id); }
+    }
+  });
+  queues.set(actor.tenantId, done);
+  return { queued, done };
 }
 
 /** The library aircraft ids this workspace already holds a copy of. */

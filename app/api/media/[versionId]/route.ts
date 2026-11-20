@@ -31,7 +31,7 @@ export async function GET(_req: Request, ctx: { params: Promise<{ versionId: str
   try {
     const { bytes, mimeType } = await readContentBytes(db, getFileStore(), versionId);
     return new NextResponse(Buffer.from(bytes), {
-      headers: { "Content-Type": mimeType, "Cache-Control": "private, max-age=300", "X-Content-Type-Options": "nosniff" },
+      headers: { "Content-Type": mimeType, "Cache-Control": "private, max-age=31536000, immutable", "X-Content-Type-Options": "nosniff" },
     });
   } catch {
     return new NextResponse("File unavailable", { status: 410 });

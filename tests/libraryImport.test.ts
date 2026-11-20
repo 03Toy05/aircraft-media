@@ -4,7 +4,9 @@ import { setup, makeImage } from "./helpers";
 import { getCatalogue } from "../src/domain/catalogue";
 import { getAircraftCard } from "../src/domain/directory";
 import { getLineup } from "../src/domain/media";
-import { LIBRARY_TENANT_ID, importLibraryPack, isMaskedTail, type LibraryPack } from "../src/domain/library";
+import { randomUUID } from "node:crypto";
+import { users } from "../src/db/schema";
+import { LIBRARY_TENANT_ID, addingNow, copiedLibraryAircraft, importLibraryPack, isMaskedTail, queueAdds, type LibraryPack } from "../src/domain/library";
 
 describe("Library import", () => {
   it("treats brochure tails like VP-CXX as hidden", () => {
@@ -62,4 +64,31 @@ describe("Library import", () => {
       expect(r.photos, name).toBe(files.size);
     }
   }, 120_000);
+
+  it("adds library aircraft in the background, once each, one after another", async () => {
+    const t = await setup();
+    const files = new Map<string, Uint8Array>();
+    for (const [i, n] of ["e", "c1", "c2", "f"].entries()) files.set(`${n}.png`, await makeImage(400, 300, 950 + i));
+    const pack: LibraryPack = { operator: "VistaJet", aircraft: [
+      { type: "Bombardier Challenger 350", photos: { exterior: ["e.png"], cabin: ["c1.png", "c2.png"], floor_plan: ["f.png"] } },
+      { type: "Bombardier Challenger 300", photos: { cabin: ["c1.png"] } },
+    ] };
+    await importLibraryPack(t.db, t.store, t.actor, pack, files);
+    const ids = (await getCatalogue(t.db, LIBRARY_TENANT_ID)).map((r) => r.aircraftId);
+    const tenantId = randomUUID();
+    const [u] = await t.db.insert(users).values({ tenantId, email: "broker3@example.test", displayName: "Broker 3" }).returning({ id: users.id });
+    const broker = { id: u.id, tenantId };
+
+    const first = queueAdds(t.db, t.store, broker, ids);
+    const again = queueAdds(t.db, t.store, broker, ids); // pressed twice
+    expect(first.queued).toHaveLength(2);
+    expect(again.queued).toHaveLength(0);
+    expect(addingNow(tenantId).size).toBe(2);
+    await Promise.all([first.done, again.done]);
+    expect(addingNow(tenantId).size).toBe(0);
+    expect((await copiedLibraryAircraft(t.db, tenantId)).size).toBe(2);
+    const mine = await getCatalogue(t.db, tenantId);
+    expect(mine).toHaveLength(2);
+    expect(new Set(mine.map((r) => r.operatorId)).size).toBe(1); // one VistaJet, not two
+  }, 60_000);
 });

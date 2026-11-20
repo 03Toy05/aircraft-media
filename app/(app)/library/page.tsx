@@ -6,9 +6,11 @@ import { requireOwner } from "@/lib/session";
 import { getCatalogue } from "@/domain/catalogue";
 import { getAircraftCard } from "@/domain/directory";
 import { getLineup } from "@/domain/media";
-import { LIBRARY_TENANT_ID, copiedLibraryAircraft, hasLibraryAccess, pendingCount } from "@/domain/library";
+import { LIBRARY_TENANT_ID, addingNow, copiedLibraryAircraft, hasLibraryAccess, pendingCount } from "@/domain/library";
 import { addFromLibraryAction } from "../../actions";
 import { Flash, one, type SP } from "../../_components/ui";
+import { AutoRefresh } from "../../_components/AutoRefresh";
+import { PendingButton } from "../../_components/PendingButton";
 
 const WIFI: Record<string, string | null> = { yes: "WIFI", no: "No WIFI", tbc: "WIFI TBC", unknown: null };
 
@@ -32,6 +34,8 @@ export default async function Library({ searchParams }: { searchParams: SP }) {
   const isAdmin = session.isAdmin;
   const canAdd = !session.readOnly && !session.viewingAs;
   const copied = await copiedLibraryAircraft(db, session.actor.tenantId);
+  const adding = addingNow(session.actor.tenantId);
+  for (const id of copied) adding.delete(id);
   const q = (one(sp.q) ?? "").trim().toLowerCase();
   const rows = await getCatalogue(db, LIBRARY_TENANT_ID);
   const orgs = await db.select().from(organisations).where(and(eq(organisations.tenantId, LIBRARY_TENANT_ID), eq(organisations.active, true))).orderBy(asc(organisations.canonicalName));
@@ -58,7 +62,13 @@ export default async function Library({ searchParams }: { searchParams: SP }) {
   return (
     <>
       <h1>Library</h1>
-      <Flash error={one(sp.error)} ok={one(sp.ok)} />
+      <Flash error={one(sp.error)} ok={adding.size ? undefined : one(sp.ok)} />
+      {adding.size > 0 && (
+        <div className="card small">
+          <AutoRefresh />
+          Adding {adding.size} aircraft to your workspace with their photos (about half a minute each). You can leave this page; they keep arriving.
+        </div>
+      )}
       <div className="people-head" style={{ marginBottom: 10 }}>
         <p className="muted small" style={{ margin: 0 }}>
           The Aircraft Media library: {orgs.length} operator{orgs.length === 1 ? "" : "s"}, {totalAircraft} aircraft. Library aircraft can be quoted straight away (Quote page and Toy). Add one to your workspace to edit it or add your own photos.
@@ -87,12 +97,15 @@ export default async function Library({ searchParams }: { searchParams: SP }) {
               <span className="pill wait">{aircraft.length} aircraft</span>
               <div className="small muted">{[o.region && `Region: ${o.region}`, o.base && `Base: ${o.base}`].filter(Boolean).join(" · ") || "No region or base yet"}</div>
             </div>
-            {canAdd && aircraft.some((r) => !copied.has(r.aircraftId)) && aircraft.length > 1 && (
-              <form action={addFromLibraryAction}>
-                <input type="hidden" name="libraryOperatorId" value={o.id} /><input type="hidden" name="q" value={one(sp.q) ?? ""} />
-                <button type="submit" className="secondary small-btn">Add all {aircraft.length} to my workspace</button>
-              </form>
-            )}
+            {canAdd && aircraft.length > 1 && (() => {
+              const left = aircraft.filter((r) => !copied.has(r.aircraftId) && !adding.has(r.aircraftId)).length;
+              return left > 0 && (
+                <form action={addFromLibraryAction}>
+                  <input type="hidden" name="libraryOperatorId" value={o.id} /><input type="hidden" name="q" value={one(sp.q) ?? ""} />
+                  <PendingButton className="secondary small-btn" pending="Adding…">{left === aircraft.length ? `Add all ${left} to my workspace` : `Add the other ${left} to my workspace`}</PendingButton>
+                </form>
+              );
+            })()}
           </div>
           {aircraft.map((r) => {
             const d = details.get(r.aircraftId)!;
@@ -103,10 +116,12 @@ export default async function Library({ searchParams }: { searchParams: SP }) {
               <div key={r.aircraftId} className="lib-ac">
                 <div className="person-head">
                   <div><b>{r.aircraft}</b>{r.tail ? ` · ${r.tail}` : ""}</div>
-                  {copied.has(r.aircraftId) ? <span className="pill ok">In your workspace</span> : canAdd && (
+                  {copied.has(r.aircraftId) ? <span className="pill ok">In your workspace</span>
+                    : adding.has(r.aircraftId) ? <span className="pill wait">Adding…</span>
+                    : canAdd && (
                     <form action={addFromLibraryAction}>
                       <input type="hidden" name="libraryAircraftId" value={r.aircraftId} /><input type="hidden" name="q" value={one(sp.q) ?? ""} />
-                      <button type="submit" className="secondary small-btn">Add to my workspace</button>
+                      <PendingButton className="secondary small-btn" pending="Adding…">Add to my workspace</PendingButton>
                     </form>
                   )}
                 </div>

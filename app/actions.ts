@@ -765,22 +765,16 @@ export async function addFromLibraryAction(fd: FormData) {
   const session = await requireWriter().catch((e) => { if (e instanceof DomainError) redirect(withParam("/library", "error", e.message)); throw e; });
   const db = await getDb();
   if (!(await library.hasLibraryAccess(db, session))) redirect(withParam("/library", "error", "The library is not shared with you yet."));
-  let msg: string;
-  try {
-    const operatorId = str(fd, "libraryOperatorId");
-    if (operatorId) {
-      const n = await library.addOperatorToWorkspace(db, getFileStore(), session.actor, operatorId);
-      msg = `Added ${n} aircraft to your workspace, with their photos.`;
-    } else {
-      const r = await library.addToWorkspace(db, getFileStore(), session.actor, str(fd, "libraryAircraftId"));
-      msg = r.existed ? `You already had this aircraft: ${r.photos} library photo${r.photos === 1 ? "" : "s"} added to it.` : `Added to your workspace with ${r.photos} photo${r.photos === 1 ? "" : "s"}.`;
-    }
-  } catch (e) {
-    redirect(withParam("/library", "error", (e as Error).message));
-  }
-  exportAfterResponse(session);
-  revalidatePath("/", "layout");
-  redirect(withParam(`/library${str(fd, "q") ? `?q=${encodeURIComponent(str(fd, "q"))}` : ""}`, "ok", msg));
+  const back = `/library${str(fd, "q") ? `?q=${encodeURIComponent(str(fd, "q"))}` : ""}`;
+  const operatorId = str(fd, "libraryOperatorId");
+  const ids = operatorId ? await library.libraryOperatorAircraft(db, operatorId) : [str(fd, "libraryAircraftId")].filter(Boolean);
+  const have = await library.copiedLibraryAircraft(db, session.actor.tenantId);
+  // Copying the photos takes a while (each one goes through Google Drive), so it carries on after this page answers.
+  const { queued, done } = library.queueAdds(db, getFileStore(), session.actor, ids.filter((id) => !have.has(id)));
+  if (queued.length) after(async () => { await done; exportAfterResponse(session); });
+  redirect(withParam(back, "ok", queued.length
+    ? `Adding ${queued.length} aircraft to your workspace with their photos. This takes about half a minute each; this page shows each one as it arrives.`
+    : "Already in your workspace, or being added."));
 }
 
 /** Aircraft page: bring a copy from the library up to date with the library's newer photos. */
