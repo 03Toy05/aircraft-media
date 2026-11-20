@@ -9,7 +9,7 @@ import {
 import type { Actor } from "./action";
 import { normalizeKey, normalizeRegistration, type Classification } from "./constants";
 import {
-  addInformationVersion, createAircraft, createAircraftType, createOrganisation, findAircraftByTail, findAircraftWithoutTail, getAircraftCard,
+  addInformationVersion, changeRegistration, createAircraft, createAircraftType, createOrganisation, findAircraftByTail, findAircraftWithoutTail, getAircraftCard,
   loadStandardAircraftTypes, resolveAircraftTypesExact, resolveOrganisationsExact,
 } from "./directory";
 import { approveMedia, getLineup, ingestUpload, readContentBytes, retireMedia, setMediaAssociation, updateMediaMetadata } from "./media";
@@ -421,9 +421,15 @@ export async function addToWorkspace(db: Db, store: FileStore, actor: Actor, lib
     ?? (await resolveAircraftTypesExact(db, actor.tenantId, src.t.model))[0]?.id
     ?? (await createAircraftType(db, actor, randomUUID(), { manufacturer: src.t.manufacturer, model: src.t.model, category: src.t.category })).result.aircraftTypeId;
 
-  let aircraftId = card.tailNumber
-    ? (await findAircraftByTail(db, actor.tenantId, card.tailNumber))[0]?.aircraftId
-    : operatorId ? (await findAircraftWithoutTail(db, actor.tenantId, typeId, operatorId))[0] : undefined;
+  let aircraftId: string | undefined;
+  if (card.tailNumber && !isMaskedTail(card.tailNumber)) aircraftId = (await findAircraftByTail(db, actor.tenantId, card.tailNumber))[0]?.aircraftId;
+  else {
+    // A hidden tail (two TAG G650ERs are both "VP-CXX") or none: the same aircraft is the one with the same base and YOM.
+    const candidates = card.tailNumber
+      ? (await findAircraftByTail(db, actor.tenantId, card.tailNumber)).map((x) => x.aircraftId)
+      : operatorId ? await findAircraftWithoutTail(db, actor.tenantId, typeId, operatorId) : [];
+    aircraftId = await sameAircraft(db, libraryAircraftId, candidates);
+  }
   const existed = !!aircraftId;
   if (!aircraftId) {
     const base = bases.length === 0 ? undefined : bases[0].mode === "floating" ? { mode: "floating" as const, locations: [] } : { mode: "based" as const, locations: bases.map((b) => b.location).filter((l): l is string => !!l) };
@@ -535,7 +541,9 @@ export async function updateCopy(db: Db, store: FileStore, actor: Actor, aircraf
 export async function libraryTwin(db: Db, tenantId: string, aircraftId: string): Promise<string | null> {
   const card = await getAircraftCard(db, aircraftId);
   if (!card?.tailNumber || tenantId === LIBRARY_TENANT_ID) return null;
-  return (await findAircraftByTail(db, LIBRARY_TENANT_ID, card.tailNumber))[0]?.aircraftId ?? null;
+  const found = (await findAircraftByTail(db, LIBRARY_TENANT_ID, card.tailNumber)).map((x) => x.aircraftId);
+  if (!isMaskedTail(card.tailNumber)) return found[0] ?? null;
+  return (await sameAircraft(db, aircraftId, found)) ?? null;
 }
 
 /**
@@ -670,9 +678,11 @@ export interface PackAircraft {
   smoking?: "yes" | "no" | "unknown";
   pets?: "yes" | "no" | "unknown";
   photos: Partial<Record<"exterior" | "cabin" | "floor_plan", string[]>>; // file names in the pack
+  /** Kinds whose current library photos these replace: those are retired (kept in history) before these go in. */
+  replace?: ("exterior" | "cabin" | "floor_plan")[];
 }
 export interface LibraryPack { operator: string; region?: string | null; base?: string | null; aircraft: PackAircraft[] }
-export interface PackResult { created: number; matched: number; photos: number; skipped: string[] }
+export interface PackResult { created: number; matched: number; photos: number; skipped: string[]; retailed: string[] }
 
 /**
  * A tail a brochure has partly hidden ("T7-GXXX", "VP-CXX*"). It is kept as the tail until the real one is known,
@@ -684,6 +694,23 @@ export function isMaskedTail(tail: string | null | undefined): boolean {
 
 const basesOf = async (db: Db, aircraftId: string) =>
   (await db.select().from(aircraftBases).where(and(eq(aircraftBases.aircraftId, aircraftId), eq(aircraftBases.active, true)))).map((b) => b.location ?? "");
+
+/**
+ * Of several aircraft that could be the same one (same hidden tail, or no tail), the one with the same base and the
+ * same YOM as `aircraftId`. A YOM that one side does not know does not rule it out; a different one does.
+ */
+async function sameAircraft(db: Db, aircraftId: string, candidates: string[]): Promise<string | undefined> {
+  if (!candidates.length) return undefined;
+  const me = await getAircraftCard(db, aircraftId);
+  const myBases = await basesOf(db, aircraftId);
+  for (const id of candidates) {
+    const c = await getAircraftCard(db, id);
+    if (me?.yom != null && c?.yom != null && me.yom !== c.yom) continue;
+    if (!sameBases(await basesOf(db, id), myBases)) continue;
+    return id;
+  }
+  return undefined;
+}
 
 const sameBases = (a: string[], b: string[]) => a.map(normalizeKey).sort().join("|") === b.map(normalizeKey).sort().join("|");
 
@@ -703,7 +730,7 @@ export async function importLibraryPack(db: Db, store: FileStore, admin: Actor, 
   const operatorId = (await resolveOrganisationsExact(db, LIBRARY_TENANT_ID, operatorName))[0]?.id
     ?? (await createOrganisation(db, lib, randomUUID(), { name: operatorName, region: pack.region ?? null, base: pack.base ?? null })).result.organisationId;
 
-  const out: PackResult = { created: 0, matched: 0, photos: 0, skipped: [] };
+  const out: PackResult = { created: 0, matched: 0, photos: 0, skipped: [], retailed: [] };
   for (const a of pack.aircraft) {
     const label = `${a.type}${a.base?.length ? ` (${a.base.join(" / ")})` : ""}`;
     const tail = a.tail?.replace(/\*+$/, "").trim().toUpperCase() || null;
@@ -712,8 +739,23 @@ export async function importLibraryPack(db: Db, store: FileStore, admin: Actor, 
     const bases = (a.base ?? []).map((b) => b.trim()).filter(Boolean);
 
     let aircraftId: string | null = null;
-    if (tail && !isMaskedTail(tail)) aircraftId = (await findAircraftByTail(db, LIBRARY_TENANT_ID, tail))[0]?.aircraftId ?? null;
-    else {
+    if (tail && !isMaskedTail(tail)) {
+      aircraftId = (await findAircraftByTail(db, LIBRARY_TENANT_ID, tail))[0]?.aircraftId ?? null;
+      // The real tail of an aircraft the library only knew by a hidden one ("VP-CXX" turns out to be VP-CTL): the
+      // same operator's aircraft of this type, base and YOM gets the real tail (the old one is kept in its history).
+      if (!aircraftId) {
+        for (const id of await findAircraftWithoutTail(db, LIBRARY_TENANT_ID, type.id, operatorId, { includeHiddenTails: true })) {
+          const c = await getAircraftCard(db, id);
+          if (!c?.tailNumber || !isMaskedTail(c.tailNumber)) continue;
+          if (a.yom != null && c.yom != null && a.yom !== c.yom) continue;
+          if (!sameBases(await basesOf(db, id), bases)) continue;
+          await changeRegistration(db, lib, randomUUID(), { aircraftId: id, newRegistration: tail });
+          out.retailed.push(`${label}: ${c.tailNumber} is now ${tail}`);
+          aircraftId = id;
+          break;
+        }
+      }
+    } else {
       const candidates = tail ? (await findAircraftByTail(db, LIBRARY_TENANT_ID, tail)).map((x) => x.aircraftId) : await findAircraftWithoutTail(db, LIBRARY_TENANT_ID, type.id, operatorId);
       for (const id of candidates) if (sameBases(await basesOf(db, id), bases)) { aircraftId = id; break; }
     }
@@ -728,7 +770,18 @@ export async function importLibraryPack(db: Db, store: FileStore, admin: Actor, 
       out.created++;
     }
 
+    let replaced = 0;
+    if (a.replace?.length) {
+      const [t2] = await db.select({ t: aircraft.aircraftTypeId }).from(aircraft).where(eq(aircraft.id, aircraftId));
+      for (const p of await getLineup(db, { aircraftId, aircraftTypeId: t2.t })) {
+        if (p.associationStatus !== "actual_aircraft") continue;
+        if (!(a.replace as string[]).includes(p.classification) && p.classification !== "combined") continue;
+        await retireMedia(db, lib, randomUUID(), { mediaId: p.mediaId });
+        if (p.classification !== "combined") replaced++;
+      }
+    }
     const have = await libraryCounts(db, aircraftId);
+    const photosBefore = out.photos;
     for (const kind of KINDS) {
       for (const name of (a.photos as Record<string, string[] | undefined>)[kind] ?? []) {
         const bytes = files.get(name);
@@ -756,8 +809,10 @@ export async function importLibraryPack(db: Db, store: FileStore, admin: Actor, 
         out.photos++;
       }
     }
-    if (KINDS.every((k) => (have[k] ?? 0) >= (LIBRARY_NEEDS[k] ?? 0))) {
-      try { await makeCombinedPhoto(db, store, lib, { kind: "aircraft", aircraftId, aircraftTypeId: type.id }); }
+    if (replaced) out.retailed.push(`${label}: ${replaced} older photo${replaced === 1 ? "" : "s"} replaced`);
+    // A new or changed set gets a new combined photo; an unchanged one keeps its own.
+    if ((out.photos > photosBefore || replaced) && KINDS.every((k) => (have[k] ?? 0) >= (LIBRARY_NEEDS[k] ?? 0))) {
+      try { await makeCombinedPhoto(db, store, lib, { kind: "aircraft", aircraftId, aircraftTypeId: type.id }, { replace: true }); }
       catch (e) { console.error("Library combined photo failed", e); }
     }
   }

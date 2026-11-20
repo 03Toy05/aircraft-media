@@ -837,7 +837,7 @@ export async function importLibraryPackAction(fd: FormData) {
     }
     if (!pack) throw new Error("Choose pack.json together with its photos.");
     const r = await library.importLibraryPack(db, store, admin, pack, files);
-    msg = `${pack.operator}: ${r.created} aircraft added, ${r.matched} already there, ${r.photos} photo${r.photos === 1 ? "" : "s"} added.${r.skipped.length ? ` Passed over: ${r.skipped.join("; ")}.` : ""}`;
+    msg = `${pack.operator}: ${r.created} aircraft added, ${r.matched} already there, ${r.photos} photo${r.photos === 1 ? "" : "s"} added.${r.retailed.length ? ` Updated: ${r.retailed.join("; ")}.` : ""}${r.skipped.length ? ` Passed over: ${r.skipped.join("; ")}.` : ""}`;
   } catch (e) {
     redirect(withParam("/library/import", "error", (e as Error).message));
   }

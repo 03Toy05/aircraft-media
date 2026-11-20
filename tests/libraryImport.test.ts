@@ -91,4 +91,58 @@ describe("Library import", () => {
     expect(mine).toHaveLength(2);
     expect(new Set(mine.map((r) => r.operatorId)).size).toBe(1); // one VistaJet, not two
   }, 60_000);
+
+  it("adds two aircraft that share a hidden tail as two, each with its own photos", async () => {
+    const t = await setup();
+    const files = new Map<string, Uint8Array>();
+    for (const [i, n] of ["sg-e", "sg-c1", "sg-f", "hk-c1", "hk-c2", "hk-f"].entries()) files.set(`${n}.png`, await makeImage(400, 300, 970 + i));
+    await importLibraryPack(t.db, t.store, t.actor, { operator: "TAG Aviation", aircraft: [
+      { type: "Gulfstream G650ER", tail: "VP-CXX", base: ["Hong Kong", "China"], yom: 2018, photos: { cabin: ["hk-c1.png", "hk-c2.png"], floor_plan: ["hk-f.png"] } },
+      { type: "Gulfstream G650ER", tail: "VP-CXX", base: ["Singapore"], yom: 2019, photos: { exterior: ["sg-e.png"], cabin: ["sg-c1.png"], floor_plan: ["sg-f.png"] } },
+    ] }, files);
+    const lib = await getCatalogue(t.db, LIBRARY_TENANT_ID);
+    const tenantId = randomUUID();
+    const [u] = await t.db.insert(users).values({ tenantId, email: "broker4@example.test", displayName: "Broker 4" }).returning({ id: users.id });
+    const broker = { id: u.id, tenantId };
+    await queueAdds(t.db, t.store, broker, lib.map((r) => r.aircraftId)).done;
+
+    const mine = await getCatalogue(t.db, tenantId);
+    expect(mine).toHaveLength(2);
+    expect((await copiedLibraryAircraft(t.db, tenantId)).size).toBe(2);
+    for (const r of mine) {
+      const card = await getAircraftCard(t.db, r.aircraftId);
+      const kinds = (await getLineup(t.db, { aircraftId: r.aircraftId, aircraftTypeId: r.aircraftTypeId })).map((p) => p.classification).sort();
+      if (card?.yom === 2018) expect(kinds).toEqual(["cabin", "cabin", "floor_plan"]);
+      else expect(kinds).toEqual(["cabin", "exterior", "floor_plan"]);
+    }
+  }, 60_000);
+
+  it("puts a real tail on the aircraft the library knew by a hidden one, instead of adding another", async () => {
+    const t = await setup();
+    const files = new Map<string, Uint8Array>([["c.png", await makeImage(400, 300, 990)]]);
+    const g650 = (tail: string, base: string, yom: number) => ({ type: "Gulfstream G650ER", tail, base: [base], yom, photos: { cabin: ["c.png"] } });
+    await importLibraryPack(t.db, t.store, t.actor, { operator: "TAG Aviation", aircraft: [g650("VP-CXX", "Hong Kong", 2018), g650("VP-CXX", "Singapore", 2019)] }, files);
+    const r = await importLibraryPack(t.db, t.store, t.actor, { operator: "TAG Aviation", aircraft: [g650("VP-CXX", "Hong Kong", 2018), g650("VP-CTL", "Singapore", 2019)] }, files);
+    expect(r).toMatchObject({ created: 0, matched: 2 });
+    expect(r.retailed).toEqual(["Gulfstream G650ER (Singapore): VP-CXX is now VP-CTL"]);
+    const tails = (await getCatalogue(t.db, LIBRARY_TENANT_ID)).map((x) => `${x.tail} ${x.base}`).sort();
+    expect(tails).toEqual(["VP-CTL Singapore", "VP-CXX Hong Kong"]);
+  }, 60_000);
+
+  it("replaces a kind of photo when the pack says so, and remakes the combined photo", async () => {
+    const t = await setup();
+    const files = new Map<string, Uint8Array>();
+    for (const [i, n] of ["e", "old", "f", "new1", "new2"].entries()) files.set(`${n}.png`, await makeImage(400, 300, 1000 + i));
+    await importLibraryPack(t.db, t.store, t.actor, { operator: "TAG Aviation", aircraft: [
+      { type: "Gulfstream G650ER", tail: "VP-CXX", base: ["Singapore"], yom: 2019, photos: { exterior: ["e.png"], cabin: ["old.png"], floor_plan: ["f.png"] } },
+    ] }, files);
+    const r = await importLibraryPack(t.db, t.store, t.actor, { operator: "TAG Aviation", aircraft: [
+      { type: "Gulfstream G650ER", tail: "VP-CTL", base: ["Singapore"], yom: 2019, replace: ["cabin"], photos: { cabin: ["new1.png", "new2.png"] } },
+    ] }, files);
+    expect(r).toMatchObject({ created: 0, matched: 1, photos: 2, skipped: [] });
+    const [ac] = await getCatalogue(t.db, LIBRARY_TENANT_ID);
+    expect(ac.tail).toBe("VP-CTL");
+    const kinds = (await getLineup(t.db, { aircraftId: ac.aircraftId, aircraftTypeId: ac.aircraftTypeId })).map((p) => p.classification).sort();
+    expect(kinds).toEqual(["cabin", "cabin", "combined", "exterior", "floor_plan"]);
+  }, 60_000);
 });

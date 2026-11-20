@@ -869,12 +869,13 @@ export async function resolveAircraftTypesExact(db: Q, tenantId: string, text: s
 }
 
 /** Active aircraft of a type (optionally for one operator) that have no tail number recorded yet. */
-export async function findAircraftWithoutTail(db: Q, tenantId: string, aircraftTypeId: string, operatorId?: string | null) {
+/** Aircraft of this type (and operator) with no tail. With `includeHiddenTails`, those with any tail too: the caller filters. */
+export async function findAircraftWithoutTail(db: Q, tenantId: string, aircraftTypeId: string, operatorId?: string | null, opts: { includeHiddenTails?: boolean } = {}) {
   const acs = await db.select().from(aircraft).where(and(eq(aircraft.tenantId, tenantId), eq(aircraft.aircraftTypeId, aircraftTypeId), eq(aircraft.active, true)));
   const out: string[] = [];
   for (const a of acs) {
     const [reg] = await db.select({ id: aircraftRegistrations.id }).from(aircraftRegistrations).where(and(eq(aircraftRegistrations.aircraftId, a.id), eq(aircraftRegistrations.isCurrent, true)));
-    if (reg) continue;
+    if (reg && !opts.includeHiddenTails) continue;
     if (operatorId) {
       const [rel] = await db
         .select({ id: organisationAircraftRelationships.id })
