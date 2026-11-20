@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useRef, useState, useTransition } from "react";
 import { chocksTurnAction, type TurnResult } from "../chatActions";
 import { recordQuoteShareAction } from "../actions";
+import { report } from "./speedClock";
 import type { ChocksPhoto, Draft } from "@/domain/chocks";
 import { CLASSIFICATION_LABEL, type Classification } from "@/domain/constants";
 import { prepareShareAction, type SharePayload } from "../shareActions";
@@ -283,8 +284,12 @@ export default function ChatClient() {
     if (fileRef.current) fileRef.current.value = "";
     start(async () => {
       let r: TurnResult;
+      const asked = performance.now();
       try {
         r = await chocksTurnAction(fd);
+        // What the broker waited for Toy, and what kind of reply it was (for the Speed page).
+        const kind = r.reply.options?.length ? "quote" : fd.getAll("files").some((f) => f instanceof File && f.size > 0) ? "photos" : r.reply.share ? "share" : r.applied ? "saved" : "message";
+        report({ kind: "toy", name: kind, ms: performance.now() - asked, serverMs: r.serverMs });
       } catch {
         setMsgs((m) => [...m, { id: crypto.randomUUID(), role: "chocks", say: [ui.sorry], chips: [], draft: JSON.parse(draft || "null") ?? ({ photos: [] } as unknown as Draft), failures: [] }]);
         return;

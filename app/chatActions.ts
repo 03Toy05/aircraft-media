@@ -21,6 +21,8 @@ export interface TurnResult {
   reply: ChocksReply;
   failures: string[];
   applied?: ApplyResult;
+  /** How long the server took for this turn (for the Speed page). */
+  serverMs?: number;
 }
 
 async function photoFor(db: Awaited<ReturnType<typeof getDb>>, tenantId: string, mediaId: string, name: string, note?: string): Promise<DraftPhoto> {
@@ -34,6 +36,12 @@ async function photoFor(db: Awaited<ReturnType<typeof getDb>>, tenantId: string,
  * attached or approved until the owner confirms.
  */
 export async function chocksTurnAction(fd: FormData): Promise<TurnResult> {
+  const started = performance.now();
+  const r = await turn(fd);
+  return { ...r, serverMs: Math.round(performance.now() - started) };
+}
+
+async function turn(fd: FormData): Promise<TurnResult> {
   const session = await requireUser();
   const { actor } = session;
   const readOnlyWhy = session.viewingAs

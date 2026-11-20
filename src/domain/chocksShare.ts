@@ -1,5 +1,5 @@
 import type { Db } from "../db/client";
-import { getCatalogue } from "./catalogue";
+import { getAircraftNames } from "./catalogue";
 import { normalizeKey, type Classification } from "./constants";
 import { mentions } from "./chocksLookup";
 
@@ -20,7 +20,7 @@ export function parseShareRequest(message: string): { what: string; who: string 
 
 /** Aircraft whose tail, type or operator contains every word of the request. */
 export async function findAircraftsForShare(db: Db, tenantId: string, text: string) {
-  const rows = await getCatalogue(db, tenantId);
+  const rows = await getAircraftNames(db, tenantId);
   // Chinese filler ("的", "飛機", "一架") is dropped and Latin names are separated from Chinese characters next to them.
   const cleaned = text
     .replace(/['’]s\b/gi, "")

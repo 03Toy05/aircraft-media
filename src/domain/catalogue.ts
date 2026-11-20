@@ -82,18 +82,37 @@ export async function getCatalogue(db: Db, tenantId: string, filters: CatalogueF
     .innerJoin(organisations, eq(organisations.id, organisationAircraftRelationships.organisationId))
     .where(and(eq(organisations.tenantId, tenantId), eq(organisationAircraftRelationships.role, "operator"), eq(organisationAircraftRelationships.active, true)));
 
+  // Only the fields the counts need: loading whole rows for every photo was most of the time on a big workspace.
   const media = await db
-    .select({ m: aircraftMedia, a: mediaAssociations, cv: mediaContentVersions })
+    .select({
+      m: { primaryClassification: aircraftMedia.primaryClassification, reviewState: aircraftMedia.reviewState, rightsStatus: aircraftMedia.rightsStatus, updatedAt: aircraftMedia.updatedAt },
+      a: { aircraftId: mediaAssociations.aircraftId, aircraftTypeId: mediaAssociations.aircraftTypeId, associationStatus: mediaAssociations.associationStatus },
+      cv: { id: mediaContentVersions.id, unavailableAt: mediaContentVersions.unavailableAt },
+    })
     .from(aircraftMedia)
     .innerJoin(mediaAssociations, and(eq(mediaAssociations.aircraftMediaId, aircraftMedia.id), eq(mediaAssociations.active, true)))
     .leftJoin(mediaContentVersions, eq(mediaContentVersions.id, aircraftMedia.currentContentVersionId))
     .where(and(eq(aircraftMedia.tenantId, tenantId), eq(aircraftMedia.lifecycleState, "active")));
 
+  // Grouped once by aircraft (and by type for representative photos), so the work grows with the data, not with
+  // aircraft × photos: 2,000 aircraft took 3 seconds the other way.
+  const group = <T, K>(list: T[], keyOf: (x: T) => K | null | undefined) => {
+    const m = new Map<K, T[]>();
+    for (const x of list) { const k = keyOf(x); if (k == null) continue; const l = m.get(k); if (l) l.push(x); else m.set(k, [x]); }
+    return m;
+  };
+  const regBy = new Map(regs.map((r) => [r.aircraftId, r]));
+  const basesBy = group(bases, (b) => b.aircraftId);
+  const opBy = new Map<string, (typeof ops)[number]>();
+  for (const o of ops) if (!opBy.has(o.aircraftId)) opBy.set(o.aircraftId, o);
+  const mediaByAircraft = group(media, (x) => (x.a.associationStatus === "actual_aircraft" ? x.a.aircraftId : null));
+  const mediaByType = group(media, (x) => (x.a.associationStatus === "representative_type" ? x.a.aircraftTypeId : null));
+
   const rows: CatalogueRow[] = [];
   for (const { a, t } of acs) {
-    const reg = regs.find((r) => r.aircraftId === a.id);
-    const myBases = bases.filter((b) => b.aircraftId === a.id).sort((x, y) => x.displayOrder - y.displayOrder);
-    const op = ops.find((o) => o.aircraftId === a.id);
+    const reg = regBy.get(a.id);
+    const myBases = [...(basesBy.get(a.id) ?? [])].sort((x, y) => x.displayOrder - y.displayOrder);
+    const op = opBy.get(a.id);
 
     const cells = Object.fromEntries(
       CLASSIFICATIONS.map((c) => [c, { actual: 0, representative: 0, pending: 0, status: "missing" } as ClassCell]),
@@ -102,14 +121,14 @@ export async function getCatalogue(db: Db, tenantId: string, filters: CatalogueF
     const processing = new Set<Classification>();
     let lastApproved: Date | null = null;
 
-    for (const { m, a: assoc, cv } of media) {
+    for (const { m, a: assoc, cv } of [...(mediaByAircraft.get(a.id) ?? []), ...(mediaByType.get(t.id) ?? [])]) {
       const mine = assoc.aircraftId === a.id;
       const ofType = assoc.associationStatus === "representative_type" && assoc.aircraftTypeId === t.id;
       if (!(mine && assoc.associationStatus === "actual_aircraft") && !ofType) continue;
       const cell = cells[m.primaryClassification];
       if (m.reviewState === "approved") {
         if (m.rightsStatus === "restricted") continue;
-        if (!cv || cv.unavailableAt) {
+        if (!cv?.id || cv.unavailableAt) {
           unavailable.add(m.primaryClassification);
           continue;
         }
@@ -190,4 +209,27 @@ export async function getCatalogue(db: Db, tenantId: string, filters: CatalogueF
       return true;
     })
     .sort((x, y) => (x.operator ?? "").localeCompare(y.operator ?? "") || (x.tail ?? "").localeCompare(y.tail ?? ""));
+}
+
+export interface AircraftName { aircraftId: string; aircraftTypeId: string; aircraft: string; tail: string | null; operatorId: string | null; operator: string | null }
+
+/**
+ * Just the names of a workspace's aircraft (type, tail, operator): what Toy needs to find "Tag G650ER". Three small
+ * queries and no photos, so it stays quick as a workspace grows; getCatalogue also counts every photo.
+ */
+export async function getAircraftNames(db: Db, tenantId: string): Promise<AircraftName[]> {
+  const acs = await db.select({ id: aircraft.id, typeId: aircraftTypes.id, make: aircraftTypes.manufacturer, model: aircraftTypes.model })
+    .from(aircraft).innerJoin(aircraftTypes, eq(aircraftTypes.id, aircraft.aircraftTypeId))
+    .where(and(eq(aircraft.tenantId, tenantId), eq(aircraft.active, true)));
+  const regs = await db.select({ id: aircraftRegistrations.aircraftId, reg: aircraftRegistrations.registration }).from(aircraftRegistrations)
+    .innerJoin(aircraft, eq(aircraft.id, aircraftRegistrations.aircraftId)).where(and(eq(aircraft.tenantId, tenantId), eq(aircraftRegistrations.isCurrent, true)));
+  const ops = await db.select({ id: organisationAircraftRelationships.aircraftId, orgId: organisations.id, name: organisations.canonicalName })
+    .from(organisationAircraftRelationships).innerJoin(organisations, eq(organisations.id, organisationAircraftRelationships.organisationId))
+    .where(and(eq(organisations.tenantId, tenantId), eq(organisationAircraftRelationships.role, "operator"), eq(organisationAircraftRelationships.active, true)));
+  const regBy = new Map(regs.map((r) => [r.id, r.reg]));
+  const opBy = new Map(ops.map((o) => [o.id, o]));
+  return acs.map((a) => ({
+    aircraftId: a.id, aircraftTypeId: a.typeId, aircraft: `${a.make} ${a.model}`, tail: regBy.get(a.id) ?? null,
+    operatorId: opBy.get(a.id)?.orgId ?? null, operator: opBy.get(a.id)?.name ?? null,
+  }));
 }

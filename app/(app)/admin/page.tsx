@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { asc, count, eq } from "drizzle-orm";
 import { getDb } from "@/db/client";
 import { aircraft, aircraftMedia, organisations, users } from "@/db/schema";
@@ -29,7 +30,7 @@ export default async function Admin({ searchParams }: { searchParams: SP }) {
 
   return (
     <>
-      <h1>Users</h1>
+      <div className="people-head"><h1 style={{ margin: 0 }}>Users</h1><Link href="/admin/speed" className="btn secondary small-btn">Speed</Link></div>
       <Flash error={one(sp.error)} ok={one(sp.ok)} />
       <div className="card">
         <div className="people-head">

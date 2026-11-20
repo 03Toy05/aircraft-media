@@ -7,6 +7,8 @@ import { STANDARD_LIST_VERSION } from "@/domain/standardTypes";
 import { signOutAction, stopViewingAction } from "../actions";
 import Icon from "../_components/Icon";
 import MobileNav from "../_components/MobileNav";
+import { Suspense } from "react";
+import { SpeedTracker } from "../_components/SpeedTracker";
 import VoiceCommand from "../_components/VoiceCommand";
 import TableLabels from "../_components/TableLabels";
 
@@ -51,6 +53,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       ) : s.daysLeft !== null ? (
         <div className="account-bar">Trial: {s.daysLeft <= 1 ? "last day" : `${s.daysLeft} days left`}</div>
       ) : null}
+      <Suspense fallback={null}><SpeedTracker /></Suspense>
       <main>{children}</main>
       <VoiceCommand />
       <TableLabels />

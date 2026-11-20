@@ -1,6 +1,6 @@
-import { eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import type { Db } from "../db/client";
-import { aircraftTypes, organisations } from "../db/schema";
+import { aircraft, aircraftTypes, organisations } from "../db/schema";
 import { fleetLink, looksLikeFleetRequest, parseFleetQuery, runFleetQuery, sortAircraft } from "./fleetQuery";
 import { getCatalogue } from "./catalogue";
 import { AIRCRAFT_CATEGORIES, AIRCRAFT_CATEGORY_LABEL, normalizeKey, normalizeRegistration, type Classification } from "./constants";
@@ -159,7 +159,9 @@ export async function quotePreview(db: Db, tenantId: string, ids: string[], lang
   /** Each option's own message (opening line on the first, closing line on the last), to send option by option. */
   options: { title: string; text: string }[];
 }> {
-  const rows = (await getCatalogue(db, tenantId)).concat(...(await Promise.all(alsoTenants.map((t) => getCatalogue(db, t)))));
+  // Only the chosen aircraft, and only from this workspace (or the library when it is shared with this broker).
+  const rows = ids.length ? await db.select({ aircraftId: aircraft.id, aircraftTypeId: aircraft.aircraftTypeId }).from(aircraft)
+    .where(and(inArray(aircraft.id, ids), inArray(aircraft.tenantId, [tenantId, ...alsoTenants]), eq(aircraft.active, true))) : [];
   const templates = await getQuoteTemplates(db, tenantId);
   const items = [];
   const photos: { id: string; label: string; classification: Classification; option: number }[] = [];

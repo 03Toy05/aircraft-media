@@ -236,6 +236,7 @@ export const aircraft = pgTable(
     uniqueIndex("aircraft_type_serial_uq")
       .on(t.tenantId, t.aircraftTypeId, t.serialNumber)
       .where(sql`${t.serialNumber} is not null and ${t.active}`),
+    index("aircraft_tenant_active_idx").on(t.tenantId, t.active),
   ],
 );
 
@@ -566,4 +567,25 @@ export const cbosExports = pgTable(
     updatedAt: updated(),
   },
   (t) => [uniqueIndex("cbos_export_media_uq").on(t.aircraftMediaId)],
+);
+
+/**
+ * How long things take for the people using the app: page changes, buttons, and Toy's replies. One row per event;
+ * the Speed page shows the typical and slowest times. `ms` is what the person waited; `serverMs` the server's part.
+ */
+export const timings = pgTable(
+  "timings",
+  {
+    id: pk(),
+    tenantId: uuid("tenant_id").notNull(),
+    userId: uuid("user_id").notNull(),
+    /** page | action | toy */
+    kind: text("kind").notNull(),
+    /** The page ("/library"), the button ("Add to my workspace"), or Toy's kind of reply ("quote"). */
+    name: text("name").notNull(),
+    ms: integer("ms").notNull(),
+    serverMs: integer("server_ms"),
+    createdAt: created(),
+  },
+  (t) => [index("timings_created_idx").on(t.createdAt)],
 );
