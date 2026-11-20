@@ -63,25 +63,20 @@ export default async function AircraftDetail({ params, searchParams }: { params:
           </div>
           <div className="card">
             <h3>Update information</h3>
-            <p className="muted small">Saving creates a new version; earlier versions are kept below.</p>
             <form action={addInfoVersionAction}>
               <Key /><input type="hidden" name="aircraftId" value={id} /><input type="hidden" name="expectedVersion" value={card.informationVersion} />
-              <div className="row">
-                <div><label>YOM</label><input name="yom" type="number" inputMode="numeric" defaultValue={current?.yom ?? ""} /></div>
-                <div><label>YOR</label><input name="yor" type="number" inputMode="numeric" defaultValue={current?.yor ?? ""} /></div>
-                <div><label>Capacity</label><input name="capacity" type="number" inputMode="numeric" defaultValue={current?.capacity ?? ""} /></div>
+              <div className="info-form">
+                <div className="f"><label>YOM</label><input name="yom" type="number" inputMode="numeric" defaultValue={current?.yom ?? ""} /></div>
+                <div className="f"><label>YOR</label><input name="yor" type="number" inputMode="numeric" defaultValue={current?.yor ?? ""} /></div>
+                <div className="f"><label>Capacity</label><input name="capacity" type="number" inputMode="numeric" defaultValue={current?.capacity ?? ""} /></div>
+                <div className="f half"><label>WIFI</label><Choice name="wifiStatus" defaultValue={current?.wifiStatus ?? "unknown"} options={WIFI_CHOICES} ariaLabel="WIFI" /></div>
+                <div className="f half"><label>WIFI details</label><input name="wifiDetail" defaultValue={current?.wifiDetail ?? ""} placeholder="e.g. at USD 10/MB" /></div>
+                <div className="f half"><label>Smoking</label><Choice name="smoking" defaultValue={current?.smoking ?? "unknown"} options={YES_NO_CHOICES} ariaLabel="Smoking" /></div>
+                <div className="f half"><label>Pets</label><Choice name="pets" defaultValue={current?.pets ?? "unknown"} options={YES_NO_CHOICES} ariaLabel="Pets" /></div>
+                <div className="f full"><label>Cleaning fee</label><input name="cleaningFee" defaultValue={current?.cleaningFee ?? ""} placeholder="e.g. USD 500 for pets or smoking" /></div>
+                <div className="f full"><label>Notes</label><input name="notes" defaultValue={current?.notes ?? ""} /></div>
               </div>
-              <label>WIFI</label>
-              <Choice name="wifiStatus" defaultValue={current?.wifiStatus ?? "unknown"} options={WIFI_CHOICES} ariaLabel="WIFI" />
-              <label>WIFI details (optional, shown in quotes)</label><input name="wifiDetail" defaultValue={current?.wifiDetail ?? ""} placeholder="e.g. at USD 10/MB" />
-              <div className="row">
-                <div><label>Smoking</label><Choice name="smoking" defaultValue={current?.smoking ?? "unknown"} options={YES_NO_CHOICES} ariaLabel="Smoking" /></div>
-                <div><label>Pets</label><Choice name="pets" defaultValue={current?.pets ?? "unknown"} options={YES_NO_CHOICES} ariaLabel="Pets" /></div>
-              </div>
-              <label>Cleaning fee (optional, shown in quotes)</label><input name="cleaningFee" defaultValue={current?.cleaningFee ?? ""} placeholder="e.g. USD 500 for pets or smoking" />
-              <label>Notes</label><input name="notes" defaultValue={current?.notes ?? ""} />
-              <label>Effective / observed date (optional)</label><input name="effectiveDate" type="date" />
-              <p><button type="submit">Save new version</button></p>
+              <div className="info-actions"><button type="submit">Save</button><span className="muted small">Earlier versions are kept below.</span></div>
             </form>
           </div>
           <div className="card">

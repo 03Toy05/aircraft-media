@@ -63,7 +63,12 @@ export default async function Library({ searchParams }: { searchParams: SP }) {
         <p className="muted small" style={{ margin: 0 }}>
           The Aircraft Media library: {orgs.length} operator{orgs.length === 1 ? "" : "s"}, {totalAircraft} aircraft. Library aircraft can be quoted straight away (Quote page and Toy). Add one to your workspace to edit it or add your own photos.
         </p>
-        {isAdmin && <Link href="/library/review" className="btn secondary small-btn">Library review{waiting ? ` (${waiting})` : ""}</Link>}
+        {isAdmin && (
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+            <Link href="/library/review" className="btn secondary small-btn">Library review{waiting ? ` (${waiting})` : ""}</Link>
+            <Link href="/library/import" className="btn secondary small-btn">Import</Link>
+          </div>
+        )}
       </div>
       <form className="row" style={{ marginBottom: 10 }}>
         <div><input name="q" defaultValue={one(sp.q) ?? ""} placeholder="Search operator, region, type or tail" aria-label="Search the library" /></div>

@@ -827,3 +827,26 @@ export async function acceptLibraryUpdatesAction(fd: FormData) {
   revalidatePath("/library");
   redirect(withParam("/library/review", "ok", msg));
 }
+
+/** Library import: the admin loads a pack (pack.json plus its photos) straight into the library. */
+export async function importLibraryPackAction(fd: FormData) {
+  const { admin, db, store } = await libraryAdmin();
+  const files = new Map<string, Uint8Array>();
+  let pack: library.LibraryPack | null = null;
+  let msg: string;
+  try {
+    for (const f of fd.getAll("files")) {
+      if (!(f instanceof File) || f.size === 0) continue;
+      const bytes = new Uint8Array(await f.arrayBuffer());
+      if (/\.json$/i.test(f.name)) pack = JSON.parse(new TextDecoder().decode(bytes)) as library.LibraryPack;
+      else files.set(f.name, bytes);
+    }
+    if (!pack) throw new Error("Choose pack.json together with its photos.");
+    const r = await library.importLibraryPack(db, store, admin, pack, files);
+    msg = `${pack.operator}: ${r.created} aircraft added, ${r.matched} already there, ${r.photos} photo${r.photos === 1 ? "" : "s"} added.${r.skipped.length ? ` Passed over: ${r.skipped.join("; ")}.` : ""}`;
+  } catch (e) {
+    redirect(withParam("/library/import", "error", (e as Error).message));
+  }
+  revalidatePath("/library");
+  redirect(withParam("/library", "ok", msg));
+}
