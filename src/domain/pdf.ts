@@ -2,7 +2,7 @@ import zlib from "node:zlib";
 import sharp from "sharp";
 import { PDFArray, PDFBool, PDFDict, PDFDocument, PDFName, PDFNumber, PDFRawStream, PDFRef, type PDFObject } from "pdf-lib";
 
-export const PDF_EXTRACTION_VERSION = "pdf-embedded-2";
+export const PDF_EXTRACTION_VERSION = "pdf-embedded-3";
 export const MIN_IMAGE_SIDE = 100; // smaller embedded images (logos, icons, rules) are reported, not imported
 
 export interface ExtractedImage {
@@ -36,6 +36,61 @@ function filtersOf(dict: PDFDict): string[] {
   if (f instanceof PDFName) return [f.decodeText()];
   if (f instanceof PDFArray) return f.asArray().map((x) => nameOf(dict.context.lookup(x)) ?? "?");
   return ["?"];
+}
+
+/**
+ * Text wrappings some PDF makers put around image data (ASCII85 "<~...~>" and hex "<...>"). They carry the same
+ * bytes, only spelled as letters; undoing them leaves the photo's own encoding (JPEG, Flate, ...).
+ */
+function ascii85(data: Uint8Array): Uint8Array {
+  const s = new TextDecoder("latin1").decode(data);
+  const from = s.startsWith("<~") ? 2 : 0;
+  let to = s.indexOf("~>", from);
+  if (to < 0) to = s.length;
+  const out = new Uint8Array(Math.ceil(((to - from) * 4) / 5) + 4 * 1024);
+  let buf = out;
+  let len = 0;
+  const put = (b: number) => {
+    if (len === buf.length) { const bigger = new Uint8Array(buf.length * 2); bigger.set(buf); buf = bigger; }
+    buf[len++] = b;
+  };
+  let tuple = 0;
+  let n = 0;
+  for (let i = from; i < to; i++) {
+    const c = s.charCodeAt(i);
+    if (c <= 32) continue; // spaces and line breaks
+    if (c === 122 && n === 0) { put(0); put(0); put(0); put(0); continue; } // "z": four zero bytes
+    if (c < 33 || c > 117) throw new Error("bad ASCII85 data");
+    tuple = tuple * 85 + (c - 33);
+    if (++n === 5) {
+      put(Math.floor(tuple / 16777216) & 255); put(Math.floor(tuple / 65536) & 255); put(Math.floor(tuple / 256) & 255); put(tuple & 255);
+      tuple = 0;
+      n = 0;
+    }
+  }
+  if (n > 0) {
+    for (let k = n; k < 5; k++) tuple = tuple * 85 + 84;
+    const last = [Math.floor(tuple / 16777216) & 255, Math.floor(tuple / 65536) & 255, Math.floor(tuple / 256) & 255, tuple & 255];
+    for (let k = 0; k < n - 1; k++) put(last[k]);
+  }
+  return buf.subarray(0, len);
+}
+
+function asciiHex(data: Uint8Array): Uint8Array {
+  const s = new TextDecoder("latin1").decode(data);
+  const end = s.indexOf(">");
+  const hex = (end < 0 ? s : s.slice(0, end)).replace(/[^0-9a-f]/gi, "");
+  const out = new Uint8Array(Math.ceil(hex.length / 2));
+  for (let i = 0; i < out.length; i++) out[i] = parseInt((hex.slice(i * 2, i * 2 + 2) + "0").slice(0, 2), 16);
+  return out;
+}
+
+/** The DecodeParms that belong to one filter of the chain (a single dict, or one entry of an array). */
+function parmsFor(dict: PDFDict, index: number): PDFDict | undefined {
+  const p = dict.lookup(PDFName.of("DecodeParms"));
+  if (p instanceof PDFDict) return p;
+  if (p instanceof PDFArray) { const x = dict.context.lookup(p.get(index)); return x instanceof PDFDict ? x : undefined; }
+  return undefined;
 }
 
 /** Channels of an ICC profile stream or a Cal space, if it is one we know. */
@@ -160,8 +215,14 @@ export async function extractPdfImages(bytes: Uint8Array): Promise<PdfExtraction
     if (mask instanceof PDFBool && mask.asBoolean()) return skip("image mask (not a photograph)");
     if (width < MIN_IMAGE_SIDE || height < MIN_IMAGE_SIDE) return skip(`smaller than ${MIN_IMAGE_SIDE}px (${width}×${height}); likely decorative`);
     let filters = filtersOf(d);
+    const allFilters = filters;
     let data: Uint8Array = obj.contents;
     try {
+      // Spelled-out data ("ASCII85Decode+DCTDecode"): turn the letters back into bytes first.
+      while (filters[0] === "ASCII85Decode" || filters[0] === "ASCIIHexDecode") {
+        data = filters[0] === "ASCII85Decode" ? ascii85(data) : asciiHex(data);
+        filters = filters.slice(1);
+      }
       // Flate wrapped around a JPEG or JPEG 2000: unwrap first.
       if (filters.length === 2 && filters[0] === "FlateDecode" && (filters[1] === "DCTDecode" || filters[1] === "JPXDecode")) {
         data = zlib.inflateSync(data);
@@ -190,8 +251,8 @@ export async function extractPdfImages(bytes: Uint8Array): Promise<PdfExtraction
         if (!colour || bpc !== 8) return skip("unsupported colour format or bit depth");
         const inChannels = colour.kind === "direct" ? colour.channels : colour.kind === "cmyk" ? 4 : 1;
         let raw: Uint8Array = zlib.inflateSync(data);
-        const parms = d.lookup(PDFName.of("DecodeParms"));
-        const predictor = parms instanceof PDFDict ? (numOf(parms.lookup(PDFName.of("Predictor"))) ?? 1) : 1;
+        const parms = parmsFor(d, allFilters.lastIndexOf("FlateDecode"));
+        const predictor = parms ? (numOf(parms.lookup(PDFName.of("Predictor"))) ?? 1) : 1;
         if (predictor >= 10) raw = unpredict(raw, inChannels, width, bpc);
         else if (predictor !== 1) return skip(`unsupported predictor ${predictor}`);
         const pixels = width * height;

@@ -28,9 +28,9 @@ export default async function Intake({ searchParams }: { searchParams: SP }) {
   const showDrive = isAdmin; // the Drive folder is the admin's; everyone else uploads
   const folders = await db.select().from(driveSyncState).where(eq(driveSyncState.tenantId, actor.tenantId)).orderBy(desc(driveSyncState.lastSyncedAt));
   const label: Record<Result["status"], string> = {
-    new: "Received — needs review",
+    new: "Received",
     partial: "Received — some items skipped",
-    duplicate: "Already uploaded (same file) — nothing duplicated",
+    duplicate: "Sent before (the same file) — nothing duplicated",
     failed: "Failed",
   };
   return (

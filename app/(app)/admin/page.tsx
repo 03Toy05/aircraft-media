@@ -1,4 +1,6 @@
 import Link from "next/link";
+import { headers } from "next/headers";
+import InviteCopy from "../../_components/InviteCopy";
 import { asc, count, eq } from "drizzle-orm";
 import { getDb } from "@/db/client";
 import { aircraft, aircraftMedia, organisations, users } from "@/db/schema";
@@ -19,6 +21,9 @@ const quotesLine = (q: QuoteShareStats | undefined) =>
 export default async function Admin({ searchParams }: { searchParams: SP }) {
   const sp = await searchParams;
   const me = await requireAdmin();
+  // The address people open: this site, as the admin reached it.
+  const h = await headers();
+  const appLink = `${h.get("x-forwarded-proto") ?? "https"}://${h.get("x-forwarded-host") ?? h.get("host") ?? "aircraft-media.onrender.com"}`;
   const db = await getDb();
   const people = (await db.select().from(users).orderBy(asc(users.createdAt))).filter((u) => u.id !== me.actor.id && u.email !== me.email);
   const toMap = (rows: { t: string; n: number }[]) => new Map(rows.map((r) => [r.t, Number(r.n)]));
@@ -59,8 +64,10 @@ export default async function Admin({ searchParams }: { searchParams: SP }) {
                   <b>{u.displayName}</b> <span className={`pill ${status.tone}`}>{status.label}</span>
                   <div className="small muted">{u.email}</div>
                 </div>
-                {u.firstSignInAt && (
+                {u.firstSignInAt ? (
                   <form action={viewAsAction}><input type="hidden" name="userId" value={u.id} /><button className="secondary small-btn" type="submit">Look</button></form>
+                ) : (
+                  <InviteCopy name={u.displayName} email={u.email} link={appLink} days={u.plan === "trial" ? TRIAL_DAYS : null} />
                 )}
               </div>
               <div className="stats">

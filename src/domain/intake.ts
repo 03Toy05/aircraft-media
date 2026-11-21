@@ -1,5 +1,5 @@
 import { and, eq } from "drizzle-orm";
-import { aircraftMedia, mediaContentVersions, processingProposals, sourceEvidence } from "../db/schema";
+import { aircraftMedia, mediaAssociations, mediaContentVersions, processingProposals, sourceEvidence } from "../db/schema";
 import type { Db } from "../db/client";
 import { runAction, type Actor } from "./action";
 import { parseAircraftCard } from "./card";
@@ -8,7 +8,7 @@ import { extractPdfImages, PDF_EXTRACTION_VERSION, type SkippedImage } from "./p
 import { sha256 } from "../lib/hash";
 import { scanView } from "./autoView";
 import type { FileStore } from "../storage";
-import type { DriveSource } from "./media";
+import { reopenMedia, type DriveSource } from "./media";
 
 export const MAX_PDF_BYTES = 40 * 1024 * 1024;
 
@@ -152,4 +152,35 @@ export async function ingestPdf(db: Db, store: FileStore, actor: Actor, input: {
       return { pdfEvidenceId: pdfEv.id, status, pageCount: extraction.pageCount, extracted, skipped: extraction.skipped };
     },
   });
+}
+
+export interface ReviewStanding {
+  /** Waiting in Review already (new, or sent before and not decided yet). */
+  waiting: string[];
+  /** Removed or rejected before; sent again, so back in Review. */
+  reopened: string[];
+  /** Approved before: already on an aircraft (or a type), nothing to review. */
+  approved: { mediaId: string; aircraftId: string | null }[];
+}
+
+/**
+ * After an upload: where each of its photos stands. A photo the workspace already had is reused, never copied, so it
+ * keeps its earlier state. One that was removed or rejected comes back to Review, since it was just sent again on
+ * purpose; one already approved stays where it is, and the upload says so instead of claiming it is waiting.
+ */
+export async function bringBackForReview(db: Db, actor: Actor, mediaIds: string[]): Promise<ReviewStanding> {
+  const out: ReviewStanding = { waiting: [], reopened: [], approved: [] };
+  for (const id of [...new Set(mediaIds)]) {
+    const [m] = await db.select().from(aircraftMedia).where(and(eq(aircraftMedia.id, id), eq(aircraftMedia.tenantId, actor.tenantId)));
+    if (!m || m.lifecycleState !== "active") continue;
+    if (m.reviewState === "approved") {
+      const [a] = await db.select({ aircraftId: mediaAssociations.aircraftId }).from(mediaAssociations)
+        .where(and(eq(mediaAssociations.aircraftMediaId, id), eq(mediaAssociations.active, true)));
+      out.approved.push({ mediaId: id, aircraftId: a?.aircraftId ?? null });
+    } else if (m.reviewState === "rejected") {
+      await reopenMedia(db, actor, `reopen-on-upload:${id}:${m.version}`, { mediaId: id, expectedVersion: m.version });
+      out.reopened.push(id);
+    } else out.waiting.push(id);
+  }
+  return out;
 }

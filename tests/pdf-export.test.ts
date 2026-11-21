@@ -59,7 +59,7 @@ describe("Test 6 — PDF with several images", () => {
     for (const m of media) expect(m).toMatchObject({ reviewState: "needs_review", primaryClassification: "unclassified", associationStatus: "unresolved" });
     const d = (await getMediaDetail(t.db, t.actor.tenantId, r.result.extracted[2].mediaId))!;
     expect(d.evidence).toMatchObject({ sourceKind: "extracted_image", pageNumber: 2, parentEvidenceId: orig.id });
-    expect(d.evidence!.cropRef).toMatchObject({ extractionVersion: "pdf-embedded-2", width: 320, height: 240 });
+    expect(d.evidence!.cropRef).toMatchObject({ extractionVersion: "pdf-embedded-3", width: 320, height: 240 });
     expect(d.versions[0].isDerivative).toBe(true);
 
     // extracted bytes are real images of the right size (JPEG passthrough and decoded Flate PNG)

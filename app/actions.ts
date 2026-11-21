@@ -6,7 +6,7 @@ import { redirect } from "next/navigation";
 import { getDb } from "@/db/client";
 import { getDriveClient, getFileStore } from "@/storage";
 import { importDriveFolder, type DriveImportSummary } from "@/domain/driveImport";
-import { ingestPdf } from "@/domain/intake";
+import { bringBackForReview, ingestPdf } from "@/domain/intake";
 import { cookies, headers } from "next/headers";
 import { VIEW_AS_COOKIE, requireAdmin, requireUser, requireWriter } from "@/lib/session";
 import * as accounts from "@/domain/accounts";
@@ -94,32 +94,48 @@ export async function uploadMediaAction(fd: FormData) {
   const cardText = optStr(fd, "cardText");
   const batchId = randomUUID(); // one upload = one batch: the card text and the assignment apply to all its photos
   const results: { name: string; status: "new" | "duplicate" | "failed" | "partial"; mediaId?: string; error?: string; detail?: string }[] = [];
+  let toReview = 0;
   for (const f of fd.getAll("files")) {
     if (!(f instanceof File) || f.size === 0) continue;
     const bytes = new Uint8Array(await f.arrayBuffer());
     try {
+      let ids: string[];
+      let status: "new" | "duplicate" | "partial";
+      let detail = "";
       if (f.type === "application/pdf" || /\.pdf$/i.test(f.name)) {
         const r = await ingestPdf(db, store, actor, { filename: f.name, bytes, cardText, batchId });
         const x = r.result;
-        const detail =
-          x.status === "no_images"
-            ? `PDF kept. No embedded photos were found in its ${x.pageCount} page(s) — page rendering is not supported; export the pages as images and upload those.`
-            : `${x.extracted.length} photo(s) extracted from ${x.pageCount} page(s)` + (x.skipped.length ? `; skipped ${x.skipped.length}: ${x.skipped.map((k) => `p${k.page} ${k.reason}`).join("; ")}` : "");
-        results.push({ name: f.name, status: r.replayed ? "duplicate" : x.status === "partially_processed" ? "partial" : "new", mediaId: x.extracted[0]?.mediaId, detail });
+        ids = x.extracted.map((e) => e.mediaId);
+        status = r.replayed ? "duplicate" : x.status === "partially_processed" ? "partial" : "new";
+        detail = x.status === "no_images"
+          ? `PDF kept. No embedded photos were found in its ${x.pageCount} page(s) — page rendering is not supported; export the pages as images and upload those.`
+          : `${x.extracted.length} photo(s) taken out of ${x.pageCount} page(s)` + (x.skipped.length ? `; skipped ${x.skipped.length}: ${x.skipped.map((k) => `p${k.page} ${k.reason}`).join("; ")}` : "");
       } else {
         const r = await media.ingestUpload(db, store, actor, { filename: f.name, bytes, cardText, batchId });
-        results.push({ name: f.name, status: r.replayed ? "duplicate" : "new", mediaId: r.result.mediaId });
+        ids = [r.result.mediaId];
+        status = r.replayed ? "duplicate" : "new";
       }
+      // Photos the workspace already had are reused: say where each one is, and bring removed ones back to Review.
+      const st = await bringBackForReview(db, actor, ids);
+      toReview += st.waiting.length + st.reopened.length;
+      const where: string[] = [];
+      if (st.waiting.length) where.push(`${st.waiting.length} waiting in Review`);
+      if (st.reopened.length) where.push(`${st.reopened.length} removed earlier, now back in Review`);
+      if (st.approved.length) {
+        const planes = [...new Set(st.approved.map((a) => a.aircraftId).filter((x): x is string => !!x))];
+        const names = (await Promise.all(planes.map((id) => dir.getAircraftCard(db, id)))).filter(Boolean).map((c) => [c!.operator, c!.aircraft, c!.tailNumber].filter(Boolean).join(" "));
+        where.push(`${st.approved.length} already approved${names.length ? ` (on ${names.join("; ")})` : ""}, so not in Review`);
+      }
+      results.push({ name: f.name, status, mediaId: [...st.waiting, ...st.reopened][0] ?? ids[0], detail: [detail, where.join("; ")].filter(Boolean).join(". ") });
     } catch (e) {
       if (e instanceof DomainError) results.push({ name: f.name, status: "failed", error: e.message });
       else throw e;
     }
   }
   revalidatePath("/", "layout");
-  // All went in: go straight to the Review worksheet, where this upload is the newest set, its views already scanned.
-  const fresh = results.filter((r) => r.status === "new" && r.mediaId);
-  if (fresh.length && results.every((r) => r.status === "new" || r.status === "duplicate")) {
-    redirect(withParam("/review", "ok", `${fresh.length} photo${fresh.length === 1 ? "" : "s"} uploaded and scanned. Check the views and details of each set, then save it.`));
+  // Everything went in and something is waiting: straight to the Review worksheet. Otherwise show what happened.
+  if (toReview && results.every((r) => r.status !== "failed" && r.status !== "partial") && results.every((r) => !/already approved/.test(r.detail ?? ""))) {
+    redirect(withParam("/review", "ok", `${toReview} photo${toReview === 1 ? "" : "s"} waiting in Review. Check the views and details of each set, then save it.`));
   }
   redirect(withParam("/intake", "r", JSON.stringify(results)));
 }
@@ -597,7 +613,7 @@ async function adminCtx() {
 export async function inviteUserAction(fd: FormData) {
   const { s, db } = await adminCtx();
   const plan = str(fd, "plan") === "full" ? "full" : "trial";
-  await run("/admin", "Invited. Send them the app link; they sign in with that Google account.", () => accounts.inviteUser(db, s.actor.id, { email: str(fd, "email"), plan, name: optStr(fd, "name") }));
+  await run("/admin", "Invited. Aircraft Media does not email them: tap Copy invite message on their card and send it by WhatsApp or email.", () => accounts.inviteUser(db, s.actor.id, { email: str(fd, "email"), plan, name: optStr(fd, "name") }));
 }
 
 export async function extendTrialAction(fd: FormData) {

@@ -9,7 +9,7 @@ import { getFileStore } from "@/storage";
 import { requireUser } from "@/lib/session";
 import { exportAfterResponse } from "@/lib/cbosExportRunner";
 import { DomainError } from "@/domain/errors";
-import { ingestPdf } from "@/domain/intake";
+import { bringBackForReview, ingestPdf } from "@/domain/intake";
 import { hasLibraryAccess } from "@/domain/library";
 import { ingestUpload } from "@/domain/media";
 import { applyChatProposal, suggestClassification, type ApplyResult } from "@/domain/chat";
@@ -73,6 +73,7 @@ async function turn(fd: FormData): Promise<TurnResult> {
     try {
       if (f.type === "application/pdf" || /\.pdf$/i.test(f.name)) {
         const r = await ingestPdf(db, store, actor, { filename: f.name, bytes, cardText: message || null, batchId });
+        await bringBackForReview(db, actor, r.result.extracted.map((x) => x.mediaId)); // removed earlier: usable again
         for (const x of r.result.extracted) photos.push(await photoFor(db, actor.tenantId, x.mediaId, f.name));
         // Say why, so the broker knows what to do: skipped photos with their reasons, or a PDF with no photo files inside.
         const real = r.result.skipped.filter((s) => !/likely decorative|image mask/.test(s.reason));
@@ -84,6 +85,7 @@ async function turn(fd: FormData): Promise<TurnResult> {
         } else if (why) failures.push(`${f.name}: ${r.result.extracted.length} photo${r.result.extracted.length === 1 ? "" : "s"} taken out; some could not be: ${why}.`);
       } else {
         const r = await ingestUpload(db, store, actor, { filename: f.name, bytes, cardText: message || null, batchId });
+        await bringBackForReview(db, actor, [r.result.mediaId]);
         if (draft.photos.some((p) => p.mediaId === r.result.mediaId)) continue; // same photo sent twice in this chat
         photos.push(await photoFor(db, actor.tenantId, r.result.mediaId, f.name, r.replayed ? "uploaded before" : undefined));
       }
