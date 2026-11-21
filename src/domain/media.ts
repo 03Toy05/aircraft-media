@@ -519,17 +519,24 @@ export function extractCropAsMedia(db: Db, store: FileStore, actor: Actor, input
       const crop = await cropBytes(store, src.storageRef, src.storageKind, input.rect);
       const ref = await store.put(crop.out, "crop", "Processing", crop.mime);
       const hash = sha256(crop.out);
+      // Belongs to the same upload as the photo it is cut from: a page of a PDF points at the PDF (its batch and its
+      // text, e.g. "G450, YOM 2012"), so the cut-out joins that set in Review instead of starting one of its own.
+      const [from] = src.sourceEvidenceId
+        ? await tx.select().from(sourceEvidence).where(and(eq(sourceEvidence.id, src.sourceEvidenceId), eq(sourceEvidence.tenantId, actor.tenantId)))
+        : [];
+      const upload = from?.sourceKind === "extracted_image" && from.parentEvidenceId ? from.parentEvidenceId : src.sourceEvidenceId;
+      const batchId = (from?.metadata as { batchId?: string } | null)?.batchId;
       const [ev] = await tx
         .insert(sourceEvidence)
         .values({
           tenantId: actor.tenantId,
           sourceKind: "extracted_image",
-          parentEvidenceId: src.sourceEvidenceId,
-          pageNumber: 1,
+          parentEvidenceId: upload,
+          pageNumber: from?.pageNumber ?? 1,
           cropRef: { ...input.rect, extractionVersion: CROP_EXTRACTION_VERSION },
           senderId: actor.id,
           contentHash: hash,
-          metadata: { parentContentVersionId: src.id, parentMediaId: m.id, mode: "separate" },
+          metadata: { parentContentVersionId: src.id, parentMediaId: m.id, parentEvidenceId: src.sourceEvidenceId, mode: "separate", ...(batchId ? { batchId } : {}) },
         })
         .returning({ id: sourceEvidence.id });
       const [nm] = await tx
