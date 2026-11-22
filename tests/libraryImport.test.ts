@@ -185,4 +185,30 @@ describe("Library import", () => {
     const card = await getAircraftCard(t.db, row.aircraftId);
     expect(card).toMatchObject({ wifi: "no", yom: 2008, yor: 2015, capacity: 13, smoking: "yes", pets: "yes", informationVersion: 2 });
   }, 60_000);
+
+  it("keeps two aircraft of one type without tails apart by their seats", async () => {
+    const t = await setup();
+    const files = new Map<string, Uint8Array>([["c.png", await makeImage(400, 300, 1400)], ["d.png", await makeImage(400, 300, 1401)]]);
+    const pack = { operator: "Phenix Jet", aircraft: [
+      { type: "Gulfstream G650ER", capacity: 13, photos: { cabin: ["c.png"] } },
+      { type: "Gulfstream G650ER", capacity: 14, photos: { cabin: ["d.png"] } },
+    ] };
+    expect(await importLibraryPack(t.db, t.store, t.actor, pack, files)).toMatchObject({ created: 2, matched: 0 });
+    expect(await importLibraryPack(t.db, t.store, t.actor, pack, files)).toMatchObject({ created: 0, matched: 2 });
+  }, 60_000);
+
+  it("carries a pack's notes onto the library aircraft and into a broker's copy", async () => {
+    const t = await setup();
+    const files = new Map<string, Uint8Array>([["c.png", await makeImage(400, 300, 1500)]]);
+    await importLibraryPack(t.db, t.store, t.actor, { operator: "Phenix Jet", aircraft: [
+      { type: "Gulfstream G650", tail: "N871FR", base: ["Tokyo"], capacity: 16, smoking: "no", pets: "unknown", notes: "Owner's approval required. Pets TBC.", photos: { cabin: ["c.png"] } },
+    ] }, files);
+    const [libAc] = await getCatalogue(t.db, LIBRARY_TENANT_ID);
+    expect((await getAircraftCard(t.db, libAc.aircraftId))?.notes).toBe("Owner's approval required. Pets TBC.");
+    const tenantId = randomUUID();
+    const [u] = await t.db.insert(users).values({ tenantId, email: "broker6@example.test", displayName: "Broker 6" }).returning({ id: users.id });
+    await queueAdds(t.db, t.store, { id: u.id, tenantId }, [libAc.aircraftId]).done;
+    const [mine] = await getCatalogue(t.db, tenantId);
+    expect(await getAircraftCard(t.db, mine.aircraftId)).toMatchObject({ notes: "Owner's approval required. Pets TBC.", smoking: "no", base: expect.stringContaining("Tokyo") });
+  }, 60_000);
 });

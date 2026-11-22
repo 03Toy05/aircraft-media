@@ -57,7 +57,7 @@ export default async function Quote({ searchParams }: { searchParams: SP }) {
         smoking: card.smoking,
         pets: card.pets,
         cleaningFee: card.cleaningFee,
-        notes: src.library ? null : card.notes,
+        notes: card.notes, // a library aircraft's notes are the admin's, from packs
         photos: lineup.map((l) => ({
           classification: l.classification,
           classificationLabel: CLASSIFICATION_LABEL[l.classification],

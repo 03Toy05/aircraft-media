@@ -23,7 +23,8 @@ import type { FileStore } from "../storage";
  *  - A user's photos are only offered once they turn on "Share my approved photos with the library".
  *  - Each library aircraft keeps 1 exterior, 2 cabin and 1 floor plan; the first complete set wins.
  *  - Nothing enters the library until the admin accepts it. Only the aircraft details and the photos are copied:
- *    never prices, quotes, contacts or notes. Photos marked "restricted" are never offered.
+ *    never prices, quotes, contacts or notes. Photos marked "restricted" are never offered. (A library aircraft's notes
+ *    therefore only come from the admin's own packs, so they are shown to brokers and copied with the aircraft.)
  */
 export const LIBRARY_TENANT_ID = "00000000-0000-0000-0000-0000000000b1";
 export const LIBRARY_NEEDS: Partial<Record<Classification, number>> = { exterior: 1, cabin: 2, floor_plan: 1 };
@@ -449,7 +450,8 @@ export async function addToWorkspace(db: Db, store: FileStore, actor: Actor, lib
     const base = bases.length === 0 ? undefined : bases[0].mode === "floating" ? { mode: "floating" as const, locations: [] } : { mode: "based" as const, locations: bases.map((b) => b.location).filter((l): l is string => !!l) };
     aircraftId = (await createAircraft(db, actor, randomUUID(), {
       aircraftTypeId: typeId, registration: card.tailNumber, operatorId, base, tailResolution: "distinct_aircraft",
-      info: { yom: card.yom, yor: card.yor, capacity: card.capacity, wifiStatus: card.wifi, wifiDetail: card.wifiDetail, smoking: card.smoking, pets: card.pets, cleaningFee: card.cleaningFee },
+      // Notes too: a library aircraft's notes are the admin's (from a pack), e.g. "Owner's approval required".
+      info: { yom: card.yom, yor: card.yor, capacity: card.capacity, wifiStatus: card.wifi, wifiDetail: card.wifiDetail, smoking: card.smoking, pets: card.pets, cleaningFee: card.cleaningFee, notes: card.notes },
     })).result.aircraftId;
   }
   const pairs = await copyPhotosInto(db, store, actor, libraryAircraftId, aircraftId);
@@ -686,6 +688,8 @@ export interface PackAircraft {
   base?: string[];
   /** No fixed base (e.g. AirX's jets): shown as "Floating". */
   floating?: boolean;
+  /** Notes every broker should see ("Owner's approval required"). Library notes come only from these packs. */
+  notes?: string | null;
   yom?: number | null;
   yor?: number | null;
   capacity?: number | null;
@@ -773,9 +777,17 @@ export async function importLibraryPack(db: Db, store: FileStore, admin: Actor, 
       }
     } else {
       const candidates = tail ? (await findAircraftByTail(db, LIBRARY_TENANT_ID, tail)).map((x) => x.aircraftId) : await findAircraftWithoutTail(db, LIBRARY_TENANT_ID, type.id, operatorId);
-      for (const id of candidates) if (sameBases(await basesOf(db, id), bases)) { aircraftId = id; break; }
+      // Same base, and no clash in YOM or seats: an operator's two G650ERs without tails (13 and 14 seats) stay apart.
+      for (const id of candidates) {
+        if (!sameBases(await basesOf(db, id), bases)) continue;
+        const c = await getAircraftCard(db, id);
+        if (a.yom != null && c?.yom != null && a.yom !== c.yom) continue;
+        if (a.capacity != null && c?.capacity != null && a.capacity !== c.capacity) continue;
+        aircraftId = id;
+        break;
+      }
     }
-    const info = { yom: a.yom ?? null, yor: a.yor ?? null, capacity: a.capacity ?? null, wifiStatus: a.wifi ?? "unknown", wifiDetail: a.wifiDetail ?? null, smoking: a.smoking ?? "unknown", pets: a.pets ?? "unknown" } as const;
+    const info = { yom: a.yom ?? null, yor: a.yor ?? null, capacity: a.capacity ?? null, wifiStatus: a.wifi ?? "unknown", wifiDetail: a.wifiDetail ?? null, smoking: a.smoking ?? "unknown", pets: a.pets ?? "unknown", notes: a.notes ?? null } as const;
     if (aircraftId) {
       out.matched++;
       // Already in the library: the pack's details win where it gives them (e.g. WIFI corrected to No); the rest stay.
@@ -784,11 +796,11 @@ export async function importLibraryPack(db: Db, store: FileStore, admin: Actor, 
         const next = {
           yom: a.yom !== undefined ? a.yom : card.yom, yor: a.yor !== undefined ? a.yor : card.yor, capacity: a.capacity !== undefined ? a.capacity : card.capacity,
           wifiStatus: a.wifi ?? card.wifi, wifiDetail: a.wifiDetail !== undefined ? a.wifiDetail : card.wifiDetail,
-          smoking: a.smoking ?? card.smoking, pets: a.pets ?? card.pets, cleaningFee: card.cleaningFee, notes: card.notes,
+          smoking: a.smoking ?? card.smoking, pets: a.pets ?? card.pets, cleaningFee: card.cleaningFee, notes: a.notes !== undefined ? a.notes : card.notes,
         };
         const fields: [string, unknown, unknown][] = [
           ["YOM", next.yom, card.yom], ["YOR", next.yor, card.yor], ["seats", next.capacity, card.capacity], ["WIFI", next.wifiStatus, card.wifi],
-          ["WIFI details", next.wifiDetail, card.wifiDetail], ["smoking", next.smoking, card.smoking], ["pets", next.pets, card.pets],
+          ["WIFI details", next.wifiDetail, card.wifiDetail], ["smoking", next.smoking, card.smoking], ["pets", next.pets, card.pets], ["notes", next.notes, card.notes],
         ];
         const changed = fields.filter(([, x, y]) => (x ?? null) !== (y ?? null)).map(([name]) => name);
         if (changed.length) {
