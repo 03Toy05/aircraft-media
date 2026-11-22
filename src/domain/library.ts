@@ -684,6 +684,8 @@ export interface PackAircraft {
   type: string; // e.g. "Gulfstream G650ER"
   tail?: string | null; // leave out when the brochure hides it (e.g. "VP-CXX")
   base?: string[];
+  /** No fixed base (e.g. AirX's jets): shown as "Floating". */
+  floating?: boolean;
   yom?: number | null;
   yor?: number | null;
   capacity?: number | null;
@@ -778,7 +780,7 @@ export async function importLibraryPack(db: Db, store: FileStore, admin: Actor, 
     else {
       aircraftId = (await createAircraft(db, lib, randomUUID(), {
         aircraftTypeId: type.id, registration: tail, operatorId, info,
-        base: bases.length ? { mode: "based", locations: bases } : undefined,
+        base: a.floating ? { mode: "floating", locations: [] } : bases.length ? { mode: "based", locations: bases } : undefined,
         tailResolution: "distinct_aircraft",
       })).result.aircraftId;
       out.created++;
