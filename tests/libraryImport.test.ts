@@ -167,4 +167,22 @@ describe("Library import", () => {
     expect(kinds).toEqual(["cabin", "cabin", "combined", "exterior", "floor_plan"]);
     expect((await copiedLibraryAircraft(t.db, tenantId)).has(libAc.aircraftId)).toBe(true);
   }, 60_000);
+
+  it("updates the details of aircraft already in the library, and leaves unchanged ones alone", async () => {
+    const t = await setup();
+    const files = new Map<string, Uint8Array>([["c.png", await makeImage(400, 300, 1300)]]);
+    const jet = (wifi: "yes" | "no") => ({ type: "Bombardier Challenger 850", tail: "9H-DOM", floating: true, yom: 2008, yor: 2015, capacity: 13, wifi, smoking: "yes" as const, pets: "yes" as const, photos: { cabin: ["c.png"] } });
+    await importLibraryPack(t.db, t.store, t.actor, { operator: "AirX", aircraft: [jet("yes")] }, files);
+    const [row] = await getCatalogue(t.db, LIBRARY_TENANT_ID);
+    expect(row.base).toBe("Floating");
+
+    const same = await importLibraryPack(t.db, t.store, t.actor, { operator: "AirX", aircraft: [jet("yes")] }, files);
+    expect(same.retailed).toEqual([]);
+    expect((await getAircraftCard(t.db, row.aircraftId))?.informationVersion).toBe(1);
+
+    const r = await importLibraryPack(t.db, t.store, t.actor, { operator: "AirX", aircraft: [jet("no")] }, files);
+    expect(r.retailed).toEqual(["Bombardier Challenger 850 9H-DOM: WIFI updated"]);
+    const card = await getAircraftCard(t.db, row.aircraftId);
+    expect(card).toMatchObject({ wifi: "no", yom: 2008, yor: 2015, capacity: 13, smoking: "yes", pets: "yes", informationVersion: 2 });
+  }, 60_000);
 });

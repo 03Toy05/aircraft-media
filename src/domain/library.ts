@@ -776,8 +776,27 @@ export async function importLibraryPack(db: Db, store: FileStore, admin: Actor, 
       for (const id of candidates) if (sameBases(await basesOf(db, id), bases)) { aircraftId = id; break; }
     }
     const info = { yom: a.yom ?? null, yor: a.yor ?? null, capacity: a.capacity ?? null, wifiStatus: a.wifi ?? "unknown", wifiDetail: a.wifiDetail ?? null, smoking: a.smoking ?? "unknown", pets: a.pets ?? "unknown" } as const;
-    if (aircraftId) out.matched++;
-    else {
+    if (aircraftId) {
+      out.matched++;
+      // Already in the library: the pack's details win where it gives them (e.g. WIFI corrected to No); the rest stay.
+      const card = await getAircraftCard(db, aircraftId);
+      if (card) {
+        const next = {
+          yom: a.yom !== undefined ? a.yom : card.yom, yor: a.yor !== undefined ? a.yor : card.yor, capacity: a.capacity !== undefined ? a.capacity : card.capacity,
+          wifiStatus: a.wifi ?? card.wifi, wifiDetail: a.wifiDetail !== undefined ? a.wifiDetail : card.wifiDetail,
+          smoking: a.smoking ?? card.smoking, pets: a.pets ?? card.pets, cleaningFee: card.cleaningFee, notes: card.notes,
+        };
+        const fields: [string, unknown, unknown][] = [
+          ["YOM", next.yom, card.yom], ["YOR", next.yor, card.yor], ["seats", next.capacity, card.capacity], ["WIFI", next.wifiStatus, card.wifi],
+          ["WIFI details", next.wifiDetail, card.wifiDetail], ["smoking", next.smoking, card.smoking], ["pets", next.pets, card.pets],
+        ];
+        const changed = fields.filter(([, x, y]) => (x ?? null) !== (y ?? null)).map(([name]) => name);
+        if (changed.length) {
+          await addInformationVersion(db, lib, randomUUID(), { aircraftId, expectedVersion: card.informationVersion, info: next });
+          out.retailed.push(`${label}${tail ? ` ${tail}` : ""}: ${changed.join(", ")} updated`);
+        }
+      }
+    } else {
       aircraftId = (await createAircraft(db, lib, randomUUID(), {
         aircraftTypeId: type.id, registration: tail, operatorId, info,
         base: a.floating ? { mode: "floating", locations: [] } : bases.length ? { mode: "based", locations: bases } : undefined,
