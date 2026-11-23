@@ -90,55 +90,97 @@ export async function signOutAction() {
 
 // ------------------------------------------------------------------ intake
 
+export type UploadResult = { name: string; status: "new" | "duplicate" | "failed" | "partial"; mediaId?: string; error?: string; detail?: string };
+
+/** One uploaded file (a photo, or a PDF whose photos are taken out): what happened, and how many photos now wait in Review. */
+async function uploadOne(actor: Actor, db: Awaited<ReturnType<typeof getDb>>, store: ReturnType<typeof getFileStore>, f: File, cardText: string | null, batchId: string): Promise<{ result: UploadResult; toReview: number }> {
+  const bytes = new Uint8Array(await f.arrayBuffer());
+  try {
+    let ids: string[];
+    let status: "new" | "duplicate" | "partial";
+    let detail = "";
+    if (f.type === "application/pdf" || /\.pdf$/i.test(f.name)) {
+      const r = await ingestPdf(db, store, actor, { filename: f.name, bytes, cardText, batchId });
+      const x = r.result;
+      ids = x.extracted.map((e) => e.mediaId);
+      status = r.replayed ? "duplicate" : x.status === "partially_processed" ? "partial" : "new";
+      detail = x.status === "no_images"
+        ? `PDF kept. No embedded photos were found in its ${x.pageCount} page(s) — page rendering is not supported; export the pages as images and upload those.`
+        : `${x.extracted.length} photo(s) taken out of ${x.pageCount} page(s)` + (x.skipped.length ? `; skipped ${x.skipped.length}: ${x.skipped.map((k) => `p${k.page} ${k.reason}`).join("; ")}` : "");
+    } else {
+      const r = await media.ingestUpload(db, store, actor, { filename: f.name, bytes, cardText, batchId });
+      ids = [r.result.mediaId];
+      status = r.replayed ? "duplicate" : "new";
+    }
+    // Photos the workspace already had are reused: say where each one is, and bring removed ones back to Review.
+    const st = await bringBackForReview(db, actor, ids);
+    const where: string[] = [];
+    if (st.waiting.length) where.push(`${st.waiting.length} waiting in Review`);
+    if (st.reopened.length) where.push(`${st.reopened.length} removed earlier, now back in Review`);
+    if (st.approved.length) {
+      const planes = [...new Set(st.approved.map((a) => a.aircraftId).filter((x): x is string => !!x))];
+      const names = (await Promise.all(planes.map((id) => dir.getAircraftCard(db, id)))).filter(Boolean).map((c) => [c!.operator, c!.aircraft, c!.tailNumber].filter(Boolean).join(" "));
+      where.push(`${st.approved.length} already approved${names.length ? ` (on ${names.join("; ")})` : ""}, so not in Review`);
+    }
+    return {
+      result: { name: f.name, status, mediaId: [...st.waiting, ...st.reopened][0] ?? ids[0], detail: [detail, where.join("; ")].filter(Boolean).join(". ") },
+      toReview: st.waiting.length + st.reopened.length,
+    };
+  } catch (e) {
+    if (e instanceof DomainError) return { result: { name: f.name, status: "failed", error: e.message }, toReview: 0 };
+    throw e;
+  }
+}
+
+/** Where to go after an upload: straight to Review when everything went in, otherwise the list of what happened. */
+function afterUpload(results: UploadResult[], toReview: number): string {
+  if (toReview && results.every((r) => r.status !== "failed" && r.status !== "partial") && results.every((r) => !/already approved/.test(r.detail ?? ""))) {
+    return withParam("/review", "ok", `${toReview} photo${toReview === 1 ? "" : "s"} waiting in Review. Check the views and details of each set, then save it.`);
+  }
+  return withParam("/intake", "r", JSON.stringify(results));
+}
+
+/** The whole form at once (used when the page's script has not loaded). */
 export async function uploadMediaAction(fd: FormData) {
   const { actor, db, store } = await ctx();
   const cardText = optStr(fd, "cardText");
   const batchId = randomUUID(); // one upload = one batch: the card text and the assignment apply to all its photos
-  const results: { name: string; status: "new" | "duplicate" | "failed" | "partial"; mediaId?: string; error?: string; detail?: string }[] = [];
+  const results: UploadResult[] = [];
   let toReview = 0;
   for (const f of fd.getAll("files")) {
     if (!(f instanceof File) || f.size === 0) continue;
-    const bytes = new Uint8Array(await f.arrayBuffer());
-    try {
-      let ids: string[];
-      let status: "new" | "duplicate" | "partial";
-      let detail = "";
-      if (f.type === "application/pdf" || /\.pdf$/i.test(f.name)) {
-        const r = await ingestPdf(db, store, actor, { filename: f.name, bytes, cardText, batchId });
-        const x = r.result;
-        ids = x.extracted.map((e) => e.mediaId);
-        status = r.replayed ? "duplicate" : x.status === "partially_processed" ? "partial" : "new";
-        detail = x.status === "no_images"
-          ? `PDF kept. No embedded photos were found in its ${x.pageCount} page(s) — page rendering is not supported; export the pages as images and upload those.`
-          : `${x.extracted.length} photo(s) taken out of ${x.pageCount} page(s)` + (x.skipped.length ? `; skipped ${x.skipped.length}: ${x.skipped.map((k) => `p${k.page} ${k.reason}`).join("; ")}` : "");
-      } else {
-        const r = await media.ingestUpload(db, store, actor, { filename: f.name, bytes, cardText, batchId });
-        ids = [r.result.mediaId];
-        status = r.replayed ? "duplicate" : "new";
-      }
-      // Photos the workspace already had are reused: say where each one is, and bring removed ones back to Review.
-      const st = await bringBackForReview(db, actor, ids);
-      toReview += st.waiting.length + st.reopened.length;
-      const where: string[] = [];
-      if (st.waiting.length) where.push(`${st.waiting.length} waiting in Review`);
-      if (st.reopened.length) where.push(`${st.reopened.length} removed earlier, now back in Review`);
-      if (st.approved.length) {
-        const planes = [...new Set(st.approved.map((a) => a.aircraftId).filter((x): x is string => !!x))];
-        const names = (await Promise.all(planes.map((id) => dir.getAircraftCard(db, id)))).filter(Boolean).map((c) => [c!.operator, c!.aircraft, c!.tailNumber].filter(Boolean).join(" "));
-        where.push(`${st.approved.length} already approved${names.length ? ` (on ${names.join("; ")})` : ""}, so not in Review`);
-      }
-      results.push({ name: f.name, status, mediaId: [...st.waiting, ...st.reopened][0] ?? ids[0], detail: [detail, where.join("; ")].filter(Boolean).join(". ") });
-    } catch (e) {
-      if (e instanceof DomainError) results.push({ name: f.name, status: "failed", error: e.message });
-      else throw e;
-    }
+    const r = await uploadOne(actor, db, store, f, cardText, batchId);
+    results.push(r.result);
+    toReview += r.toReview;
   }
   revalidatePath("/", "layout");
-  // Everything went in and something is waiting: straight to the Review worksheet. Otherwise show what happened.
-  if (toReview && results.every((r) => r.status !== "failed" && r.status !== "partial") && results.every((r) => !/already approved/.test(r.detail ?? ""))) {
-    redirect(withParam("/review", "ok", `${toReview} photo${toReview === 1 ? "" : "s"} waiting in Review. Check the views and details of each set, then save it.`));
+  redirect(afterUpload(results, toReview));
+}
+
+/**
+ * One file of an upload, sent on its own so the page can show progress ("3 of 10") and send a few at once.
+ * The files of one upload share a batch id (made by the page), so they stay together in Review as before.
+ */
+export async function uploadFileAction(fd: FormData): Promise<{ result: UploadResult; toReview: number }> {
+  const f = fd.get("file");
+  const name = f instanceof File ? f.name : "file";
+  let actor;
+  try {
+    ({ actor } = await requireWriter());
+  } catch (e) {
+    if (e instanceof DomainError) return { result: { name, status: "failed", error: e.message }, toReview: 0 };
+    throw e;
   }
-  redirect(withParam("/intake", "r", JSON.stringify(results)));
+  if (!(f instanceof File) || f.size === 0) return { result: { name, status: "failed", error: "The file was empty." }, toReview: 0 };
+  const given = str(fd, "batchId");
+  const batchId = /^[0-9a-f-]{36}$/.test(given) ? given : randomUUID();
+  return uploadOne(actor, await getDb(), getFileStore(), f, optStr(fd, "cardText"), batchId);
+}
+
+/** After the page has sent every file: refresh the pages and say where to go next. */
+export async function finishUploadAction(results: UploadResult[], toReview: number): Promise<string> {
+  revalidatePath("/", "layout");
+  return afterUpload(results.slice(0, 200), toReview);
 }
 
 export async function driveImportAction(fd: FormData) {

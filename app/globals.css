@@ -435,3 +435,6 @@ ul.history li:last-child { border-bottom: 0; }
 }
 .tag { display: inline-block; margin-left: 6px; padding: 0 6px; border-radius: 4px; background: var(--chip, #eef4ff); color: var(--muted); font-size: 11px; vertical-align: 1px; }
 .row > .search-cell { flex: 1 1 100%; min-width: 100%; }
+.upload-progress { margin-top: 12px; display: flex; flex-direction: column; gap: 6px; }
+.upload-progress .bar { height: 8px; border-radius: 4px; background: var(--line); overflow: hidden; }
+.upload-progress .bar span { display: block; height: 100%; background: var(--accent); transition: width .3s ease; }

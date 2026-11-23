@@ -7,10 +7,9 @@ import { getDriveClient } from "@/storage";
 import type { DriveImportSummary } from "@/domain/driveImport";
 import { driveImportAction, uploadMediaAction } from "../../actions";
 import { Flash, one, type SP } from "../../_components/ui";
-import { PendingButton } from "../../_components/PendingButton";
-import PhotoPicker from "../../_components/PhotoPicker";
+import UploadForm from "../../_components/UploadForm";
 
-type Result = { name: string; status: "new" | "duplicate" | "failed" | "partial"; mediaId?: string; error?: string; detail?: string };
+import type { UploadResult as Result } from "../../actions";
 
 function parse<T>(raw: string | undefined, fallback: T): T {
   try {
@@ -56,17 +55,7 @@ export default async function Intake({ searchParams }: { searchParams: SP }) {
           <p className="small"><Link href="/review">Check and approve them in Review →</Link></p>
         </div>
       )}
-      <form action={uploadMediaAction} className="card">
-        <p className="muted small" style={{ marginTop: 0 }}>You&apos;ll check each photo in Review before anything is saved to an aircraft. Photos inside a PDF come out as separate photos.</p>
-        <PhotoPicker name="files" accept="image/jpeg,image/png,image/webp,application/pdf" />
-        <details className="collapse" style={{ marginTop: 10 }}>
-          <summary className="small">Add the aircraft details (optional)</summary>
-          <label htmlFor="cardText">Paste the details as you received them</label>
-          <textarea id="cardText" name="cardText" placeholder={"Operator:\nAircraft:\nTail number:\nBase:\nYOM:\nYOR:\nCapacity:\nWIFI:\nNotes:"} />
-          <p className="muted small">They&apos;re filled in for you in Review, where you confirm them.</p>
-        </details>
-        <p style={{ marginBottom: 0 }}><PendingButton pending="Uploading… keep this page open">Upload</PendingButton></p>
-      </form>
+      <UploadForm action={uploadMediaAction} />
 
       {showDrive && <div className="card">
         <h3>Google Drive</h3>

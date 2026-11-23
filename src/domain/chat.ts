@@ -140,7 +140,10 @@ export async function applyChatProposal(db: Db, actor: Actor, key: string, input
   }
   out.aircraftId = aircraftId;
 
-  for (const mediaId of input.mediaIds) {
+  // Each photo is its own few small saves, independent of the others: do three at a time (in the order given),
+  // so approving a set of 10 is not ten waits in a row.
+  type PhotoOutcome = (typeof out.photos)[number];
+  const one = async (mediaId: string): Promise<PhotoOutcome> => {
     try {
       const cls = input.classifications[mediaId];
       const reasons: string[] = [];
@@ -158,15 +161,20 @@ export async function applyChatProposal(db: Db, actor: Actor, key: string, input
       [m] = await db.select().from(aircraftMedia).where(eq(aircraftMedia.id, mediaId));
       if (reasons.length === 0 && m.reviewState === "needs_review" && m.currentContentVersionId) {
         await approveMedia(db, actor, { mediaId, contentVersionId: m.currentContentVersionId, expectedVersion: m.version });
-        out.photos.push({ mediaId, outcome: "approved", detail: aircraftId ? "approved as this aircraft" : "approved as representative of the type" });
-      } else {
-        out.photos.push({ mediaId, outcome: "left_in_review", detail: reasons.length ? `left in Review: ${reasons.join(", ")}` : `already ${m.reviewState.replace(/_/g, " ")}` });
+        return { mediaId, outcome: "approved", detail: aircraftId ? "approved as this aircraft" : "approved as representative of the type" };
       }
+      return { mediaId, outcome: "left_in_review", detail: reasons.length ? `left in Review: ${reasons.join(", ")}` : `already ${m.reviewState.replace(/_/g, " ")}` };
     } catch (e) {
-      if (e instanceof DomainError) out.photos.push({ mediaId, outcome: "failed", detail: e.message });
-      else throw e;
+      if (e instanceof DomainError) return { mediaId, outcome: "failed", detail: e.message };
+      throw e;
     }
-  }
+  };
+  const ids = [...new Set(input.mediaIds)];
+  const results: PhotoOutcome[] = new Array(ids.length);
+  let next = 0;
+  const worker = async () => { while (next < ids.length) { const i = next++; results[i] = await one(ids[i]); } };
+  await Promise.all(Array.from({ length: Math.min(3, ids.length) }, worker));
+  out.photos.push(...results);
   return out;
 }
 
