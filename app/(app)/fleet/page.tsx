@@ -1,12 +1,15 @@
 import Link from "next/link";
-import { asc, eq } from "drizzle-orm";
+import { and, asc, eq } from "drizzle-orm";
 import { getDb } from "@/db/client";
 import { aircraftTypes, organisations } from "@/db/schema";
 import { requireOwner } from "@/lib/session";
 import Icon from "../../_components/Icon";
 import OpenSection from "../../_components/OpenSection";
 import CollapseOnMobile from "../../_components/CollapseOnMobile";
-import { AC_SORTS, runFleetQuery, sortAircraft, type AcSort, type OperatorSort } from "@/domain/fleetQuery";
+import { AC_SORTS, matchesWords, runFleetQuery, searchWords, sortAircraft, type AcSort, type OperatorSort } from "@/domain/fleetQuery";
+import { LIBRARY_TENANT_ID, hasLibraryAccess } from "@/domain/library";
+import { orgAliasesFor } from "@/domain/directory";
+import FleetSearch, { type FleetSuggestion } from "../../_components/FleetSearch";
 import RememberFilters from "../../_components/RememberFilters";
 import { getCatalogue, type CatalogueRow } from "@/domain/catalogue";
 import { AIRCRAFT_CATEGORIES, AIRCRAFT_CATEGORY_LABEL } from "@/domain/constants";
@@ -22,15 +25,19 @@ import SearchSelect from "../../_components/SearchSelect";
 import Choice, { WIFI_CHOICES, YES_NO_CHOICES } from "../../_components/Choice";
 
 /** The page's filters and view, remembered on each device (see RememberFilters). */
-const FILTER_KEYS = ["q", "region", "category", "base", "wifi", "acsort", "sort", "view"];
+const FILTER_KEYS = ["q", "in", "region", "category", "base", "wifi", "acsort", "sort", "view"];
 
 /** Operators and their aircraft on one page: each aircraft shows its details and a few approved photos. */
 export default async function Fleet({ searchParams }: { searchParams: SP }) {
   const sp = await searchParams;
-  const { actor, readOnly } = await requireOwner();
+  const session = await requireOwner();
+  const { actor, readOnly } = session;
   const db = await getDb();
   if (!readOnly) await tidyExistingPlaces(db, actor.tenantId); // "HK" saved before the city list -> "Hong Kong"
-  const orgs = await db.select().from(organisations).where(eq(organisations.tenantId, actor.tenantId)).orderBy(asc(organisations.canonicalName));
+  const orgRows = await db.select().from(organisations).where(eq(organisations.tenantId, actor.tenantId)).orderBy(asc(organisations.canonicalName));
+  // Each operator with its other names ("VJ"), so the search finds them too.
+  const ownAliases = await orgAliasesFor(db, actor.tenantId);
+  const orgs = orgRows.map((o) => ({ ...o, aliases: ownAliases.filter((a) => a.organisationId === o.id).map((a) => a.alias) }));
   const types = await db.select().from(aircraftTypes).where(eq(aircraftTypes.tenantId, actor.tenantId)).orderBy(asc(aircraftTypes.model));
   const rows = await getCatalogue(db, actor.tenantId);
   const tq = (one(sp.tq) ?? "").trim();
@@ -100,16 +107,17 @@ export default async function Fleet({ searchParams }: { searchParams: SP }) {
   // Filters and sorting are shared with Toy (src/domain/fleetQuery.ts), so both give the same answer.
   const wifiParam = one(sp.wifi);
   const {
-    regions, baseOptions, sort, acSort, q, regionFilter, catFilter, baseFilter, wifiFilter, filtering, groups: shownGroups, unassigned,
+    regions, baseOptions, sort, acSort, q, regionFilter, catFilter, baseFilter, wifiFilter, filtering, groups: shownGroups, unassigned, searchIn,
   } = runFleetQuery(
     { orgs, rows, types, cards: new Map([...details].map(([id, d]) => [id, d.card])) },
-    { q: one(sp.q), region: one(sp.region), category: one(sp.category), base: one(sp.base), sort: one(sp.sort) as OperatorSort, acsort: one(sp.acsort) as AcSort, wifi: ["yes", "no", "tbc", "unknown"].includes(wifiParam ?? "") ? (wifiParam as "yes") : undefined },
+    { q: one(sp.q), in: (["aircraft", "operator"] as const).find((x) => x === one(sp.in)), region: one(sp.region), category: one(sp.category), base: one(sp.base), sort: one(sp.sort) as OperatorSort, acsort: one(sp.acsort) as AcSort, wifi: ["yes", "no", "tbc", "unknown"].includes(wifiParam ?? "") ? (wifiParam as "yes") : undefined },
   );
   const shown = shownGroups.map((g) => g.org);
   const cardMap = new Map([...details].map(([id, d]) => [id, d.card]));
 
   // "By operator" (cards) or "All aircraft" (one list across operators, in the chosen order).
-  const view = one(sp.view) === "aircraft" ? "aircraft" : "operators";
+  // Searching for an aircraft lists just the aircraft, each with its operator.
+  const view = one(sp.view) === "aircraft" || (searchIn === "aircraft" && !!q) ? "aircraft" : "operators";
   const allAircraft = view === "aircraft"
     ? (acSort ? sortAircraft([...shownGroups.flatMap((g) => g.aircraft), ...unassigned], acSort, cardMap)
       : [...shownGroups.flatMap((g) => g.aircraft), ...unassigned].sort((a, b) => a.aircraft.localeCompare(b.aircraft) || (a.tail ?? "").localeCompare(b.tail ?? "")))
@@ -121,25 +129,72 @@ export default async function Fleet({ searchParams }: { searchParams: SP }) {
     return `/fleet?${p}`;
   };
   const withAircraft = shownGroups.filter((g) => g.aircraft.length > 0);
+
+  // What the search box suggests while typing: your operators and aircraft, then the library's (when shared with you).
+  const suggestions: FleetSuggestion[] = [
+    ...orgs.filter((o) => o.active).map((o) => ({ kind: "operator" as const, label: o.canonicalName, sub: `${rows.filter((r) => r.operatorId === o.id).length} aircraft${o.aliases.length ? ` · ${o.aliases.join(", ")}` : ""}`, keys: `${o.canonicalName} ${o.aliases.join(" ")} ${o.region ?? ""}`, href: `/organisations/${o.id}` })),
+    ...rows.map((r) => {
+      const o = orgs.find((x) => x.id === r.operatorId);
+      return { kind: "aircraft" as const, label: `${r.aircraft}${r.tail ? ` · ${r.tail}` : ""}`, sub: o?.canonicalName ?? "No operator", keys: `${r.aircraft} ${r.tail ?? ""} ${o ? `${o.canonicalName} ${o.aliases.join(" ")}` : ""}`, href: `/aircraft/${r.aircraftId}` };
+    }),
+  ];
+  let libraryHits = 0;
+  if (await hasLibraryAccess(db, session)) {
+    const libRows = await getCatalogue(db, LIBRARY_TENANT_ID);
+    const libOrgs = await db.select().from(organisations).where(and(eq(organisations.tenantId, LIBRARY_TENANT_ID), eq(organisations.active, true)));
+    const libAliases = await orgAliasesFor(db, LIBRARY_TENANT_ID);
+    const aliasOf = (id: string | null) => libAliases.filter((a) => a.organisationId === id).map((a) => a.alias).join(" ");
+    const libLink = (text: string) => `/library?q=${encodeURIComponent(text)}`;
+    // Your own operator with no aircraft, when the library has one of the same name, would only be a confusing
+    // "0 aircraft" line above the real fleet: leave it out of the suggestions.
+    const libNames = new Set(libOrgs.filter((o) => libRows.some((r) => r.operatorId === o.id)).map((o) => o.canonicalName.trim().toLowerCase()));
+    for (let i = suggestions.length - 1; i >= 0; i--) {
+      const x = suggestions[i];
+      if (x.kind === "operator" && x.sub?.startsWith("0 aircraft") && libNames.has(x.label.trim().toLowerCase())) suggestions.splice(i, 1);
+    }
+    for (const o of libOrgs) {
+      const n = libRows.filter((r) => r.operatorId === o.id).length;
+      if (n) suggestions.push({ kind: "operator", label: o.canonicalName, sub: `${n} aircraft`, keys: `${o.canonicalName} ${aliasOf(o.id)} ${o.region ?? ""}`, href: libLink(o.canonicalName), library: true });
+    }
+    for (const r of libRows) suggestions.push({ kind: "aircraft", label: `${r.aircraft}${r.tail ? ` · ${r.tail}` : ""}`, sub: r.operator ?? undefined, keys: `${r.aircraft} ${r.tail ?? ""} ${r.operator ?? ""} ${aliasOf(r.operatorId)}`, href: libLink(r.operator ?? r.aircraft), library: true });
+    // Nothing of your own matches: say what the library has, so the search never just comes back empty.
+    const w = searchWords(q);
+    if (w.length) libraryHits = suggestions.filter((x) => x.library && x.kind === "aircraft" && (searchIn !== "operator" || matchesWords(x.sub ?? "", w)) && matchesWords(x.keys, w)).length;
+  }
+  // Filters other than the search: the folded "Filters and sort" panel stays open, and says how many, when any is set.
+  const otherFilters = [regionFilter, catFilter, baseFilter, wifiFilter, acSort].filter(Boolean).length;
   // Fold operator cards to one line each once there are many (opened when a filter narrows the list).
   const FOLD_AT = 30;
   const fold = withAircraft.length >= FOLD_AT && !filtering;
 
   return (
     <>
-      <h1>Operators &amp; aircraft</h1>
-      <RememberFilters keys={FILTER_KEYS} />
+      <div className="page-head">
+        <h1>Operators &amp; aircraft</h1>
+        {/* On phones the two Add buttons fold into one small "Add" menu, so the search comes first. */}
+        <details className="add-menu only-phone">
+          <summary className="btn"><Icon name="plus" />Add</summary>
+          <div className="add-menu-list">
+            <OpenSection target="add-operator" icon="operator">Operator</OpenSection>
+            <OpenSection target="add-aircraft" icon="plane">Aircraft</OpenSection>
+          </div>
+        </details>
+      </div>
+      {/* The search itself is not remembered: opening the page should not bring back an old search. */}
+      <RememberFilters keys={FILTER_KEYS.filter((k) => k !== "q" && k !== "in")} />
       <Flash error={one(sp.error)} ok={one(sp.ok)} />
 
-      <div className="row" style={{ marginBottom: 12 }}>
+      <div className="row hide-phone" style={{ marginBottom: 12 }}>
         <div style={{ flex: "0 0 auto" }}><OpenSection target="add-operator" icon="operator">Add operator</OpenSection></div>
         <div style={{ flex: "0 0 auto" }}><OpenSection target="add-aircraft" icon="plane">Add aircraft</OpenSection></div>
       </div>
 
       {orgs.length > 0 && (
-        <CollapseOnMobile keepOpen={filtering} summary="Filter and sort">
-        <form method="get" className="row filterbar" style={{ alignItems: "end" }}>
-          <div><label>Search</label><input name="q" defaultValue={q} placeholder="Operator, tail or aircraft" /></div>
+        <div className="card fleet-filters">
+        {/* Search always shows; the other filters fold away on phones. Both belong to the one form below. */}
+        <div className="search-cell"><FleetSearch form="fleet-filters" defaultQ={one(sp.q) ?? ""} defaultIn={searchIn} items={suggestions} /></div>
+        <CollapseOnMobile plain keepOpen={otherFilters > 0} summary={`Filters and sort${otherFilters ? ` (${otherFilters})` : ""}`}>
+        <form id="fleet-filters" method="get" className="row filterbar" style={{ alignItems: "end" }}>
           <div><label>Region</label>
             <SearchSelect name="region" defaultValue={regionFilter} emptyLabel="All regions"
               options={[...regions.map((r) => ({ value: r, label: r })), { value: "__none", label: "No region set" }]} /></div>
@@ -159,8 +214,20 @@ export default async function Fleet({ searchParams }: { searchParams: SP }) {
           <div style={{ flex: "0 0 auto" }}><button type="submit"><Icon name="search" />Apply</button> {filtering && <Link href={`/fleet?reset=1&view=${view}`}>Clear</Link>}</div>
         </form>
         </CollapseOnMobile>
+        </div>
       )}
-      {filtering && <p className="muted small">Showing {shown.length} of {orgs.length} operators.</p>}
+      {filtering && (
+        <p className="muted small">
+          {view === "operators" ? <>Showing {shown.length} of {orgs.length} operators</> : <>Filtered</>}{q ? `, for “${one(sp.q)?.trim()}”` : ""}.{" "}
+          <Link href={`/fleet?reset=1&view=${view}`}>Clear</Link>
+        </p>
+      )}
+      {q && libraryHits > 0 && (
+        <div className="card small">
+          {shown.length || unassigned.length ? "The library also has" : "Nothing in your workspace matches, but the library has"} {libraryHits} aircraft for “{one(sp.q)?.trim()}”.{" "}
+          <Link href={`/library?q=${encodeURIComponent(one(sp.q)?.trim() ?? "")}`}>See them in the library →</Link>
+        </div>
+      )}
 
       {orgs.length === 0 && rows.length === 0 && <div className="card muted">Nothing here yet. Add an operator or an aircraft, or tell Toy on the dashboard.</div>}
       {rows.length > 0 && (

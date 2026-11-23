@@ -13,6 +13,7 @@ export default function OpenSection({ target, icon, children }: { target: string
       onClick={() => {
         const el = document.getElementById(target) as HTMLDetailsElement | null;
         if (!el) return;
+        (document.activeElement?.closest("details.add-menu") as HTMLDetailsElement | null)?.removeAttribute("open"); // close the phone's Add menu
         el.open = true;
         el.scrollIntoView({ behavior: "smooth", block: "start" });
         el.querySelector<HTMLElement>("input,select")?.focus({ preventScroll: true });

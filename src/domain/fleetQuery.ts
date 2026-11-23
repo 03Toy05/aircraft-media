@@ -1,3 +1,4 @@
+import { matchesWords, searchWords } from "./searchMatch";
 import type { CatalogueRow } from "./catalogue";
 import { AIRCRAFT_CATEGORIES, AIRCRAFT_CATEGORY_LABEL, normalizeKey, type AircraftCategory, type WifiStatus } from "./constants";
 
@@ -19,8 +20,12 @@ export const AC_SORTS = [
 export type AcSort = (typeof AC_SORTS)[number]["id"];
 export type OperatorSort = "name" | "region" | "aircraft";
 
+/** What the search looks at: aircraft and operators (default), aircraft only, or operators only. */
+export type SearchIn = "all" | "aircraft" | "operator";
+
 export interface FleetQuery {
   q?: string;
+  in?: SearchIn;
   region?: string; // "__none" = no region set
   category?: string;
   base?: string; // "__none" = not recorded; "Floating"
@@ -30,7 +35,7 @@ export interface FleetQuery {
 }
 
 export interface FleetData {
-  orgs: { id: string; canonicalName: string; region: string | null; base?: string | null }[];
+  orgs: { id: string; canonicalName: string; region: string | null; base?: string | null; /** Other names ("VJ"). */ aliases?: string[] }[];
   rows: CatalogueRow[];
   types: { id: string; category: string | null }[];
   cards: Map<string, { yom: number | null; yor: number | null; capacity: number | null; wifi: WifiStatus } | null | undefined>;
@@ -65,6 +70,8 @@ export function sortAircraft(list: CatalogueRow[], acSort: AcSort, cards: FleetD
 export function runFleetQuery(data: FleetData, query: FleetQuery) {
   const { orgs, rows, types, cards } = data;
   const q = (query.q ?? "").trim().toLowerCase();
+  const words = searchWords(q);
+  const searchIn: SearchIn = query.in === "aircraft" || query.in === "operator" ? query.in : "all";
   const regionFilter = (query.region ?? "").trim();
   const catFilter = (query.category ?? "").trim();
   const baseFilter = (query.base ?? "").trim();
@@ -85,14 +92,26 @@ export function runFleetQuery(data: FleetData, query: FleetQuery) {
   const acRows = (list: CatalogueRow[]) => sortAircraft(list.filter(aircraftMatch), acSort, cards);
 
   const countOf = (id: string) => rows.filter((r) => r.operatorId === id).length;
-  const matchesQ = (o: FleetData["orgs"][number]) =>
-    !q || o.canonicalName.toLowerCase().includes(q) || (o.region ?? "").toLowerCase().includes(q) ||
-    rows.some((r) => r.operatorId === o.id && [r.tail, r.aircraft].some((x) => (x ?? "").toLowerCase().includes(q)));
+  // Search: an operator found by its name (or other names, or region) shows its whole fleet; otherwise only the
+  // aircraft that match are shown under it. "Aircraft" never matches by operator alone; "Operator" never by aircraft.
+  const orgById = new Map(orgs.map((o) => [o.id, o]));
+  const opText = (o: FleetData["orgs"][number]) => `${o.canonicalName} ${(o.aliases ?? []).join(" ")} ${o.region ?? ""}`;
+  const opHit = (o: FleetData["orgs"][number]) => !words.length || (searchIn !== "aircraft" && matchesWords(opText(o), words));
+  const acHit = (r: CatalogueRow) => {
+    if (!words.length) return true;
+    if (searchIn === "operator") return false;
+    const o = r.operatorId ? orgById.get(r.operatorId) : undefined;
+    return matchesWords(`${r.tail ?? ""} ${r.aircraft} ${o ? `${o.canonicalName} ${(o.aliases ?? []).join(" ")}` : ""}`, words);
+  };
+  const fleetOf = (o: FleetData["orgs"][number]) => {
+    const all = acRows(rows.filter((r) => r.operatorId === o.id));
+    return opHit(o) && words.length ? all : all.filter(acHit);
+  };
   const aircraftFiltering = !!(catFilter || baseFilter || wifiFilter);
 
   const shown = orgs
     .filter((o) => !aircraftFiltering || acRows(rows.filter((r) => r.operatorId === o.id)).length > 0)
-    .filter((o) => (!regionFilter || (regionFilter === "__none" ? !o.region : o.region === regionFilter)) && matchesQ(o))
+    .filter((o) => (!regionFilter || (regionFilter === "__none" ? !o.region : o.region === regionFilter)) && (opHit(o) || fleetOf(o).length > 0))
     .sort((a, b) =>
       sort === "region" ? (a.region ?? "~").localeCompare(b.region ?? "~") || a.canonicalName.localeCompare(b.canonicalName)
       : sort === "aircraft" ? countOf(b.id) - countOf(a.id) || a.canonicalName.localeCompare(b.canonicalName)
@@ -101,12 +120,17 @@ export function runFleetQuery(data: FleetData, query: FleetQuery) {
   const filtering = !!(regionFilter || q || aircraftFiltering);
   return {
     regions, baseOptions, sort, acSort, q, regionFilter, catFilter, baseFilter, wifiFilter, filtering,
-    groups: shown.map((o) => ({ org: o, aircraft: acRows(rows.filter((r) => r.operatorId === o.id)) })),
-    unassigned: filtering ? [] : acRows(rows.filter((r) => !r.operatorId)),
+    searchIn,
+    groups: shown.map((o) => ({ org: o, aircraft: fleetOf(o) })),
+    // Aircraft with no operator: all of them when not filtering; the matching ones when searching.
+    unassigned: !filtering ? acRows(rows.filter((r) => !r.operatorId))
+      : words.length && !regionFilter && searchIn !== "operator" ? acRows(rows.filter((r) => !r.operatorId)).filter(acHit) : [],
   };
 }
 
 /** The same query as a link to the page: "/fleet?region=Asia&acsort=yom". */
+export { matchesWords, searchWords };
+
 export function fleetLink(query: FleetQuery): string {
   const p = new URLSearchParams();
   for (const [k, v] of Object.entries(query)) if (v) p.set(k, String(v));

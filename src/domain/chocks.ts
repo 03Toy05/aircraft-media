@@ -11,7 +11,7 @@ import { LIBRARY_TENANT_ID } from "./library";
 import { operatorAliasesByName } from "./catalogue";
 import { parseFleetQuery } from "./fleetQuery";
 import { findContacts } from "./contacts";
-import { parseQuoteFollowUp, validEdit, type EditField } from "./chocksQuoteEdit";
+import { parseQuoteFollowUp, validEdit, type EditField, type FieldEdit } from "./chocksQuoteEdit";
 import { findAircraftByTail, findAircraftWithoutTail, getAircraftCard, orgAliasesFor, typeAliasesFor, resolveAircraftTypes, resolveAircraftTypesExact, resolveOrganisations, resolveOrganisationsExact } from "./directory";
 
 /**
@@ -32,8 +32,10 @@ export type Asked =
   | { kind: "edit"; edits: AircraftEdit[] }
   | { kind: "confirm" };
 
-/** A change to an aircraft's record that Toy asked about ("YOM 2015 -> 2016"). */
-export interface AircraftEdit { aircraftId: string; label: string; field: EditField; from: number | null; to: number }
+/** What Toy may change on an aircraft's record from the chat. */
+export interface AircraftChanges { yom?: number; yor?: number; capacity?: number; wifiStatus?: WifiStatus; wifiDetail?: string | null; smoking?: YesNoStatus; pets?: YesNoStatus; notes?: string | null }
+/** A change to an aircraft's record that Toy asked about: change is how it was shown ("YOM 2015 → 2016"). */
+export interface AircraftEdit { aircraftId: string; label: string; change: string; set: AircraftChanges }
 
 /** The last quote Toy showed, so "For 605, price is USD 70k" can change it. */
 export interface DraftQuote { ids: string[]; prices: Record<string, string>; kinds?: Classification[] }
@@ -227,7 +229,6 @@ export async function converse(
     const f = parseQuoteFollowUp(message, list);
     if (f) {
       const labelOf = (id: string) => { const c = cards.find((x) => x.aircraftId === id)!; return [c.operator, c.aircraft, c.tailNumber].filter(Boolean).join(" · "); };
-      const fieldName = (field: EditField) => field === "capacity" ? tr(L, "capacity") : field.toUpperCase();
       const lead: string[] = [];
       for (const [id, price] of Object.entries(f.prices)) {
         quote.prices[id] = price;
@@ -242,15 +243,20 @@ export async function converse(
       for (const e of f.edits) {
         const card = cards.find((x) => x.aircraftId === e.id)!;
         const name = labelOf(e.id);
-        if (!validEdit(e.field, e.value)) { lead.push(tr(L, "{value} doesn't look right for the {field} of {name}, so I left it.", { value: e.value, field: fieldName(e.field), name })); continue; }
-        if (!ownIds.includes(e.id)) { lead.push(tr(L, "{name} is in the shared library, so its {field} can't be changed from your workspace.", { name, field: fieldName(e.field) })); continue; }
-        if (card[e.field] === e.value) { lead.push(tr(L, "{name} already has {field} {value}.", { name, field: fieldName(e.field), value: e.value })); continue; }
-        edits.push({ aircraftId: e.id, label: name, field: e.field, from: card[e.field], to: e.value });
+        const field = fieldLabel(L, e.field);
+        if ((e.field === "yom" || e.field === "yor" || e.field === "capacity") && !validEdit(e.field, e.value)) { lead.push(tr(L, "{value} doesn't look right for the {field} of {name}, so I left it.", { value: e.value, field, name })); continue; }
+        if (!ownIds.includes(e.id)) { lead.push(tr(L, "{name} is in the shared library, so its {field} can't be changed from your workspace.", { name, field })); continue; }
+        const c = recordChange(L, card, e);
+        if (!c) { lead.push(tr(L, "{name} already has that {field}.", { name, field })); continue; }
+        // Several changes to one aircraft in one message are asked and saved together.
+        const same = edits.find((x) => x.aircraftId === e.id);
+        if (same) { same.set = { ...same.set, ...c.set }; same.change += `; ${c.change}`; }
+        else edits.push({ aircraftId: e.id, label: name, ...c });
       }
       const priced = Object.keys(f.prices).length > 0;
       if (edits.length) {
         d.asked = { kind: "edit", edits };
-        const lines = edits.map((e) => `• ${e.label}: ${fieldName(e.field)} ${e.from ?? "—"} → ${e.to}`);
+        const lines = edits.map((e) => `• ${e.label}: ${e.change}`);
         const ask = [tr(L, "Change the aircraft record? Every quote and card will use the new value; the old one stays in its history."), ...lines].join(String.fromCharCode(10));
         const chips = [{ label: tr(L, "Yes, change it"), send: "Yes" }, { label: tr(L, "No, leave it"), send: "No" }];
         if (!priced) return { draft: d, reply: { say: [...lead, ask], chips, ready: false }, confirm: false };
@@ -415,6 +421,43 @@ export async function converse(
   const q = await nextStep(db, tenantId, d, say);
   if (confirmAfter && q.reply.ready) return { draft: q.draft, reply: q.reply, confirm: true };
   return { draft: q.draft, reply: q.reply, confirm: false };
+}
+
+function fieldLabel(L: ChatLang | undefined, f: EditField): string {
+  switch (f) {
+    case "capacity": return tr(L, "capacity");
+    case "wifi": return "WIFI";
+    case "pets": return tr(L, "pets");
+    case "smoking": return tr(L, "smoking");
+    case "notes": return tr(L, "notes");
+    default: return f.toUpperCase();
+  }
+}
+
+const yesNo = (L: ChatLang | undefined, v: string | null | undefined) =>
+  v === "yes" ? tr(L, "Yes") : v === "no" ? tr(L, "No") : v === "tbc" ? "TBC" : "—";
+const quoteNote = (v: string | null | undefined) => (v ? `“${v.length > 80 ? `${v.slice(0, 77)}…` : v}”` : "—");
+
+/** What a typed change would do to the record ("WIFI No → Yes, at USD 10/MB"), or null when nothing changes. */
+function recordChange(L: ChatLang | undefined, card: NonNullable<Awaited<ReturnType<typeof getAircraftCard>>>, e: FieldEdit): { change: string; set: AircraftChanges } | null {
+  const field = fieldLabel(L, e.field);
+  switch (e.field) {
+    case "yom": case "yor": case "capacity":
+      return card[e.field] === e.value ? null : { change: `${field} ${card[e.field] ?? "—"} → ${e.value}`, set: { [e.field]: e.value } };
+    case "wifi": {
+      // "Yes" alone keeps the detail already there; "No" clears it.
+      const detail = e.value === "yes" || e.value === "tbc" ? e.detail || card.wifiDetail || null : null;
+      if (card.wifi === e.value && (card.wifiDetail ?? null) === detail) return null;
+      const show = (s: string, d: string | null) => `${yesNo(L, s)}${d ? `, ${d}` : ""}`;
+      return { change: `${field} ${show(card.wifi, card.wifiDetail)} → ${show(e.value, detail)}`, set: { wifiStatus: e.value, wifiDetail: detail } };
+    }
+    case "pets": case "smoking":
+      return card[e.field] === e.value ? null : { change: `${field} ${yesNo(L, card[e.field])} → ${yesNo(L, e.value)}`, set: { [e.field]: e.value } };
+    case "notes": {
+      const next = e.append && card.notes && e.value ? `${card.notes}\n${e.value}` : e.value;
+      return (card.notes ?? "") === next ? null : { change: `${field} ${quoteNote(card.notes)} → ${quoteNote(next)}`, set: { notes: next || null } };
+    }
+  }
 }
 
 /** The quote in the draft as a Toy reply: the message, the photos to send and a link to the Quote page. */

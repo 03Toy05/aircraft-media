@@ -386,3 +386,32 @@ code.ref { font-size: 12px; padding: 1px 6px; border: 1px solid var(--line); bor
 .info-actions { display: flex; align-items: center; gap: 12px; margin-top: 14px; flex-wrap: wrap; }
 .info-actions button { margin: 0; }
 @media (max-width: 520px) { .info-form .f, .info-form .f.half { grid-column: span 3; } .info-form .f:nth-child(3) { grid-column: 1 / -1; } }
+
+/* Fleet search: All / Aircraft / Operator, then matches while typing. */
+.fleet-search { display: flex; flex-direction: column; gap: 6px; }
+.scope-switch { display: inline-flex; align-self: flex-start; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; background: var(--card, #fff); }
+.scope-switch button { display: inline-flex; align-items: center; gap: 4px; padding: 5px 11px; min-height: 32px; border: 0; border-radius: 0; background: transparent; color: var(--text); font-size: 13px; cursor: pointer; }
+.scope-switch button + button { border-left: 1px solid var(--line); }
+.scope-switch button.on { background: var(--accent); color: #fff; }
+.scope-switch .ico { width: 15px; height: 15px; }
+.place-list li .ico { width: 15px; height: 15px; vertical-align: -3px; color: var(--muted); }
+.sug-sub { margin: 2px 0 0 20px; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.sug-sub .tag { margin-left: 0; }
+.page-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.page-head h1 { margin-bottom: 12px; }
+.only-phone { display: none; }
+.add-menu { position: relative; margin-bottom: 12px; }
+.add-menu > summary { list-style: none; cursor: pointer; }
+.add-menu > summary::-webkit-details-marker { display: none; }
+.add-menu-list { position: absolute; right: 0; top: calc(100% + 4px); z-index: 30; display: flex; flex-direction: column; gap: 6px; padding: 8px; background: var(--card, #fff); border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 6px 18px rgba(0,0,0,.15); min-width: 160px; }
+.add-menu-list button { width: 100%; }
+.fleet-filters .search-cell { margin-bottom: 10px; }
+.fleet-filters details.collapse > summary { font-size: 14px; }
+@media (max-width: 720px) {
+  .hide-phone { display: none !important; }
+  .only-phone { display: block; }
+  .ac-row-facts { -webkit-line-clamp: 2; }
+  details.collapse:not([data-ready]):not(.keep-open) > :not(summary) { display: none; }
+}
+.tag { display: inline-block; margin-left: 6px; padding: 0 6px; border-radius: 4px; background: var(--chip, #eef4ff); color: var(--muted); font-size: 11px; vertical-align: 1px; }
+.row > .search-cell { flex: 1 1 100%; min-width: 100%; }

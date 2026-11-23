@@ -178,7 +178,7 @@ export function normalizeSpoken(text: string): string {
 }
 
 /** "Yes, at USD 10/MB", "有，每MB 10美元", "無", "待確認" -> status and the rest as detail. */
-function parseWifiValue(value: string): { status: WifiStatus; detail: string } | null {
+export function parseWifiValue(value: string): { status: WifiStatus; detail: string } | null {
   const en = value.match(/^(yes|no|tbc|unknown)\b[\s,;:\-–—]*(.*)$/i);
   if (en) return { status: en[1].toLowerCase() as WifiStatus, detail: en[2].trim() };
   // How brochures say it: "complimentary", "free", "available" (yes, kept as the detail); "on request" (TBC); "none".
@@ -193,7 +193,7 @@ function parseWifiValue(value: string): { status: WifiStatus; detail: string } |
 }
 
 /** "Yes", "No", "Yes, cleaning fee USD 500", "可以", "禁止" -> yes / no, and anything after as detail. */
-function parseYesNoValue(value: string): { status: YesNoStatus; detail: string } | null {
+export function parseYesNoValue(value: string): { status: YesNoStatus; detail: string } | null {
   const en = value.match(/^(yes|allowed|ok|no|not allowed|unknown)\b[\s,;:\-–—]*(.*)$/i);
   if (en) {
     const w = en[1].toLowerCase();

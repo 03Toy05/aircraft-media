@@ -3,6 +3,7 @@ import type { Db } from "../db/client";
 import { aircraft, aircraftMedia, aircraftTypes, organisationAircraftRelationships } from "../db/schema";
 import type { Actor } from "./action";
 import type { ParsedCard } from "./card";
+import type { AircraftChanges } from "./chocks";
 import { guessClassificationFromFilename, CLASSIFICATIONS, type Classification, type WifiStatus, type YesNoStatus } from "./constants";
 import { addInformationVersion, addOrganisationAlias, setOrganisationRegion, createAircraft, createOrganisation, findAircraftByTail, getAircraftCard, resolveAircraftTypes, resolveAircraftTypesExact, resolveOrganisations, setBases, setOperator } from "./directory";
 import { DomainError } from "./errors";
@@ -242,7 +243,7 @@ async function updateExistingAircraft(db: Db, actor: Actor, key: string, aircraf
  * Toy changes an aircraft's record after the broker said yes ("For Vista 605, the YOM shall be 2016"). Only the named
  * field changes; the rest is carried over, and the earlier version stays in the history.
  */
-export async function changeAircraftFields(db: Db, actor: Actor, key: string, aircraftId: string, changes: { yom?: number; yor?: number; capacity?: number }) {
+export async function changeAircraftFields(db: Db, actor: Actor, key: string, aircraftId: string, changes: AircraftChanges) {
   const card = await getAircraftCard(db, aircraftId);
   if (!card) throw new DomainError("NOT_FOUND", "Aircraft not found");
   return addInformationVersion(db, actor, key, {
@@ -250,7 +251,9 @@ export async function changeAircraftFields(db: Db, actor: Actor, key: string, ai
     expectedVersion: card.informationVersion,
     info: {
       yom: changes.yom ?? card.yom, yor: changes.yor ?? card.yor, capacity: changes.capacity ?? card.capacity,
-      wifiStatus: card.wifi, wifiDetail: card.wifiDetail, smoking: card.smoking, pets: card.pets, cleaningFee: card.cleaningFee, notes: card.notes,
+      wifiStatus: changes.wifiStatus ?? card.wifi, wifiDetail: changes.wifiDetail !== undefined ? changes.wifiDetail : card.wifiDetail,
+      smoking: changes.smoking ?? card.smoking, pets: changes.pets ?? card.pets, cleaningFee: card.cleaningFee,
+      notes: changes.notes !== undefined ? changes.notes : card.notes,
     },
   });
 }

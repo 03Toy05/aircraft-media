@@ -66,7 +66,7 @@ describe("Toy: changes after a quote", () => {
     expect((await getAircraftCard(t.db, c605))!.yom).toBe(2015); // nothing saved yet
 
     const yes = await converse(t.db, t.actor.tenantId, ask.draft, "Yes", []);
-    expect(yes.edits).toEqual([{ aircraftId: c605, label: "Vista Jet · Bombardier Challenger 605 · 9H-VCA", field: "yom", from: 2015, to: 2016 }]);
+    expect(yes.edits).toEqual([{ aircraftId: c605, label: "Vista Jet · Bombardier Challenger 605 · 9H-VCA", change: "YOM 2015 → 2016", set: { yom: 2016 } }]);
     await changeAircraftFields(t.db, t.actor, key(), c605, { yom: 2016 });
     const card = (await getAircraftCard(t.db, c605))!;
     expect(card).toMatchObject({ yom: 2016, capacity: 12 }); // only the named field changes
@@ -79,8 +79,41 @@ describe("Toy: changes after a quote", () => {
 
   it("says so when the value is already there or does not look like a year", async () => {
     const d = await quoted();
-    expect(say(await converse(t.db, t.actor.tenantId, d, "605 YOM 2015", []))).toMatch(/already has YOM 2015/);
+    expect(say(await converse(t.db, t.actor.tenantId, d, "605 YOM 2015", []))).toMatch(/already has that YOM/);
     expect(say(await converse(t.db, t.actor.tenantId, d, "605 YOM 1800", []))).toMatch(/doesn't look right/);
+  });
+
+  it("reads WIFI, pets, smoking and notes changes", () => {
+    const one = (m: string) => parseQuoteFollowUp(m, list())?.edits;
+    expect(one("G280 WIFI: Yes, at USD 10/MB")).toEqual([{ id: "b", field: "wifi", value: "yes", detail: "at USD 10/MB" }]);
+    expect(one("For Vista 605, the wifi shall be no. Change it")).toEqual([{ id: "a", field: "wifi", value: "no", detail: "" }]);
+    expect(one("605 no pets")).toEqual([{ id: "a", field: "pets", value: "no" }]);
+    expect(one("G280 pets allowed")).toEqual([{ id: "b", field: "pets", value: "yes" }]);
+    expect(one("605 non-smoking")).toEqual([{ id: "a", field: "smoking", value: "no" }]);
+    expect(one("For G280, smoking: yes")).toEqual([{ id: "b", field: "smoking", value: "yes" }]);
+    expect(one("605 notes: catering on request, price USD 5k extra. Change it")).toEqual([{ id: "a", field: "notes", value: "catering on request, price USD 5k extra", append: false }]);
+    expect(one("G280 add a note: owner approval needed")).toEqual([{ id: "b", field: "notes", value: "owner approval needed", append: true }]);
+    expect(one("605 notes: none")).toEqual([{ id: "a", field: "notes", value: "", append: false }]);
+    expect(one("G280 寵物：不可以")).toEqual([{ id: "b", field: "pets", value: "no" }]);
+    // Several in one message, with the price kept apart.
+    const many = parseQuoteFollowUp("605 USD 70k\nFor 605, no smoking\nG280 WIFI no", list());
+    expect(many?.prices).toEqual({ a: "USD 70k" });
+    expect(many?.edits).toEqual([{ id: "a", field: "smoking", value: "no" }, { id: "b", field: "wifi", value: "no", detail: "" }]);
+  });
+
+  it("changes WIFI, pets, smoking and notes on the record after a yes", async () => {
+    const d = await quoted();
+    const ask = await converse(t.db, t.actor.tenantId, d, "For Vista 605, WIFI: Yes, at USD 10/MB\n605 no pets\n605 non-smoking\n605 notes: catering on request", []);
+    expect(say(ask)).toMatch(/WIFI — → Yes, at USD 10\/MB; pets — → No; smoking — → No; notes — → “catering on request”/);
+    const yes = await converse(t.db, t.actor.tenantId, ask.draft, "Yes", []);
+    expect(yes.edits).toHaveLength(1);
+    await changeAircraftFields(t.db, t.actor, key(), c605, yes.edits![0].set);
+    expect(await getAircraftCard(t.db, c605)).toMatchObject({ wifi: "yes", wifiDetail: "at USD 10/MB", pets: "no", smoking: "no", notes: "catering on request", yom: 2015, capacity: 12 });
+    // "Add a note" adds to what is there; "WIFI no" clears the WIFI detail.
+    const more = await converse(t.db, t.actor.tenantId, ask.draft, "605 add a note: owner approval needed\n605 wifi no", []);
+    const yes2 = await converse(t.db, t.actor.tenantId, more.draft, "Yes", []);
+    await changeAircraftFields(t.db, t.actor, key(), c605, yes2.edits![0].set);
+    expect(await getAircraftCard(t.db, c605)).toMatchObject({ wifi: "no", wifiDetail: null, notes: "catering on request\nowner approval needed", pets: "no" });
   });
 
   it("finds aircraft by the operator's other names ('VJ' for Vista Jet)", async () => {

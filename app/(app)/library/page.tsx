@@ -4,6 +4,7 @@ import { getDb } from "@/db/client";
 import { organisations } from "@/db/schema";
 import { requireOwner } from "@/lib/session";
 import { getCatalogue } from "@/domain/catalogue";
+import { matchesWords, searchWords } from "@/domain/searchMatch";
 import { getAircraftCard } from "@/domain/directory";
 import { getLineup } from "@/domain/media";
 import { LIBRARY_TENANT_ID, addingNow, copiedLibraryAircraft, hasLibraryAccess, pendingCount } from "@/domain/library";
@@ -41,9 +42,15 @@ export default async function Library({ searchParams }: { searchParams: SP }) {
   const orgs = await db.select().from(organisations).where(and(eq(organisations.tenantId, LIBRARY_TENANT_ID), eq(organisations.active, true))).orderBy(asc(organisations.canonicalName));
   const waiting = isAdmin ? await pendingCount(db) : 0;
 
+  // Same matching as the Fleet search: an operator found by name shows its whole fleet, otherwise only the aircraft that match.
+  const words = searchWords(q);
   const shown = orgs
-    .map((o) => ({ o, aircraft: rows.filter((r) => r.operatorId === o.id) }))
-    .filter(({ o, aircraft }) => aircraft.length > 0 && (!q || `${o.canonicalName} ${o.region ?? ""} ${o.base ?? ""} ${aircraft.map((a) => `${a.aircraft} ${a.tail ?? ""}`).join(" ")}`.toLowerCase().includes(q)));
+    .map((o) => {
+      const all = rows.filter((r) => r.operatorId === o.id);
+      const byName = !words.length || matchesWords(`${o.canonicalName} ${o.region ?? ""} ${o.base ?? ""}`, words);
+      return { o, aircraft: byName ? all : all.filter((a) => matchesWords(`${a.aircraft} ${a.tail ?? ""} ${o.canonicalName}`, words)) };
+    })
+    .filter(({ aircraft }) => aircraft.length > 0);
   const totalAircraft = rows.length;
 
   const details = new Map<string, { facts: string; photos: Awaited<ReturnType<typeof getLineup>> }>();

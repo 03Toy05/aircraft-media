@@ -106,8 +106,8 @@ async function turn(fd: FormData): Promise<TurnResult> {
     for (const e of turn.edits) byAircraft.set(e.aircraftId, [...(byAircraft.get(e.aircraftId) ?? []), e]);
     for (const [aircraftId, edits] of byAircraft) {
       try {
-        await changeAircraftFields(db, actor, `${turn.draft.submitKey}:edit:${randomUUID()}`, aircraftId, Object.fromEntries(edits.map((e) => [e.field, e.to])));
-        for (const e of edits) done.push(tr(L, "Changed {name}: {field} {from} → {to}.", { name: e.label, field: e.field === "capacity" ? tr(L, "capacity") : e.field.toUpperCase(), from: e.from ?? "—", to: e.to }));
+        await changeAircraftFields(db, actor, `${turn.draft.submitKey}:edit:${randomUUID()}`, aircraftId, Object.assign({}, ...edits.map((e) => e.set)));
+        for (const e of edits) done.push(tr(L, "Changed {name}: {change}.", { name: e.label, change: e.change }));
       } catch (e) {
         if (!(e instanceof DomainError)) throw e;
         failures.push(`${edits[0].label}: ${e.message}`);
