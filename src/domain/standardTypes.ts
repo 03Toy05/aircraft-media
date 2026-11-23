@@ -122,7 +122,14 @@ export const STANDARD_AIRCRAFT_TYPES: StandardType[] = [
   ...t("Robinson", "helicopter", ["R22", "R44 Raven II", "R66 Turbine"]),
   ...t("Enstrom", "helicopter", ["480B"]),
   ...t("Kazan", "helicopter", ["Ansat"]),
+  ...t("Bell", "helicopter", ["407GX", "407GXi"]),
+
+  // ---- More types seen in operator fleets ----
+  ...t("Beechcraft", "turboprop", [["1900D", ["Beech 1900D", "1900"]], ["King Air B200", ["B200", "King Air B200GT"]]]),
+  ...t("Bombardier", "light_jet", [["Learjet 45XR", ["LJ45XR"]]]),
+  ...t("Nextant", "light_jet", ["400XT", "400XTi"]),
+  ...t("Cessna", "light_jet", [["Citation CJ4 Gen2", ["CJ4 Gen 2", "Citation CJ4 Gen 2"]]]),
 ];
 
 /** Bump when the list grows so the app loads the new entries once (existing entries are never changed). */
-export const STANDARD_LIST_VERSION = "standard-v3";
+export const STANDARD_LIST_VERSION = "standard-v4";

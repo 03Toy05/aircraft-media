@@ -698,6 +698,8 @@ export interface PackAircraft {
   smoking?: "yes" | "no" | "unknown";
   pets?: "yes" | "no" | "unknown";
   photos: Partial<Record<"exterior" | "cabin" | "floor_plan", string[]>>; // file names in the pack
+  /** The tail is real even though it looks hidden (Mexico's XA-UXX): matched by tail, never renamed. */
+  realTail?: boolean;
   /** Kinds whose current library photos these replace: those are retired (kept in history) before these go in. */
   replace?: ("exterior" | "cabin" | "floor_plan")[];
 }
@@ -751,6 +753,8 @@ export async function importLibraryPack(db: Db, store: FileStore, admin: Actor, 
     ?? (await createOrganisation(db, lib, randomUUID(), { name: operatorName, region: pack.region ?? null, base: pack.base ?? null })).result.organisationId;
 
   const out: PackResult = { created: 0, matched: 0, photos: 0, skipped: [], retailed: [] };
+  const realTails = new Set(pack.aircraft.filter((x) => x.realTail && x.tail).map((x) => x.tail!.trim().toUpperCase()));
+  const hidden = (t: string | null | undefined) => isMaskedTail(t) && !realTails.has((t ?? "").trim().toUpperCase());
   for (const a of pack.aircraft) {
     const label = `${a.type}${a.base?.length ? ` (${a.base.join(" / ")})` : ""}`;
     const tail = a.tail?.replace(/\*+$/, "").trim().toUpperCase() || null;
@@ -759,14 +763,14 @@ export async function importLibraryPack(db: Db, store: FileStore, admin: Actor, 
     const bases = (a.base ?? []).map((b) => b.trim()).filter(Boolean);
 
     let aircraftId: string | null = null;
-    if (tail && !isMaskedTail(tail)) {
+    if (tail && !hidden(tail)) {
       aircraftId = (await findAircraftByTail(db, LIBRARY_TENANT_ID, tail))[0]?.aircraftId ?? null;
       // The real tail of an aircraft the library only knew by a hidden one ("VP-CXX" turns out to be VP-CTL): the
       // same operator's aircraft of this type, base and YOM gets the real tail (the old one is kept in its history).
       if (!aircraftId) {
         for (const id of await findAircraftWithoutTail(db, LIBRARY_TENANT_ID, type.id, operatorId, { includeHiddenTails: true })) {
           const c = await getAircraftCard(db, id);
-          if (!c?.tailNumber || !isMaskedTail(c.tailNumber)) continue;
+          if (!c?.tailNumber || !hidden(c.tailNumber)) continue;
           if (a.yom != null && c.yom != null && a.yom !== c.yom) continue;
           if (!sameBases(await basesOf(db, id), bases)) continue;
           await changeRegistration(db, lib, randomUUID(), { aircraftId: id, newRegistration: tail });
@@ -840,11 +844,19 @@ export async function importLibraryPack(db: Db, store: FileStore, admin: Actor, 
           const [onThis] = await db.select({ id: mediaAssociations.id }).from(mediaAssociations)
             .where(and(eq(mediaAssociations.aircraftMediaId, cur.id), eq(mediaAssociations.aircraftId, aircraftId), eq(mediaAssociations.active, true)));
           if (onThis) { out.skipped.push(`${label}: ${name} is already in the library`); continue; }
-          // The same photo serves a sister aircraft too (e.g. one exterior for the Challenger 300 and 350): a photo
-          // belongs to one aircraft, so this one gets its own copy.
-          const copy = new Uint8Array(await sharp(bytes).jpeg({ quality: 92 }).toBuffer());
-          up = await ingestUpload(db, store, lib, { filename: `${operatorName} ${label} ${name}`, bytes: copy, batchLabel: "Platform library" });
-          [cur] = await db.select().from(aircraftMedia).where(eq(aircraftMedia.id, up.result.mediaId));
+          // The same photo serves a sister aircraft too (e.g. one exterior for the Challenger 300 and 350, or one
+          // seating plan for a whole fleet of a type): a photo belongs to one aircraft, so this one gets its own copy.
+          // Each sister needs different bytes, so the copy steps down in quality until it is one the library lacks.
+          let mine = false;
+          for (let quality = 92; quality > 60 && cur.reviewState === "approved"; quality--) {
+            const copy = new Uint8Array(await sharp(bytes).jpeg({ quality }).toBuffer());
+            up = await ingestUpload(db, store, lib, { filename: `${operatorName} ${label} ${name}`, bytes: copy, batchLabel: "Platform library" });
+            [cur] = await db.select().from(aircraftMedia).where(eq(aircraftMedia.id, up.result.mediaId));
+            if (cur.reviewState !== "approved") break;
+            mine = !!(await db.select({ id: mediaAssociations.id }).from(mediaAssociations)
+              .where(and(eq(mediaAssociations.aircraftMediaId, cur.id), eq(mediaAssociations.aircraftId, aircraftId), eq(mediaAssociations.active, true))))[0];
+            if (mine) break;
+          }
           if (cur.reviewState === "approved") { out.skipped.push(`${label}: ${name} is already in the library`); continue; }
         }
         const mediaId = up.result.mediaId;

@@ -65,6 +65,26 @@ describe("Library import", () => {
     }
   }, 600_000);
 
+  it("gives each of a fleet its own copy of a shared seating plan, and keeps a real tail like XA-UXX", async () => {
+    const t = await setup();
+    const files = new Map<string, Uint8Array>();
+    files.set("plan.png", await makeImage(600, 200, 990));
+    for (const n of ["a", "b", "c", "d"]) files.set(`${n}-ext.png`, await makeImage(500, 300, 991 + n.charCodeAt(0)));
+    const plane = (tail: string, n: string, extra = {}) => ({ type: "Pilatus PC-12 NGX", tail, base: ["Monterrey"], ...extra,
+      photos: { exterior: [`${n}-ext.png`], floor_plan: ["plan.png"] } });
+    const pack: LibraryPack = { operator: "Luxaviation", aircraft: [
+      plane("ZS-KHT", "a"), plane("ZS-ERS", "b"), plane("XA-UXX", "c", { realTail: true }), plane("XA-UES", "d"),
+    ] };
+    const r = await importLibraryPack(t.db, t.store, t.actor, pack, files);
+    expect(r.skipped).toEqual([]);
+    expect(r).toMatchObject({ created: 4, photos: 8 });
+    expect(r.retailed).toEqual([]);
+    const rows = await getCatalogue(t.db, LIBRARY_TENANT_ID);
+    expect(rows.map((x) => x.tail).sort()).toEqual(["XA-UES", "XA-UXX", "ZS-ERS", "ZS-KHT"]);
+    const again = await importLibraryPack(t.db, t.store, t.actor, pack, files);
+    expect(again).toMatchObject({ created: 0, matched: 4, photos: 0 });
+  }, 120_000);
+
   it("adds library aircraft in the background, once each, one after another", async () => {
     const t = await setup();
     const files = new Map<string, Uint8Array>();
