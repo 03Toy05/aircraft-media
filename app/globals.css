@@ -194,6 +194,11 @@ button.block-btn { width: 100%; justify-content: center; min-height: 42px; font-
 .composer { position: sticky; bottom: 8px; z-index: 5; }
 .composer-bar { display: flex; gap: 8px; margin-top: 8px; align-items: center; }
 .composer-bar .send { margin-left: auto; }
+.composer textarea { padding-right: 84px; }
+.composer-clear { position: absolute; top: 14px; right: 14px; z-index: 1; padding: 2px 8px; min-height: 26px; font-size: 12px; background: var(--card); }
+.voice-line { display: flex; align-items: center; gap: 6px; margin: 8px 0 0; font-weight: 400; }
+.voice-line .ico { width: 15px; height: 15px; color: var(--muted); margin: 0; }
+.voice-pick { width: auto; padding: 4px 8px; font-size: 13px; min-height: 32px; }
 .voice-opts { margin-top: 8px; } .voice-opts summary { cursor: pointer; }
 details.collapse > summary { cursor: pointer; font-weight: 600; list-style: none; display: flex; align-items: center; }
 details.collapse > summary::-webkit-details-marker { display: none; }

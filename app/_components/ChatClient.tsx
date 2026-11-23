@@ -10,9 +10,9 @@ import { CLASSIFICATION_LABEL, type Classification } from "@/domain/constants";
 import { prepareShareAction, type SharePayload } from "../shareActions";
 import { ShareBox } from "./ShareBox";
 import { copyText, fetchPhoto } from "./copyText";
-import SearchSelect from "./SearchSelect";
 import Icon from "./Icon";
 import { CHAT_LANGUAGES, parseChatLang, toHans, trClassification, type ChatLang } from "@/domain/chocksText";
+import { savedVoice, saveVoice } from "./voice";
 
 /** The words on the chat itself. Toy's own sentences come from the server in the chosen language. */
 const UI_EN = {
@@ -24,7 +24,7 @@ const UI_EN = {
   template: "Operator: \nRegion: \nAircraft type: \nTail number: \nYOM: \nCapacity: ",
   placeholderNew: "Ask Toy, or tap Template…",
   placeholderReply: "Reply to Toy, or add more details…",
-  templateBtn: "Template", speak: "Speak", stop: "Stop", send: "Send", attach: "Photos", voiceOptions: "Voice options",
+  templateBtn: "Template", speak: "Speak", stop: "Stop", send: "Send", attach: "Photos", voiceOptions: "Voice options", clear: "Clear",
   readAloud: "Toy reads replies aloud", autoSend: "Send when I stop speaking", voiceLanguage: "Voice language", language: "Language",
   listening: "Listening… keep talking, pauses are fine. Press Stop listening when you are done (or tick “Send when I stop speaking”). Say something like “Operator Advanced Aviation, aircraft type G280, capacity 10”.",
   noVoice: "Voice input isn't available in this browser. Chrome or Edge work best.",
@@ -56,7 +56,7 @@ const UI_HANT: UI = {
   template: "營運商：\n地區：\n機型：\n機尾號：\n出廠年份：\n載客量：",
   placeholderNew: "問 Toy，或按「範本」…",
   placeholderReply: "回覆 Toy，或補充更多資料…",
-  templateBtn: "範本", speak: "語音輸入", stop: "停止", send: "傳送", attach: "相片", voiceOptions: "語音選項",
+  templateBtn: "範本", speak: "語音輸入", stop: "停止", send: "傳送", attach: "相片", voiceOptions: "語音選項", clear: "清除",
   readAloud: "由 Toy 朗讀回覆", autoSend: "停止說話後自動傳送", voiceLanguage: "語音語言", language: "語言",
   listening: "正在收音…請繼續說，停頓沒關係。說完後按「停止收音」（或勾選「停止說話後自動傳送」）。可以這樣說：「營運商 Advanced Aviation，機型 G280，載客量 10」。",
   noVoice: "此瀏覽器不支援語音輸入。建議使用 Chrome 或 Edge。",
@@ -80,9 +80,14 @@ const UI_HANT: UI = {
 };
 const UI_HANS: UI = Object.fromEntries(Object.entries(UI_HANT).map(([k, v]) => [k, toHans(v)])) as UI;
 const uiFor = (l: ChatLang): UI => (l === "zh-Hant" ? UI_HANT : l === "zh-Hans" ? UI_HANS : UI_EN);
-const VOICES: { id: string; name: string }[] = [
-  { id: "en-US", name: "English (US)" }, { id: "en-GB", name: "English (UK)" }, { id: "en-HK", name: "English (HK)" },
-  { id: "zh-HK", name: "廣東話" }, { id: "zh-TW", name: "國語 (台灣)" }, { id: "zh-CN", name: "普通话" },
+/** What the microphone listens for. The phone hears one language at a time; 廣東話 copes best with English words mixed in. */
+const VOICES: { id: string; name: string; short: string }[] = [
+  { id: "zh-HK", name: "廣東話 + English", short: "粵+EN" },
+  { id: "en-US", name: "English (US)", short: "EN" }, { id: "en-HK", name: "English (HK)", short: "EN" }, { id: "en-GB", name: "English (UK)", short: "EN" },
+  { id: "zh-CN", name: "普通话", short: "普" }, { id: "zh-TW", name: "國語 (台灣)", short: "國" },
+  { id: "ko-KR", name: "한국어 (Korean)", short: "KO" }, { id: "ru-RU", name: "Русский (Russian)", short: "RU" },
+  { id: "ms-MY", name: "Bahasa Melayu", short: "MS" }, { id: "id-ID", name: "Bahasa Indonesia", short: "ID" },
+  { id: "fr-FR", name: "Français (French)", short: "FR" }, { id: "es-ES", name: "Español (Spanish)", short: "ES" },
 ];
 
 /** "Copy message": puts the quotation text Toy just showed on the clipboard. */
@@ -264,11 +269,26 @@ export default function ChatClient() {
       const saved = parseChatLang(window.localStorage.getItem("chocksLang"));
       if (saved !== "en") { setChatLang(saved); setVoice(saved === "zh-Hans" ? "zh-CN" : "zh-HK"); }
     } catch { /* storage blocked: stay in English */ }
+    // A voice language chosen on purpose wins over the one that follows the chat language.
+    const v = savedVoice();
+    if (v) setVoice(v);
   }, []);
   const changeChatLang = (l: ChatLang) => {
     setChatLang(l);
-    setVoice(l === "zh-Hans" ? "zh-CN" : l === "zh-Hant" ? "zh-HK" : "en-US");
+    if (!savedVoice()) setVoice(l === "zh-Hans" ? "zh-CN" : l === "zh-Hant" ? "zh-HK" : "en-US");
     try { window.localStorage.setItem("chocksLang", l); } catch { /* ignore */ }
+  };
+  const chooseVoice = (v: string) => {
+    if (listening) stopListening(false);
+    setVoice(v);
+    saveVoice(v);
+  };
+  /** Empty the message box (a long voice note can fill it); stops listening first so nothing comes back. */
+  const clearText = () => {
+    if (listening) stopListening(false);
+    baseText.current = ""; committed.current = "";
+    setText("");
+    setTimeout(() => boxRef.current?.focus(), 0);
   };
   useEffect(() => { endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" }); }, [msgs]);
   // The last quote survives a reload or a visit to another page (in this tab), so prices and changes can still be typed.
@@ -490,6 +510,9 @@ export default function ChatClient() {
       <div ref={endRef} />
 
       <div className="card composer">
+        {text.trim() && (
+          <button type="button" className="secondary small-btn composer-clear" onClick={clearText} aria-label={ui.clear}>✕ {ui.clear}</button>
+        )}
         <textarea
           ref={boxRef}
           value={text}
@@ -509,17 +532,20 @@ export default function ChatClient() {
         {listening && <p className="small muted">{ui.listening}</p>}
         {voiceMsg && <p className="small" style={{ color: "var(--warn)" }}>{voiceMsg}</p>}
         {files.length > 0 && <p className="small muted" style={{ margin: "6px 0 0" }}>{ui.files.replace("{n}", String(files.length))}</p>}
+        {canListen && (
+          <label className="voice-line small">
+            <Icon name="mic" /><span className="muted">{ui.voiceLanguage}</span>
+            <select className="voice-pick" value={voice} onChange={(e) => chooseVoice(e.target.value)}>
+              {VOICES.map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}
+            </select>
+          </label>
+        )}
         <details className="voice-opts">
           <summary className="small muted">{ui.voiceOptions}</summary>
           {(canListen || canSpeak) ? (
             <div className="row small" style={{ marginTop: 6, alignItems: "center" }}>
               <label style={{ flex: "0 0 auto" }}><input type="checkbox" checked={speak} onChange={(e) => setSpeak(e.target.checked)} /> {ui.readAloud}</label>
               {canListen && <label style={{ flex: "0 0 auto" }}><input type="checkbox" checked={autoSend} onChange={(e) => setAutoSend(e.target.checked)} /> {ui.autoSend}</label>}
-              {canListen && (
-                <div style={{ flex: "1 1 160px" }}>
-                  <SearchSelect value={voice} onChange={setVoice} ariaLabel={ui.voiceLanguage} options={VOICES.map((v) => ({ value: v.id, label: v.name }))} />
-                </div>
-              )}
             </div>
           ) : null}
           {!canListen && <p className="small muted" style={{ margin: "6px 0 0" }}>{ui.noVoice}</p>}
