@@ -50,45 +50,130 @@ export default async function AircraftDetail({ params, searchParams }: { params:
   const twin = await libraryTwin(db, actor.tenantId, id);
   const offerable = twin ? await offerablePhotos(db, actor.tenantId, id) : [];
 
+  // The facts as label / value pairs (the same lines the copied card uses), so the page and the message agree.
+  const facts = formatAircraftCard(card).split("\n").map((line) => {
+    const at = line.indexOf(":");
+    return { label: line.slice(0, at), value: line.slice(at + 1).trim() };
+  }).filter((f) => f.label !== "Aircraft");
+  const yn = (v: string) => (v === "yes" ? "Yes" : v === "no" ? "No" : v === "tbc" ? "TBC" : "");
+  const versionLine = (i: (typeof infos)[number]) => [
+    i.yom != null && `YOM ${i.yom}`, i.yor != null && `YOR ${i.yor}`, i.capacity != null && `${i.capacity} seats`,
+    yn(i.wifiStatus) && `WIFI ${yn(i.wifiStatus)}${i.wifiDetail ? ` (${i.wifiDetail})` : ""}`,
+    yn(i.smoking) && `Smoking ${yn(i.smoking)}`, yn(i.pets) && `Pets ${yn(i.pets)}`, i.cleaningFee && `Cleaning fee ${i.cleaningFee}`,
+    i.notes && `Notes: ${i.notes}`,
+  ].filter(Boolean).join(" · ") || "Nothing recorded";
+
   return (
     <>
       <p className="small"><Link href="/fleet">← Operators &amp; aircraft</Link></p>
-      <h1>{card.tailNumber ?? "No tail number yet"} — {card.aircraft}</h1>
+      <h1 style={{ marginBottom: 2 }}>{card.aircraft}</h1>
+      <p className="muted" style={{ marginTop: 0 }}>
+        {card.tailNumber ?? "Tail TBC"}{card.operator ? ` · ${card.operator}` : ""}{card.base ? ` · ${card.base}` : ""}
+      </p>
       <Flash error={one(sp.error)} ok={one(sp.ok)} />
       <div className="grid g2">
         <div>
+          {/* What people open an aircraft for: its photos, and sending them. */}
           <div className="card">
-            <h3>Compact card <span className="muted small">(version {card.informationVersion})</span></h3>
-            <pre className="cardtext">{formatAircraftCard(card)}</pre>
+            <h3>Photos</h3>
+            {lineup.length === 0 && pending.length === 0 && <p className="muted">No photos for this aircraft yet. <Link href="/intake">Upload photos</Link>.</p>}
+            {CLASSIFICATIONS.map((c) => {
+              const items = lineup.filter((l) => l.classification === c);
+              if (!items.length) return null;
+              return (
+                <div key={c} style={{ marginBottom: 8 }}>
+                  <div className="small muted">{CLASSIFICATION_LABEL[c]}</div>
+                  <div className="thumbs">{items.map((l) => (
+                    <Link key={l.mediaId} href={`/review/${l.mediaId}`} title={l.label}>
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={`/api/media/${l.contentVersionId}`} alt={l.label} loading="lazy" />
+                      <div className="small">{l.label}{l.associationStatus === "representative_type" ? " (representative)" : ""}</div>
+                    </Link>
+                  ))}</div>
+                </div>
+              );
+            })}
+            {pending.length > 0 && <p className="small">Waiting for review: {pending.map(({ m }) => <Link key={m.id} href={`/review/${m.id}`}>photo </Link>)}</p>}
           </div>
+
           <div className="card">
-            <h3>Update information</h3>
-            <form action={addInfoVersionAction}>
-              <Key /><input type="hidden" name="aircraftId" value={id} /><input type="hidden" name="expectedVersion" value={card.informationVersion} />
-              <div className="info-form">
-                <div className="f"><label>YOM</label><input name="yom" type="number" inputMode="numeric" defaultValue={current?.yom ?? ""} /></div>
-                <div className="f"><label>YOR</label><input name="yor" type="number" inputMode="numeric" defaultValue={current?.yor ?? ""} /></div>
-                <div className="f"><label>Capacity</label><input name="capacity" type="number" inputMode="numeric" defaultValue={current?.capacity ?? ""} /></div>
-                <div className="f half"><label>WIFI</label><Choice name="wifiStatus" defaultValue={current?.wifiStatus ?? "unknown"} options={WIFI_CHOICES} ariaLabel="WIFI" /></div>
-                <div className="f half"><label>WIFI details</label><input name="wifiDetail" defaultValue={current?.wifiDetail ?? ""} placeholder="e.g. at USD 10/MB" /></div>
-                <div className="f half"><label>Smoking</label><Choice name="smoking" defaultValue={current?.smoking ?? "unknown"} options={YES_NO_CHOICES} ariaLabel="Smoking" /></div>
-                <div className="f half"><label>Pets</label><Choice name="pets" defaultValue={current?.pets ?? "unknown"} options={YES_NO_CHOICES} ariaLabel="Pets" /></div>
-                <div className="f full"><label>Cleaning fee</label><input name="cleaningFee" defaultValue={current?.cleaningFee ?? ""} placeholder="e.g. USD 500 for pets or smoking" /></div>
-                <div className="f full"><label>Notes</label><input name="notes" defaultValue={current?.notes ?? ""} /></div>
+            <h3>Send to a client</h3>
+            <p className="small" style={{ marginTop: 0 }}><Link href={`/quote?ids=${id}`}>Write a quote message for this aircraft →</Link></p>
+            <ShareBox
+              aircraftId={id}
+              tail={card.tailNumber ?? "aircraft"}
+              cardText={formatAircraftCard(card)}
+              items={lineup.map((l) => ({
+                classification: l.classification,
+                classificationLabel: CLASSIFICATION_LABEL[l.classification],
+                label: l.label,
+                url: `/api/media/${l.contentVersionId}`,
+                mimeType: l.mimeType,
+                representative: l.associationStatus === "representative_type",
+              }))}
+            />
+            <div className="group" style={{ marginTop: 10 }}>
+              <div className="group-row" style={{ alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                <span className="small">
+                  <b>Combined photo</b>{" "}
+                  {ownCombined.length
+                    ? "made. Remake it after changing the photos."
+                    : canCombine
+                      ? "not made yet."
+                      : `needs ${COMBINED_NEEDS}, all approved (photos of this type count too, but at least one must be of this aircraft).`}
+                </span>
+                {canCombine && (
+                  <form action={makeCombinedAction}>
+                    <input type="hidden" name="aircraftId" value={id} />
+                    <button type="submit" className="secondary small-btn" disabled={readOnly}>{ownCombined.length ? "Remake" : "Make it now"}</button>
+                  </form>
+                )}
               </div>
-              <div className="info-actions"><button type="submit">Save</button><span className="muted small">Earlier versions are kept below.</span></div>
-            </form>
-          </div>
-          <div className="card">
-            <h3>Information versions</h3>
-            <table><thead><tr><th>#</th><th>YOM</th><th>YOR</th><th>Cap.</th><th>WIFI</th><th>Smoking</th><th>Pets</th><th>Notes</th><th>Recorded</th></tr></thead>
-              <tbody>{[...infos].reverse().map((i) => (
-                <tr key={i.id}><td>{i.versionNumber}{i.isCurrent ? " ●" : ""}</td><td>{i.yom ?? ""}</td><td>{i.yor ?? ""}</td><td>{i.capacity ?? ""}</td><td>{i.wifiStatus}</td><td>{i.smoking === "unknown" ? "" : i.smoking}</td><td>{i.pets === "unknown" ? "" : i.pets}{i.cleaningFee ? ` (fee ${i.cleaningFee})` : ""}</td><td>{i.notes}</td><td className="small">{i.createdAt.toISOString().slice(0, 10)}</td></tr>
-              ))}</tbody></table>
+            </div>
           </div>
         </div>
 
         <div>
+          <div className="card">
+            <h3>Details</h3>
+            <dl className="facts">
+              {facts.map((f) => (
+                <div key={f.label}><dt>{f.label}</dt><dd className={f.value ? "" : "muted"}>{f.value || "—"}</dd></div>
+              ))}
+            </dl>
+            <details className="collapse edit-details" style={{ marginTop: 10 }}>
+              <summary className="btn secondary">Edit details</summary>
+              <form action={addInfoVersionAction}>
+                <Key /><input type="hidden" name="aircraftId" value={id} /><input type="hidden" name="expectedVersion" value={card.informationVersion} />
+                <div className="info-form">
+                  <div className="f"><label>YOM</label><input name="yom" type="number" inputMode="numeric" defaultValue={current?.yom ?? ""} /></div>
+                  <div className="f"><label>YOR</label><input name="yor" type="number" inputMode="numeric" defaultValue={current?.yor ?? ""} /></div>
+                  <div className="f"><label>Capacity</label><input name="capacity" type="number" inputMode="numeric" defaultValue={current?.capacity ?? ""} /></div>
+                  <div className="f half"><label>WIFI</label><Choice name="wifiStatus" defaultValue={current?.wifiStatus ?? "unknown"} options={WIFI_CHOICES} ariaLabel="WIFI" /></div>
+                  <div className="f half"><label>WIFI details</label><input name="wifiDetail" defaultValue={current?.wifiDetail ?? ""} placeholder="e.g. at USD 10/MB" /></div>
+                  <div className="f half"><label>Smoking</label><Choice name="smoking" defaultValue={current?.smoking ?? "unknown"} options={YES_NO_CHOICES} ariaLabel="Smoking" /></div>
+                  <div className="f half"><label>Pets</label><Choice name="pets" defaultValue={current?.pets ?? "unknown"} options={YES_NO_CHOICES} ariaLabel="Pets" /></div>
+                  <div className="f full"><label>Cleaning fee</label><input name="cleaningFee" defaultValue={current?.cleaningFee ?? ""} placeholder="e.g. USD 500 for pets or smoking" /></div>
+                  <div className="f full"><label>Notes</label><input name="notes" defaultValue={current?.notes ?? ""} /></div>
+                </div>
+                <div className="info-actions"><button type="submit">Save</button><span className="muted small">The old details are kept in the history.</span></div>
+              </form>
+            </details>
+            {infos.length > 1 && (
+              <details className="collapse" style={{ marginTop: 10 }}>
+                <summary className="small">Earlier versions ({infos.length})</summary>
+                <ul className="history">
+                  {[...infos].reverse().map((i) => (
+                    <li key={i.id}>
+                      <b>Version {i.versionNumber}</b>{i.isCurrent ? " (current)" : ""} <span className="muted small">· {i.createdAt.toISOString().slice(0, 10)}</span>
+                      <div className="small">{versionLine(i)}</div>
+                    </li>
+                  ))}
+                </ul>
+              </details>
+            )}
+          </div>
+
           {(copy || (twin && offerable.length > 0)) && (
             <div className="card">
               <h3>Aircraft Media library</h3>
@@ -124,8 +209,10 @@ export default async function AircraftDetail({ params, searchParams }: { params:
               )}
             </div>
           )}
-          <div className="card">
-            <h3>Tail number</h3>
+
+          {/* Less often changed: folded so the page stays short. */}
+          <details className="card collapse" open={tailInUse}>
+            <summary>Tail number <span className="muted small" style={{ fontWeight: 400, marginLeft: 6 }}>{card.tailNumber ?? "TBC"}</span></summary>
             <form action={changeTailAction}>
               <Key /><input type="hidden" name="aircraftId" value={id} />
               <div className="row">
@@ -135,12 +222,13 @@ export default async function AircraftDetail({ params, searchParams }: { params:
               {tailInUse && <label style={{ color: "var(--warn)" }}><input type="checkbox" name="tailResolution" value="distinct_aircraft" /> Confirm: this tail is not the other aircraft</label>}
               <p><button type="submit">Change tail (keeps history)</button></p>
             </form>
-            <table><thead><tr><th>Registration</th><th>From</th><th>To</th></tr></thead>
-              <tbody>{regs.map((r) => <tr key={r.id}><td>{r.registration}{r.isCurrent ? " ●" : ""}</td><td>{r.validFrom ?? "–"}</td><td>{r.validTo ?? "–"}</td></tr>)}</tbody></table>
-          </div>
+            {regs.length > 0 && (
+              <ul className="history">{regs.map((r) => <li key={r.id}><b>{r.registration}</b>{r.isCurrent ? " (current)" : ""} <span className="muted small">· {r.validFrom ?? "–"} to {r.validTo ?? "now"}</span></li>)}</ul>
+            )}
+          </details>
 
-          <div className="card">
-            <h3>Base</h3>
+          <details className="card collapse">
+            <summary>Base <span className="muted small" style={{ fontWeight: 400, marginLeft: 6 }}>{card.base ?? "not set"}</span></summary>
             <form action={setBasesAction}>
               <Key /><input type="hidden" name="aircraftId" value={id} />
               <Choice name="baseMode" defaultValue={card.base === "Floating" ? "floating" : "based"} ariaLabel="Base"
@@ -149,11 +237,11 @@ export default async function AircraftDetail({ params, searchParams }: { params:
               <PlacePicker name="baseLocations" kind="base" multiple defaultValue={card.base && card.base !== "Floating" ? card.base : ""} />
               <p><button type="submit" className="secondary">Save base</button></p>
             </form>
-          </div>
+          </details>
 
-          <div className="card">
-            <h3>Operator and management</h3>
-            <table><tbody>{rels.map(({ r, o }) => <tr key={r.id}><td><Link href={`/organisations/${o.id}`}>{o.canonicalName}</Link></td><td>{r.role.replace("_", " ")}</td><td>{r.active ? "current" : `ended ${r.validTo ?? ""}`}</td></tr>)}</tbody></table>
+          <details className="card collapse">
+            <summary>Operator and management <span className="muted small" style={{ fontWeight: 400, marginLeft: 6 }}>{card.operator ?? "none"}</span></summary>
+            <ul className="history">{rels.map(({ r, o }) => <li key={r.id}><Link href={`/organisations/${o.id}`}>{o.canonicalName}</Link> <span className="muted small">· {r.role.replace("_", " ")} · {r.active ? "current" : `ended ${r.validTo ?? ""}`}</span></li>)}</ul>
             <form action={setOperatorAction}>
               <Key /><input type="hidden" name="aircraftId" value={id} />
               <div className="row">
@@ -169,65 +257,7 @@ export default async function AircraftDetail({ params, searchParams }: { params:
                 <div style={{ flex: "0 0 auto" }}><button type="submit" className="secondary">Add</button></div>
               </div>
             </form>
-          </div>
-
-          <div className="card">
-            <h3>Send to a client</h3>
-            <p className="small"><Link href={`/quote?ids=${id}`}>Write a quote message for this aircraft →</Link></p>
-            <ShareBox
-              aircraftId={id}
-              tail={card.tailNumber ?? "aircraft"}
-              cardText={formatAircraftCard(card)}
-              items={lineup.map((l) => ({
-                classification: l.classification,
-                classificationLabel: CLASSIFICATION_LABEL[l.classification],
-                label: l.label,
-                url: `/api/media/${l.contentVersionId}`,
-                mimeType: l.mimeType,
-                representative: l.associationStatus === "representative_type",
-              }))}
-            />
-          </div>
-
-          <div className="card">
-            <h3>Media</h3>
-            {lineup.length === 0 && pending.length === 0 && <p className="muted">No photos for this aircraft yet. <Link href="/intake">Upload</Link>.</p>}
-            {CLASSIFICATIONS.map((c) => {
-              const items = lineup.filter((l) => l.classification === c);
-              if (!items.length) return null;
-              return (
-                <div key={c} style={{ marginBottom: 8 }}>
-                  <div className="small muted">{CLASSIFICATION_LABEL[c]}</div>
-                  <div className="thumbs">{items.map((l) => (
-                    <Link key={l.mediaId} href={`/review/${l.mediaId}`} title={l.label}>
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img src={`/api/media/${l.contentVersionId}`} alt={l.label} />
-                      <div className="small">{l.label}{l.associationStatus === "representative_type" ? " (representative)" : ""}</div>
-                    </Link>
-                  ))}</div>
-                </div>
-              );
-            })}
-            <div className="group" style={{ marginTop: 10 }}>
-              <div className="group-row" style={{ alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                <span className="small">
-                  <b>Combined photo</b>{" "}
-                  {ownCombined.length
-                    ? "made. Remake it after changing the photos."
-                    : canCombine
-                      ? "not made yet."
-                      : `needs ${COMBINED_NEEDS}, all approved (photos of this type count too, but at least one must be of this aircraft).`}
-                </span>
-                {canCombine && (
-                  <form action={makeCombinedAction}>
-                    <input type="hidden" name="aircraftId" value={id} />
-                    <button type="submit" className="secondary small-btn" disabled={readOnly}>{ownCombined.length ? "Remake" : "Make it now"}</button>
-                  </form>
-                )}
-              </div>
-            </div>
-            {pending.length > 0 && <p className="small">Awaiting review: {pending.map(({ m }) => <Link key={m.id} href={`/review/${m.id}`}>photo </Link>)}</p>}
-          </div>
+          </details>
         </div>
       </div>
     </>

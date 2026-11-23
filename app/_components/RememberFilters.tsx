@@ -26,8 +26,12 @@ export default function RememberFilters({ keys }: { keys: string[] }) {
         return;
       }
       if (p.size === 0) {
-        const saved = localStorage.getItem(STORE);
-        if (saved) window.location.replace(`${url.pathname}?${saved}`);
+        // Only what this page remembers now (an older saved search is dropped, not brought back).
+        const saved = new URLSearchParams(localStorage.getItem(STORE) ?? "");
+        const back = new URLSearchParams();
+        for (const k of keys) { const v = saved.get(k); if (v) back.set(k, v); }
+        if (back.size) window.location.replace(`${url.pathname}?${back}`);
+        else localStorage.removeItem(STORE);
         return;
       }
       const keep = new URLSearchParams();

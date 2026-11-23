@@ -14,7 +14,7 @@ export default function CollapseOnMobile({ summary, keepOpen, plain, children }:
     ref.current?.setAttribute("data-ready", ""); // until now phones keep it folded by CSS, so it never flashes open
   }, [keepOpen]);
   return (
-    <details ref={ref} className={`${plain ? "collapse" : "card collapse"}${keepOpen ? " keep-open" : ""}`} open>
+    <details ref={ref} className={`${plain ? "collapse" : "card collapse"} mobile-fold${keepOpen ? " keep-open" : ""}`} open>
       <summary><Icon name="filter" />{summary}</summary>
       {children}
     </details>

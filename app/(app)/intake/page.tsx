@@ -7,6 +7,8 @@ import { getDriveClient } from "@/storage";
 import type { DriveImportSummary } from "@/domain/driveImport";
 import { driveImportAction, uploadMediaAction } from "../../actions";
 import { Flash, one, type SP } from "../../_components/ui";
+import { PendingButton } from "../../_components/PendingButton";
+import PhotoPicker from "../../_components/PhotoPicker";
 
 type Result = { name: string; status: "new" | "duplicate" | "failed" | "partial"; mediaId?: string; error?: string; detail?: string };
 
@@ -35,11 +37,11 @@ export default async function Intake({ searchParams }: { searchParams: SP }) {
   };
   return (
     <>
-      <h1>Intake</h1>
+      <h1>Upload photos</h1>
       <Flash error={one(sp.error)} />
       {results.length > 0 && (
         <div className="card">
-          <h3>Per-item outcomes</h3>
+          <h3>What happened</h3>
           <table>
             <tbody>
               {results.map((r, i) => (
@@ -51,18 +53,19 @@ export default async function Intake({ searchParams }: { searchParams: SP }) {
               ))}
             </tbody>
           </table>
-          <p className="small"><Link href="/review">Go to the review queue →</Link></p>
+          <p className="small"><Link href="/review">Check and approve them in Review →</Link></p>
         </div>
       )}
       <form action={uploadMediaAction} className="card">
-        <h3>Manual upload</h3>
-        <p className="muted small">JPEG, PNG, WebP or PDF. The original is always kept. A PDF&apos;s embedded photos are extracted as separate photos for review; uploading never classifies, associates or approves anything.</p>
-        <label htmlFor="files">Files</label>
-        <input id="files" type="file" name="files" accept="image/jpeg,image/png,image/webp,application/pdf" multiple required />
-        <label htmlFor="cardText">Aircraft card (optional) — pasted as sent by brokers</label>
-        <textarea id="cardText" name="cardText" placeholder={"Operator:\nAircraft:\nTail number:\nBase:\nYOM:\nYOR:\nCapacity:\nWIFI:\nNotes:"} />
-        <p className="muted small">The card is parsed as a proposal you confirm in review. It never creates an aircraft by itself.</p>
-        <button type="submit">Upload</button>
+        <p className="muted small" style={{ marginTop: 0 }}>You&apos;ll check each photo in Review before anything is saved to an aircraft. Photos inside a PDF come out as separate photos.</p>
+        <PhotoPicker name="files" accept="image/jpeg,image/png,image/webp,application/pdf" />
+        <details className="collapse" style={{ marginTop: 10 }}>
+          <summary className="small">Add the aircraft details (optional)</summary>
+          <label htmlFor="cardText">Paste the details as you received them</label>
+          <textarea id="cardText" name="cardText" placeholder={"Operator:\nAircraft:\nTail number:\nBase:\nYOM:\nYOR:\nCapacity:\nWIFI:\nNotes:"} />
+          <p className="muted small">They&apos;re filled in for you in Review, where you confirm them.</p>
+        </details>
+        <p style={{ marginBottom: 0 }}><PendingButton pending="Uploading… keep this page open">Upload</PendingButton></p>
       </form>
 
       {showDrive && <div className="card">
@@ -99,7 +102,7 @@ export default async function Intake({ searchParams }: { searchParams: SP }) {
       </div>}
       <div className="card">
         <h3>WhatsApp</h3>
-        <p className="muted">Not connected — deferred. Use <b>Share</b> on an aircraft page to send photos and the card from your phone.</p>
+        <p className="muted">Not connected yet. To send photos and details from your phone, open an aircraft and tap <b>Share</b>.</p>
       </div>
     </>
   );

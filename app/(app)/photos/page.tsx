@@ -25,11 +25,24 @@ export default async function AllPhotos({ searchParams }: { searchParams: SP }) 
   const driveOn = getDriveClient() !== null;
   return (
     <>
-      <p className="small"><Link href="/">← Dashboard</Link></p>
       <h1>Approved photos</h1>
       <Flash error={one(sp.error)} ok={one(sp.ok)} />
-      <div className="card">
-        <h3>Export for CBOS</h3>
+      {rows.length === 0 ? <div className="card muted">Nothing approved yet.</div> : (
+        <div className="card">
+          <div className="thumbs">
+            {rows.map((m) => (
+              <Link key={m.id} href={`/review/${m.id}`} title={CLASSIFICATION_LABEL[m.primaryClassification]}>
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={`/api/media/${m.currentContentVersionId}`} alt={CLASSIFICATION_LABEL[m.primaryClassification]} loading="lazy" />
+              </Link>
+            ))}
+          </div>
+          {rows.length === 300 && <p className="muted small">Showing the latest 300.</p>}
+        </div>
+      )}
+      {/* Admin detail: folded below the photos so brokers see their photos first. */}
+      <details className="card collapse">
+        <summary>Export for CBOS <span className="muted small" style={{ fontWeight: 400, marginLeft: 6 }}>{exported.length} of {rows.length} exported</span></summary>
         <p className="muted small">
           Approved photos are copied into Google Drive under <b>{exportRootFor(isAdmin, email).join(" / ")}</b>, named the way CBOS imports them
           (for example <code>Operator Aircraft / Metrojet / B-KXX / Exterior_01.jpg</code>, or <code>Private Aircraft / Heavy Jets / BOMBARDIER_CHALLENGER_650_Floorplan_01.jpg</code> for
@@ -42,20 +55,7 @@ export default async function AllPhotos({ searchParams }: { searchParams: SP }) 
           <a className="btn secondary" href="/api/export/aircraft-media" download>Download the data sheet (CSV)</a>
         </div>
         {!driveOn && <p className="muted small">Google Drive is not connected, so only the data sheet is available.</p>}
-      </div>
-      {rows.length === 0 ? <div className="card muted">Nothing approved yet.</div> : (
-        <div className="card">
-          <div className="thumbs">
-            {rows.map((m) => (
-              <Link key={m.id} href={`/review/${m.id}`} title={CLASSIFICATION_LABEL[m.primaryClassification]}>
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={`/api/media/${m.currentContentVersionId}`} alt={CLASSIFICATION_LABEL[m.primaryClassification]} />
-              </Link>
-            ))}
-          </div>
-          {rows.length === 300 && <p className="muted small">Showing the latest 300.</p>}
-        </div>
-      )}
+      </details>
     </>
   );
 }
