@@ -1,4 +1,4 @@
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import type { Db } from "../db/client";
 import { aircraft, aircraftTypes, organisations } from "../db/schema";
 import { parseAircraftCard } from "./card";
@@ -8,8 +8,10 @@ import { parseShareRequest, parseQuoteRequest, findAircraftsForShare } from "./c
 import { normalizeRegion } from "./places";
 import { answerFleet, answerLookup, fleetBasics, isLookupQuestion, quotePreview } from "./chocksLookup";
 import { LIBRARY_TENANT_ID } from "./library";
+import { operatorAliasesByName } from "./catalogue";
 import { parseFleetQuery } from "./fleetQuery";
 import { findContacts } from "./contacts";
+import { parseQuoteFollowUp, validEdit, type EditField } from "./chocksQuoteEdit";
 import { findAircraftByTail, findAircraftWithoutTail, getAircraftCard, orgAliasesFor, typeAliasesFor, resolveAircraftTypes, resolveAircraftTypesExact, resolveOrganisations, resolveOrganisationsExact } from "./directory";
 
 /**
@@ -27,7 +29,14 @@ export type Asked =
   | { kind: "share_aircraft"; options: Option[]; contactId: string }
   | { kind: "share_contact"; options: Option[]; aircraftId: string }
   | { kind: "classify"; mediaId: string }
+  | { kind: "edit"; edits: AircraftEdit[] }
   | { kind: "confirm" };
+
+/** A change to an aircraft's record that Toy asked about ("YOM 2015 -> 2016"). */
+export interface AircraftEdit { aircraftId: string; label: string; field: EditField; from: number | null; to: number }
+
+/** The last quote Toy showed, so "For 605, price is USD 70k" can change it. */
+export interface DraftQuote { ids: string[]; prices: Record<string, string>; kinds?: Classification[] }
 
 export interface DraftPhoto { mediaId: string; name: string; contentVersionId: string | null; classification: Classification; note?: string }
 
@@ -60,6 +69,8 @@ export interface Draft {
   submitKey: string;
   /** The language Chocks speaks; the browser sets it on every turn. */
   lang?: ChatLang;
+  /** The last quote shown in this chat. */
+  quote?: DraftQuote;
 }
 
 export interface Chip { label: string; send: string }
@@ -144,7 +155,7 @@ export async function converse(
   newPhotos: DraftPhoto[],
   /** library: the platform library is shared with this user, so quotes can use its aircraft too. */
   ctx: { library?: boolean } = {},
-): Promise<{ draft: Draft; reply: ChocksReply; confirm: boolean }> {
+): Promise<{ draft: Draft; reply: ChocksReply; confirm: boolean; /** Record changes the broker said yes to. */ edits?: AircraftEdit[] }> {
   let d: Draft = structuredClone(input);
   const L = d.lang;
   const say: string[] = [];
@@ -170,6 +181,14 @@ export async function converse(
     return { draft: { ...emptyDraft(d.submitKey), lang: L }, reply: { say: [tr(L, "No problem, I've cleared that. Send me photos and details whenever you're ready.")], chips: [], ready: false }, confirm: false };
   }
 
+  // "Change it?" about an aircraft's record: yes applies it (the caller saves it), no leaves the record alone.
+  if (asked?.kind === "edit" && message) {
+    if (YES.test(message)) return { draft: d, reply: { say: [], chips: [], ready: false }, confirm: false, edits: asked.edits };
+    if (message.split(/\s+/).length <= 3 && SKIP.test(message)) {
+      return { draft: d, reply: { say: [tr(L, "OK, I left the record as it is.")], chips: [], ready: false }, confirm: false };
+    }
+  }
+
   // "Make a quote for the G650 and B-KXX": open the Quote page with those aircraft already chosen. Nothing is saved.
   const quoteReq = d.photos.length === 0 && asked?.kind !== "confirm" ? parseQuoteRequest(message) : null;
   if (quoteReq) {
@@ -180,7 +199,7 @@ export async function converse(
     for (const [i, what] of quoteReq.what.entries()) {
       // The broker's own aircraft first; the platform library when they have none by that name.
       let found = await findAircraftsForShare(db, tenantId, what);
-      if (!found.length && ctx.library) found = (await findAircraftsForShare(db, LIBRARY_TENANT_ID, what)).map((f) => ({ ...f, label: `${f.label} (library)` }));
+      if (!found.length && ctx.library) found = (await findAircraftsForShare(db, LIBRARY_TENANT_ID, what, await operatorAliasesByName(db, [tenantId, LIBRARY_TENANT_ID]))).map((f) => ({ ...f, label: `${f.label} (library)` }));
       if (!found.length) missing.push(what);
       for (const f of found.slice(0, 4)) {
         if (!ids.includes(f.id)) { ids.push(f.id); names.push(f.label); }
@@ -189,29 +208,58 @@ export async function converse(
       }
     }
     if (asked) d.asked = asked;
-    const preview = ids.length ? await quotePreview(db, tenantId, ids, L, prices, ctx.library ? [LIBRARY_TENANT_ID] : []) : null;
     const priced = Object.keys(prices).length > 0;
-    const kinds = quoteReq.kinds;
-    const kindsLine = !kinds ? null : kinds.length === 0 ? tr(L, "No photos, just the message.")
-      : tr(L, "Photos ticked: {kinds}.", { kinds: kinds.map((k) => trClassification(L, k, CLASSIFICATION_LABEL[k])).join(isChinese(L) ? "、" : ", ") });
-    const say = preview
-      ? [
-        [tr(L, priced ? "Your quote is ready, prices included, for:" : "Your quote is ready for:"), ...names.map((n) => `• ${n}`)].join(String.fromCharCode(10)),
-        preview.text,
-        ...(kindsLine ? [kindsLine] : []),
-        priced
-          ? tr(L, "Tap Copy message to paste it into the chat, or share it with the photos below. To view or change it, tap View the quote.")
-          : tr(L, "Tap Copy message, or share it with the photos below. To add prices, write them in the chat (e.g. “G280 USD 90,000”) or tap View the quote."),
-      ]
-      : [quoteReq.what.length ? tr(L, "I couldn't find {names}.", { names: missing.join(isChinese(L) ? "、" : " or ") }) : tr(L, "Open the Quote page to choose the aircraft.")];
-    if (ids.length && missing.length) say.push(tr(L, "I couldn't find: {names}.", { names: missing.join(", ") }));
-    // The Quote page opens with the same aircraft, prices and photo kinds.
-    const q = new URLSearchParams();
-    if (ids.length) q.set("ids", ids.join(","));
-    if (priced) q.set("prices", JSON.stringify(prices));
-    if (kinds) q.set("photos", kinds.length ? kinds.join(",") : "none");
-    const href = q.size ? `/quote?${q.toString().replace(/%2C/g, ",")}` : "/quote";
-    return { draft: d, reply: { say, chips: [], ready: false, photos: preview?.photos, copy: preview?.text, options: preview?.options, kinds, link: { href, label: ids.length ? tr(L, "View the quote") : tr(L, "Open the quote") } }, confirm: false };
+    if (ids.length) d.quote = { ids, prices, ...(quoteReq.kinds ? { kinds: quoteReq.kinds } : {}) };
+    const reply: ChocksReply = ids.length
+      ? await quoteReply(db, tenantId, d, ctx, [[tr(L, priced ? "Your quote is ready, prices included, for:" : "Your quote is ready for:"), ...names.map((n) => `• ${n}`)].join(String.fromCharCode(10))], priced)
+      : { say: [quoteReq.what.length ? tr(L, "I couldn't find {names}.", { names: missing.join(isChinese(L) ? "、" : " or ") }) : tr(L, "Open the Quote page to choose the aircraft.")], chips: [], ready: false, link: { href: "/quote", label: tr(L, "Open the quote") } };
+    if (ids.length && missing.length) reply.say.push(tr(L, "I couldn't find: {names}.", { names: missing.join(", ") }));
+    return { draft: d, reply, confirm: false };
+  }
+
+  // After a quote: "For 605, price is USD 70k" changes its price; "For Vista 605, the YOM shall be 2016" changes the
+  // aircraft's record, after a yes.
+  if (d.quote?.ids.length && d.photos.length === 0 && asked?.kind !== "confirm" && message) {
+    const quote = d.quote;
+    const cards = (await Promise.all(quote.ids.map((id) => getAircraftCard(db, id)))).filter((c): c is NonNullable<typeof c> => !!c);
+    const aliases = await operatorAliasesByName(db, ctx.library ? [tenantId, LIBRARY_TENANT_ID] : [tenantId]);
+    const list = cards.map((c) => ({ id: c.aircraftId, type: c.aircraft, tail: c.tailNumber, operator: c.operator, aliases: c.operator ? aliases.get(normalizeKey(c.operator)) ?? [] : [] }));
+    const f = parseQuoteFollowUp(message, list);
+    if (f) {
+      const labelOf = (id: string) => { const c = cards.find((x) => x.aircraftId === id)!; return [c.operator, c.aircraft, c.tailNumber].filter(Boolean).join(" · "); };
+      const fieldName = (field: EditField) => field === "capacity" ? tr(L, "capacity") : field.toUpperCase();
+      const lead: string[] = [];
+      for (const [id, price] of Object.entries(f.prices)) {
+        quote.prices[id] = price;
+        lead.push(tr(L, "Price for {name}: {price}.", { name: labelOf(id), price }));
+      }
+      for (const c of f.unclear) lead.push(tr(L, "I couldn't tell which aircraft in this quote “{text}” is for. Name it, for example “G280 USD 90,000” or “G280 YOM 2016”.", { text: c }));
+      // Record changes: only the broker's own aircraft, only real changes, and only after a yes.
+      const ownIds = f.edits.length
+        ? (await db.select({ id: aircraft.id }).from(aircraft).where(and(eq(aircraft.tenantId, tenantId), inArray(aircraft.id, f.edits.map((e) => e.id))))).map((r) => r.id)
+        : [];
+      const edits: AircraftEdit[] = [];
+      for (const e of f.edits) {
+        const card = cards.find((x) => x.aircraftId === e.id)!;
+        const name = labelOf(e.id);
+        if (!validEdit(e.field, e.value)) { lead.push(tr(L, "{value} doesn't look right for the {field} of {name}, so I left it.", { value: e.value, field: fieldName(e.field), name })); continue; }
+        if (!ownIds.includes(e.id)) { lead.push(tr(L, "{name} is in the shared library, so its {field} can't be changed from your workspace.", { name, field: fieldName(e.field) })); continue; }
+        if (card[e.field] === e.value) { lead.push(tr(L, "{name} already has {field} {value}.", { name, field: fieldName(e.field), value: e.value })); continue; }
+        edits.push({ aircraftId: e.id, label: name, field: e.field, from: card[e.field], to: e.value });
+      }
+      const priced = Object.keys(f.prices).length > 0;
+      if (edits.length) {
+        d.asked = { kind: "edit", edits };
+        const lines = edits.map((e) => `• ${e.label}: ${fieldName(e.field)} ${e.from ?? "—"} → ${e.to}`);
+        const ask = [tr(L, "Change the aircraft record? Every quote and card will use the new value; the old one stays in its history."), ...lines].join(String.fromCharCode(10));
+        const chips = [{ label: tr(L, "Yes, change it"), send: "Yes" }, { label: tr(L, "No, leave it"), send: "No" }];
+        if (!priced) return { draft: d, reply: { say: [...lead, ask], chips, ready: false }, confirm: false };
+        const reply = await quoteReply(db, tenantId, d, ctx, lead, true);
+        return { draft: d, reply: { ...reply, say: [...reply.say, ask], chips }, confirm: false };
+      }
+      if (!priced) return { draft: d, reply: { say: lead, chips: [], ready: false }, confirm: false };
+      return { draft: d, reply: await quoteReply(db, tenantId, d, ctx, [tr(L, "Updated the quote."), ...lead], true), confirm: false };
+    }
   }
 
   // A question about what you already have ("show me what aircraft Capa Jet has"): answer it, change nothing.
@@ -367,6 +415,31 @@ export async function converse(
   const q = await nextStep(db, tenantId, d, say);
   if (confirmAfter && q.reply.ready) return { draft: q.draft, reply: q.reply, confirm: true };
   return { draft: q.draft, reply: q.reply, confirm: false };
+}
+
+/** The quote in the draft as a Toy reply: the message, the photos to send and a link to the Quote page. */
+export async function quoteReply(db: Db, tenantId: string, d: Draft, ctx: { library?: boolean }, lead: string[], priced: boolean): Promise<ChocksReply> {
+  const L = d.lang;
+  const q = d.quote!;
+  const preview = await quotePreview(db, tenantId, q.ids, L, q.prices, ctx.library ? [LIBRARY_TENANT_ID] : []);
+  const kinds = q.kinds;
+  const kindsLine = !kinds ? null : kinds.length === 0 ? tr(L, "No photos, just the message.")
+    : tr(L, "Photos ticked: {kinds}.", { kinds: kinds.map((k) => trClassification(L, k, CLASSIFICATION_LABEL[k])).join(isChinese(L) ? "、" : ", ") });
+  const say = [
+    ...lead,
+    preview.text,
+    ...(kindsLine ? [kindsLine] : []),
+    priced
+      ? tr(L, "Tap Copy message to paste it into the chat, or share it with the photos below. To change a price or a detail, write it here (e.g. “G280 EUR 60k” or “G280 YOM 2016”).")
+      : tr(L, "Tap Copy message, or share it with the photos below. To add prices, write them in the chat (e.g. “G280 USD 90,000”) or tap View the quote."),
+  ];
+  // The Quote page opens with the same aircraft, prices and photo kinds.
+  const p = new URLSearchParams();
+  p.set("ids", q.ids.join(","));
+  if (Object.keys(q.prices).length) p.set("prices", JSON.stringify(q.prices));
+  if (kinds) p.set("photos", kinds.length ? kinds.join(",") : "none");
+  const href = `/quote?${p.toString().replace(/%2C/g, ",")}`;
+  return { say, chips: [], ready: false, photos: preview.photos, copy: preview.text, options: preview.options, kinds, link: { href, label: tr(L, "View the quote") } };
 }
 
 function operatorChips(d: Draft, options: Option[]): Chip[] {

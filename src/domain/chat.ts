@@ -237,3 +237,20 @@ async function updateExistingAircraft(db: Db, actor: Actor, key: string, aircraf
   }
   return steps;
 }
+
+/**
+ * Toy changes an aircraft's record after the broker said yes ("For Vista 605, the YOM shall be 2016"). Only the named
+ * field changes; the rest is carried over, and the earlier version stays in the history.
+ */
+export async function changeAircraftFields(db: Db, actor: Actor, key: string, aircraftId: string, changes: { yom?: number; yor?: number; capacity?: number }) {
+  const card = await getAircraftCard(db, aircraftId);
+  if (!card) throw new DomainError("NOT_FOUND", "Aircraft not found");
+  return addInformationVersion(db, actor, key, {
+    aircraftId,
+    expectedVersion: card.informationVersion,
+    info: {
+      yom: changes.yom ?? card.yom, yor: changes.yor ?? card.yor, capacity: changes.capacity ?? card.capacity,
+      wifiStatus: card.wifi, wifiDetail: card.wifiDetail, smoking: card.smoking, pets: card.pets, cleaningFee: card.cleaningFee, notes: card.notes,
+    },
+  });
+}

@@ -15,6 +15,8 @@ import type { ShareItem } from "./ShareBox";
 
 export interface QuoteAircraftOption {
   id: string;
+  /** The operator's other names ("VJ"), for typed commands. */
+  aliases?: string[];
   operatorId: string | null;
   type: string;
   tail: string | null;

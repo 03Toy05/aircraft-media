@@ -1,4 +1,4 @@
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import {
   aircraft,
   aircraftBases,
@@ -8,8 +8,10 @@ import {
   mediaAssociations,
   mediaContentVersions,
   organisationAircraftRelationships,
+  organisationAliases,
   organisations,
 } from "../db/schema";
+import { normalizeKey as nk } from "./constants";
 import type { Db } from "../db/client";
 import { resolveAircraftTypes, resolveOrganisations } from "./directory";
 import { CLASSIFICATIONS, REQUIRED_CLASSES, normalizeKey, normalizeRegistration, type Classification } from "./constants";
@@ -209,6 +211,18 @@ export async function getCatalogue(db: Db, tenantId: string, filters: CatalogueF
       return true;
     })
     .sort((x, y) => (x.operator ?? "").localeCompare(y.operator ?? "") || (x.tail ?? "").localeCompare(y.tail ?? ""));
+}
+
+/**
+ * Other names of operators ("VJ" for Vista Jet), keyed by the operator's normalised name. Keyed by name, not id, so a
+ * broker's own short name also finds a library aircraft whose operator has the same name.
+ */
+export async function operatorAliasesByName(db: Db, tenantIds: string[]): Promise<Map<string, string[]>> {
+  const rows = await db.select({ alias: organisationAliases.alias, name: organisations.canonicalName }).from(organisationAliases)
+    .innerJoin(organisations, eq(organisations.id, organisationAliases.organisationId)).where(inArray(organisations.tenantId, tenantIds));
+  const out = new Map<string, string[]>();
+  for (const r of rows) out.set(nk(r.name), [...(out.get(nk(r.name)) ?? []), r.alias]);
+  return out;
 }
 
 export interface AircraftName { aircraftId: string; aircraftTypeId: string; aircraft: string; tail: string | null; operatorId: string | null; operator: string | null }

@@ -1,6 +1,6 @@
 import { requireOwner } from "@/lib/session";
 import { getDb } from "@/db/client";
-import { getCatalogue } from "@/domain/catalogue";
+import { getCatalogue, operatorAliasesByName } from "@/domain/catalogue";
 import { and, eq } from "drizzle-orm";
 import { organisations } from "@/db/schema";
 import { getAircraftCard, getPreferredOperators } from "@/domain/directory";
@@ -86,6 +86,9 @@ export default async function Quote({ searchParams }: { searchParams: SP }) {
     }
     options.push(...mine);
   }
+  // Operators' other names ("VJ"), so typed commands like "add VJ 605" find them.
+  const aliases = await operatorAliasesByName(db, sources.map((x) => x.tenantId));
+  for (const o of options) if (o.operator) o.aliases = aliases.get(normalizeKey(o.operator));
   const preferred = await getPreferredOperators(db, actor.tenantId);
   const initial = (one(sp.ids) ?? "").split(",").filter((id) => options.some((o) => o.id === id));
   // From Chocks: the prices it read ({"<aircraftId>": "USD 90,000"}) and the photo kinds asked for ("exterior,cabin" or "none").

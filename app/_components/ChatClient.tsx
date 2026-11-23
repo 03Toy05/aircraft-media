@@ -226,6 +226,8 @@ const getRecognition = (): RecognitionCtor | null => {
   return w.SpeechRecognition ?? w.webkitSpeechRecognition ?? null;
 };
 
+const QUOTE_KEY = "toyLastQuote";
+
 export default function ChatClient() {
   const [msgs, setMsgs] = useState<Msg[]>([]);
   const [text, setText] = useState("");
@@ -269,6 +271,15 @@ export default function ChatClient() {
     try { window.localStorage.setItem("chocksLang", l); } catch { /* ignore */ }
   };
   useEffect(() => { endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" }); }, [msgs]);
+  // The last quote survives a reload or a visit to another page (in this tab), so prices and changes can still be typed.
+  useEffect(() => {
+    try {
+      const saved = JSON.parse(window.sessionStorage.getItem(QUOTE_KEY) ?? "null") as { quote: Draft["quote"]; msg: Msg } | null;
+      if (!saved?.quote?.ids?.length || saved.msg?.role !== "chocks") return;
+      setDraft(JSON.stringify({ photos: [], quote: saved.quote }));
+      setMsgs([saved.msg]);
+    } catch { /* storage blocked or old data: start fresh */ }
+  }, []);
 
   const send = (override?: { text: string; label?: string }) => {
     const t = override?.text ?? text;
@@ -295,7 +306,12 @@ export default function ChatClient() {
         return;
       }
       setDraft(JSON.stringify(r.draft));
-      setMsgs((m) => [...m, { id: crypto.randomUUID(), role: "chocks", say: r.reply.say, chips: r.reply.chips, draft: r.draft, done: r.reply.done, aircraftId: r.applied?.aircraftId, failures: r.failures, share: r.reply.share, link: r.reply.link, photos: r.reply.photos, copy: r.reply.copy, options: r.reply.options, kinds: r.reply.kinds }]);
+      const reply: Msg = { id: crypto.randomUUID(), role: "chocks", say: r.reply.say, chips: r.reply.chips, draft: r.draft, done: r.reply.done, aircraftId: r.applied?.aircraftId, failures: r.failures, share: r.reply.share, link: r.reply.link, photos: r.reply.photos, copy: r.reply.copy, options: r.reply.options, kinds: r.reply.kinds };
+      setMsgs((m) => [...m, reply]);
+      try {
+        if (!r.draft.quote) window.sessionStorage.removeItem(QUOTE_KEY);
+        else if (r.reply.options?.length) window.sessionStorage.setItem(QUOTE_KEY, JSON.stringify({ quote: r.draft.quote, msg: { ...reply, chips: [] } }));
+      } catch { /* storage full or blocked: the quote just won't survive a reload */ }
       if (speak && "speechSynthesis" in window) {
         window.speechSynthesis.cancel();
         const u = new SpeechSynthesisUtterance(r.reply.say.join(" ").replace(/[•“”]/g, ""));

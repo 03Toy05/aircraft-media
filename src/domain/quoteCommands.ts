@@ -7,7 +7,7 @@ import type { QuoteLanguage } from "./quote";
  * understand is handed back so the caller can pass it to Chocks.
  */
 
-export interface CommandAircraft { id: string; type: string; tail: string | null; operator: string | null }
+export interface CommandAircraft { id: string; type: string; tail: string | null; operator: string | null; /** The operator's other names ("VJ"). */ aliases?: string[] }
 export type Toggle = "operator" | "tail" | "base" | "notes" | "greeting" | "closing";
 
 export type QuoteCommand =
@@ -48,7 +48,7 @@ export function matchAircraft(list: CommandAircraft[], text: string): CommandAir
     .split(/\s+/).map(normalizeKey).filter((w) => w.length >= 2);
   const STOP = ["the", "an", "of", "aircraft", "plane", "jet", "one", "for", "from", "by"];
   const find = (ws: string[]) => ws.length ? list.filter((a) => {
-    const hay = normalizeKey(`${a.tail ?? ""} ${a.type} ${a.operator ?? ""}`);
+    const hay = normalizeKey(`${a.tail ?? ""} ${a.type} ${a.operator ?? ""} ${(a.aliases ?? []).join(" ")}`);
     return ws.every((w) => hay.includes(w));
   }) : [];
   // Every word first ("Jet Aviation" is a name); without the filler words only when that finds nothing ("the G280 jet").

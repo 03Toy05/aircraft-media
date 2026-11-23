@@ -12,9 +12,9 @@ import { DomainError } from "@/domain/errors";
 import { bringBackForReview, ingestPdf } from "@/domain/intake";
 import { hasLibraryAccess } from "@/domain/library";
 import { ingestUpload } from "@/domain/media";
-import { applyChatProposal, suggestClassification, type ApplyResult } from "@/domain/chat";
+import { applyChatProposal, changeAircraftFields, suggestClassification, type ApplyResult } from "@/domain/chat";
 import { parseChatLang, tr, trStep } from "@/domain/chocksText";
-import { converse, emptyDraft, type ChocksReply, type Draft, type DraftPhoto } from "@/domain/chocks";
+import { converse, emptyDraft, quoteReply, type ChocksReply, type Draft, type DraftPhoto } from "@/domain/chocks";
 
 export interface TurnResult {
   draft: Draft;
@@ -51,8 +51,10 @@ async function turn(fd: FormData): Promise<TurnResult> {
   const store = getFileStore();
   let draft: Draft;
   try {
-    draft = JSON.parse(String(fd.get("draft") ?? "")) as Draft;
-    if (!Array.isArray(draft.photos)) throw new Error("bad draft");
+    // Missing fields are filled in (a quote kept over a reload comes back with only its photos and quote).
+    const parsed = JSON.parse(String(fd.get("draft") ?? "")) as Partial<Draft>;
+    if (!Array.isArray(parsed.photos)) throw new Error("bad draft");
+    draft = { ...emptyDraft(randomUUID()), ...parsed };
   } catch {
     draft = emptyDraft(randomUUID());
   }
@@ -96,6 +98,27 @@ async function turn(fd: FormData): Promise<TurnResult> {
   }
 
   const turn = await converse(db, actor.tenantId, draft, message, photos, { library: await hasLibraryAccess(db, session) });
+  if (turn.edits) {
+    // The broker said yes to changing an aircraft's record from the chat; then the quote is shown again with it.
+    if (readOnlyWhy) return { draft: turn.draft, reply: { say: [readOnlyWhy], chips: [], ready: false }, failures };
+    const done: string[] = [];
+    const byAircraft = new Map<string, typeof turn.edits>();
+    for (const e of turn.edits) byAircraft.set(e.aircraftId, [...(byAircraft.get(e.aircraftId) ?? []), e]);
+    for (const [aircraftId, edits] of byAircraft) {
+      try {
+        await changeAircraftFields(db, actor, `${turn.draft.submitKey}:edit:${randomUUID()}`, aircraftId, Object.fromEntries(edits.map((e) => [e.field, e.to])));
+        for (const e of edits) done.push(tr(L, "Changed {name}: {field} {from} → {to}.", { name: e.label, field: e.field === "capacity" ? tr(L, "capacity") : e.field.toUpperCase(), from: e.from ?? "—", to: e.to }));
+      } catch (e) {
+        if (!(e instanceof DomainError)) throw e;
+        failures.push(`${edits[0].label}: ${e.message}`);
+      }
+    }
+    revalidatePath("/", "layout");
+    const d = turn.draft;
+    if (!d.quote?.ids.length) return { draft: d, reply: { say: done, chips: [], ready: false }, failures };
+    const reply = await quoteReply(db, actor.tenantId, d, { library: await hasLibraryAccess(db, session) }, done, Object.keys(d.quote.prices).length > 0);
+    return { draft: d, reply, failures };
+  }
   revalidatePath("/", "layout");
   if (!turn.confirm) return { draft: turn.draft, reply: turn.reply, failures };
   if (readOnlyWhy) return { draft: turn.draft, reply: { ...turn.reply, say: [readOnlyWhy], ready: false }, failures };
@@ -121,5 +144,6 @@ async function turn(fd: FormData): Promise<TurnResult> {
   if (applied.photos.some((p) => p.outcome === "approved")) exportAfterResponse(session);
   revalidatePath("/", "layout");
   const say = [tr(L, "Done."), ...applied.steps.map((x) => trStep(L, x)), ...applied.photos.map((p) => tr(L, "Photo: {detail}", { detail: trStep(L, p.detail) }))];
-  return { draft: { ...emptyDraft(randomUUID()), lang: L }, reply: { say, chips: [], ready: false, done: true }, failures, applied };
+  // The quote shown earlier in this chat stays, so prices and changes can still be typed after adding photos.
+  return { draft: { ...emptyDraft(randomUUID()), lang: L, quote: d.quote }, reply: { say, chips: [], ready: false, done: true }, failures, applied };
 }

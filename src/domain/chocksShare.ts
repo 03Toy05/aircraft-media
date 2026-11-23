@@ -1,5 +1,5 @@
 import type { Db } from "../db/client";
-import { getAircraftNames } from "./catalogue";
+import { getAircraftNames, operatorAliasesByName } from "./catalogue";
 import { normalizeKey, type Classification } from "./constants";
 import { mentions } from "./chocksLookup";
 
@@ -18,9 +18,13 @@ export function parseShareRequest(message: string): { what: string; who: string 
   return what && who ? { what, who } : null;
 }
 
-/** Aircraft whose tail, type or operator contains every word of the request. */
-export async function findAircraftsForShare(db: Db, tenantId: string, text: string) {
+/**
+ * Aircraft whose tail, type or operator (or one of the operator's other names, like "VJ") contains every word of the
+ * request. aliases: other names to use instead of this workspace's own (the library is searched with the broker's).
+ */
+export async function findAircraftsForShare(db: Db, tenantId: string, text: string, aliases?: Map<string, string[]>) {
   const rows = await getAircraftNames(db, tenantId);
+  const other = aliases ?? await operatorAliasesByName(db, [tenantId]);
   // Chinese filler ("的", "飛機", "一架") is dropped and Latin names are separated from Chinese characters next to them.
   const cleaned = text
     .replace(/['’]s\b/gi, "")
@@ -30,7 +34,7 @@ export async function findAircraftsForShare(db: Db, tenantId: string, text: stri
   const words = cleaned.split(/\s+/).map(normalizeKey).filter((w) => w.length >= 2);
   const STOP = ["the", "of", "for", "aircraft", "plane", "jet"];
   const find = (ws: string[]) => ws.length === 0 ? [] : rows.filter((r) => {
-    const hay = normalizeKey(`${r.tail ?? ""} ${r.aircraft} ${r.operator ?? ""}`);
+    const hay = normalizeKey(`${r.tail ?? ""} ${r.aircraft} ${r.operator ?? ""} ${(r.operator ? other.get(normalizeKey(r.operator)) ?? [] : []).join(" ")}`);
     // A word matches when it is in the name, or is one typo away from it ("CapacJet" finds CapaJet).
     return ws.every((w) => hay.includes(w) || mentions(hay, w));
   });
@@ -57,6 +61,8 @@ const CURRENCY_AFTER = "USD|HKD|EUR|GBP|SGD|RMB|CNY|JPY|AUD|CAD|CHF|AED|THB|美�
 const AMOUNT = "(?<![A-Za-z\\d.,-])\\d[\\d,.]*(?:\\s?(?:k|m|mn|million|萬|万))?";
 const PER = "(?:\\s*(?:per|/|一)\\s*(?:hour|hr|h|flight|leg|trip|way|小時|小时))?";
 const PRICE_LEAD = "(?:\\b(?:price[sd]?|cost|rate|fare|at|for|is|of)\\b|@|:|：|=|價錢|价钱|價格|价格|報價|报价|價|价|\\s)*";
+// "605 USD 70,000": a currency written before the amount wins, so the type's number is not read as "605 USD".
+const MONEY_FIRST = new RegExp(`${PRICE_LEAD}((?:${CURRENCY})\\s?${AMOUNT}${PER})`, "i");
 const MONEY = new RegExp(`${PRICE_LEAD}((?:${CURRENCY})\\s?${AMOUNT}${PER}|${AMOUNT}\\s?(?:${CURRENCY_AFTER})${PER})`, "i");
 // A bare number only counts as a price right after a price word: "price 90,000", "價錢 90000".
 const BARE_PRICE = new RegExp(`(?:\\b(?:price[sd]?|cost|rate)\\b|價錢|价钱|價格|价格)\\s*(?:\\b(?:at|is|of)\\b|:|：|=)?\\s*(${AMOUNT}${PER})`, "i");
@@ -90,8 +96,8 @@ function takeKinds(line: string): { kinds: Classification[] | null; rest: string
 }
 
 /** Takes a price out of a line: "Price at USD 90,000" -> "USD 90,000"; "G280 at HKD 700k per hour" -> "HKD 700k per hour". */
-function takePrice(line: string): { price: string | null; rest: string } {
-  const m = line.match(MONEY) ?? line.match(BARE_PRICE);
+export function takePrice(line: string): { price: string | null; rest: string } {
+  const m = line.match(MONEY_FIRST) ?? line.match(MONEY) ?? line.match(BARE_PRICE);
   if (!m) return { price: null, rest: line };
   return { price: m[1].trim(), rest: line.replace(m[0], " ") };
 }
