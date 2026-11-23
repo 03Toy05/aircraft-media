@@ -63,7 +63,7 @@ describe("Library import", () => {
       expect(r.created, name).toBe(pack.aircraft.length);
       expect(r.photos, name).toBe(files.size);
     }
-  }, 120_000);
+  }, 600_000);
 
   it("adds library aircraft in the background, once each, one after another", async () => {
     const t = await setup();

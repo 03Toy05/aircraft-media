@@ -97,7 +97,32 @@ export const STANDARD_AIRCRAFT_TYPES: StandardType[] = [
   ...t("Piaggio", "turboprop", ["Avanti EVO"]),
   ...t("Cessna", "turboprop", ["Caravan 208B"]),
   ...t("Pilatus", "turboprop", ["PC-6 Porter"]),
+
+  // ---- More helicopters, as operators name them (older Eurocopter names kept as their own types) ----
+  ...t("Airbus", "helicopter", [
+    ["EC130 T2", ["EC-130 T2", "EC130T2", "EC130"]],
+    ["EC130 B4", ["EC-130 B4", "EC130B4"]],
+    ["EC135 P2+", ["EC-135 P2+", "EC135 P2", "EC135P2+"]],
+    ["EC135 T2+", ["EC-135 T2+", "EC135 T2"]],
+    ["EC145 T2", ["EC-145 T2"]],
+    ["EC155 B1", ["EC-155", "EC155"]],
+    ["EC175", ["EC-175"]],
+    ["EC225", ["EC-225", "H225 Super Puma"]],
+    "H120", "H140", "H215", "H225",
+    ["AS350 B2", ["AS350", "Ecureuil"]],
+    ["AS355 NP", ["AS355", "TwinStar", "Twin Squirrel"]],
+    ["AS365 N3", ["AS365", "Dauphin"]],
+    ["AS332 L2", ["AS332", "Super Puma"]],
+    ["BK117 C-2", ["BK117"]],
+  ]),
+  ...t("Leonardo", "helicopter", [["AW109 SP", ["AW109SP", "GrandNew", "AW109 GrandNew"]], ["AW109 Power", ["A109E", "A109 Power"]], "AW009", "AW149", "AW609"]),
+  ...t("Bell", "helicopter", [["206B JetRanger", ["JetRanger", "206B"]], ["206L LongRanger", ["206L", "LongRanger"]], "222", "230", "427", "430", "429 GlobalRanger", "212", "214", "505 Jet Ranger X"]),
+  ...t("Sikorsky", "helicopter", ["S-76A", "S-76B", "S-61", "S-70"]),
+  ...t("MD Helicopters", "helicopter", ["MD 500E", "MD 530F", "MD 600N", ["MD 902 Explorer", ["MD 902", "MD Explorer"]]]),
+  ...t("Robinson", "helicopter", ["R22", "R44 Raven II", "R66 Turbine"]),
+  ...t("Enstrom", "helicopter", ["480B"]),
+  ...t("Kazan", "helicopter", ["Ansat"]),
 ];
 
 /** Bump when the list grows so the app loads the new entries once (existing entries are never changed). */
-export const STANDARD_LIST_VERSION = "standard-v2";
+export const STANDARD_LIST_VERSION = "standard-v3";
