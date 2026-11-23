@@ -15,7 +15,8 @@ import {
 import { approveMedia, getLineup, ingestUpload, readContentBytes, retireMedia, setMediaAssociation, updateMediaMetadata } from "./media";
 import { makeCombinedPhoto } from "./combinedPhoto";
 import { STANDARD_LIST_VERSION } from "./standardTypes";
-import type { FileStore } from "../storage";
+import { RememberingStore, type FileStore } from "../storage";
+import { sha256 } from "../lib/hash";
 
 /**
  * The platform library: one shared set of photos per aircraft, filled from users' approved photos.
@@ -743,7 +744,16 @@ const sameBases = (a: string[], b: string[]) => a.map(normalizeKey).sort().join(
  * its photos, approved straight away. The 1 EXT / 2 CABIN / 1 FLOOR PLAN set still holds: a library aircraft that
  * already has its photos keeps them, and the extra ones are listed as passed over.
  */
-export async function importLibraryPack(db: Db, store: FileStore, admin: Actor, pack: LibraryPack, files: Map<string, Uint8Array>): Promise<PackResult> {
+export interface PackProgress { done: number; total: number; current: string }
+export interface PackOptions {
+  /** How many aircraft are worked on at once (aircraft of one type always go one after another). */
+  concurrency?: number;
+  onProgress?: (p: PackProgress) => void;
+}
+
+export async function importLibraryPack(
+  db: Db, store: FileStore, admin: Actor, pack: LibraryPack, files: Map<string, Uint8Array>, opts: PackOptions = {},
+): Promise<PackResult> {
   const lib: Actor = { id: admin.id, tenantId: LIBRARY_TENANT_ID };
   const operatorName = pack.operator?.trim();
   if (!operatorName) throw new Error("The pack needs an operator name.");
@@ -752,14 +762,22 @@ export async function importLibraryPack(db: Db, store: FileStore, admin: Actor, 
   const operatorId = (await resolveOrganisationsExact(db, LIBRARY_TENANT_ID, operatorName))[0]?.id
     ?? (await createOrganisation(db, lib, randomUUID(), { name: operatorName, region: pack.region ?? null, base: pack.base ?? null })).result.organisationId;
 
-  const out: PackResult = { created: 0, matched: 0, photos: 0, skipped: [], retailed: [] };
   const realTails = new Set(pack.aircraft.filter((x) => x.realTail && x.tail).map((x) => x.tail!.trim().toUpperCase()));
   const hidden = (t: string | null | undefined) => isMaskedTail(t) && !realTails.has((t ?? "").trim().toUpperCase());
-  for (const a of pack.aircraft) {
+
+  // The same photo bytes can serve several aircraft (one seating plan for a fleet): one at a time, so each aircraft
+  // sees the earlier one's approved photo and makes its own copy.
+  const locks = new Map<string, Promise<unknown>>();
+  const oneAtATime = <T>(key: string, fn: () => Promise<T>): Promise<T> => {
+    const run = (locks.get(key) ?? Promise.resolve()).then(fn, fn);
+    locks.set(key, run.catch(() => undefined));
+    return run;
+  };
+
+  const importOne = async (a: PackAircraft, type: { id: string } | undefined, out: PackResult, store: FileStore) => {
     const label = `${a.type}${a.base?.length ? ` (${a.base.join(" / ")})` : ""}`;
     const tail = a.tail?.replace(/\*+$/, "").trim().toUpperCase() || null;
-    const [type] = await resolveAircraftTypesExact(db, LIBRARY_TENANT_ID, a.type);
-    if (!type) { out.skipped.push(`${label}: unknown aircraft type "${a.type}"`); continue; }
+    if (!type) { out.skipped.push(`${label}: unknown aircraft type "${a.type}"`); return; }
     const bases = (a.base ?? []).map((b) => b.trim()).filter(Boolean);
 
     let aircraftId: string | null = null;
@@ -820,50 +838,55 @@ export async function importLibraryPack(db: Db, store: FileStore, admin: Actor, 
       })).result.aircraftId;
       out.created++;
     }
+    const acId = aircraftId;
 
     let replaced = 0;
     if (a.replace?.length) {
-      const [t2] = await db.select({ t: aircraft.aircraftTypeId }).from(aircraft).where(eq(aircraft.id, aircraftId));
-      for (const p of await getLineup(db, { aircraftId, aircraftTypeId: t2.t })) {
+      const [t2] = await db.select({ t: aircraft.aircraftTypeId }).from(aircraft).where(eq(aircraft.id, acId));
+      for (const p of await getLineup(db, { aircraftId: acId, aircraftTypeId: t2.t })) {
         if (p.associationStatus !== "actual_aircraft") continue;
         if (!(a.replace as string[]).includes(p.classification) && p.classification !== "combined") continue;
         await retireMedia(db, lib, randomUUID(), { mediaId: p.mediaId });
         if (p.classification !== "combined") replaced++;
       }
     }
-    const have = await libraryCounts(db, aircraftId);
+    const have = await libraryCounts(db, acId);
     const photosBefore = out.photos;
+
+    /** One photo onto this aircraft, approved. Returns why it was passed over, or null once it is in. */
+    const addPhoto = async (kind: Classification, name: string, bytes: Uint8Array): Promise<string | null> => {
+      const onThis = async (mediaId: string) => !!(await db.select({ id: mediaAssociations.id }).from(mediaAssociations)
+        .where(and(eq(mediaAssociations.aircraftMediaId, mediaId), eq(mediaAssociations.aircraftId, acId), eq(mediaAssociations.active, true))))[0];
+      let up = await ingestUpload(db, store, lib, { filename: `${operatorName} ${label} ${name}`, bytes, batchLabel: "Platform library" });
+      let [cur] = await db.select().from(aircraftMedia).where(eq(aircraftMedia.id, up.result.mediaId));
+      if (cur.reviewState === "approved") {
+        if (await onThis(cur.id)) return `${label}: ${name} is already in the library`;
+        // The same photo serves a sister aircraft too (e.g. one exterior for the Challenger 300 and 350, or one
+        // seating plan for a whole fleet of a type): a photo belongs to one aircraft, so this one gets its own copy.
+        // Each sister needs different bytes, so the copy steps down in quality until it is one the library lacks.
+        for (let quality = 92; quality > 60 && cur.reviewState === "approved"; quality--) {
+          const copy = new Uint8Array(await sharp(bytes).jpeg({ quality }).toBuffer());
+          up = await ingestUpload(db, store, lib, { filename: `${operatorName} ${label} ${name}`, bytes: copy, batchLabel: "Platform library" });
+          [cur] = await db.select().from(aircraftMedia).where(eq(aircraftMedia.id, up.result.mediaId));
+          if (cur.reviewState !== "approved" || (await onThis(cur.id))) break;
+        }
+        if (cur.reviewState === "approved") return `${label}: ${name} is already in the library`;
+      }
+      const mediaId = up.result.mediaId;
+      const version = async () => (await db.select({ v: aircraftMedia.version }).from(aircraftMedia).where(eq(aircraftMedia.id, mediaId)))[0].v;
+      await updateMediaMetadata(db, lib, randomUUID(), { mediaId, expectedVersion: cur.version, classification: kind, rightsStatus: "unknown" });
+      await setMediaAssociation(db, lib, randomUUID(), { mediaId, expectedVersion: await version(), status: "actual_aircraft", aircraftId: acId });
+      await approveMedia(db, lib, { mediaId, contentVersionId: up.result.contentVersionId, expectedVersion: await version() });
+      return null;
+    };
+
     for (const kind of KINDS) {
       for (const name of (a.photos as Record<string, string[] | undefined>)[kind] ?? []) {
         const bytes = files.get(name);
         if (!bytes) { out.skipped.push(`${label}: ${name} is not among the uploaded files`); continue; }
         if ((have[kind] ?? 0) >= (LIBRARY_NEEDS[kind] ?? 0)) { out.skipped.push(`${label}: ${name} (the library already has its ${kind.replace("_", " ")})`); continue; }
-        let up = await ingestUpload(db, store, lib, { filename: `${operatorName} ${label} ${name}`, bytes, batchLabel: "Platform library" });
-        let [cur] = await db.select().from(aircraftMedia).where(eq(aircraftMedia.id, up.result.mediaId));
-        if (cur.reviewState === "approved") {
-          const [onThis] = await db.select({ id: mediaAssociations.id }).from(mediaAssociations)
-            .where(and(eq(mediaAssociations.aircraftMediaId, cur.id), eq(mediaAssociations.aircraftId, aircraftId), eq(mediaAssociations.active, true)));
-          if (onThis) { out.skipped.push(`${label}: ${name} is already in the library`); continue; }
-          // The same photo serves a sister aircraft too (e.g. one exterior for the Challenger 300 and 350, or one
-          // seating plan for a whole fleet of a type): a photo belongs to one aircraft, so this one gets its own copy.
-          // Each sister needs different bytes, so the copy steps down in quality until it is one the library lacks.
-          let mine = false;
-          for (let quality = 92; quality > 60 && cur.reviewState === "approved"; quality--) {
-            const copy = new Uint8Array(await sharp(bytes).jpeg({ quality }).toBuffer());
-            up = await ingestUpload(db, store, lib, { filename: `${operatorName} ${label} ${name}`, bytes: copy, batchLabel: "Platform library" });
-            [cur] = await db.select().from(aircraftMedia).where(eq(aircraftMedia.id, up.result.mediaId));
-            if (cur.reviewState !== "approved") break;
-            mine = !!(await db.select({ id: mediaAssociations.id }).from(mediaAssociations)
-              .where(and(eq(mediaAssociations.aircraftMediaId, cur.id), eq(mediaAssociations.aircraftId, aircraftId), eq(mediaAssociations.active, true))))[0];
-            if (mine) break;
-          }
-          if (cur.reviewState === "approved") { out.skipped.push(`${label}: ${name} is already in the library`); continue; }
-        }
-        const mediaId = up.result.mediaId;
-        const version = async () => (await db.select({ v: aircraftMedia.version }).from(aircraftMedia).where(eq(aircraftMedia.id, mediaId)))[0].v;
-        await updateMediaMetadata(db, lib, randomUUID(), { mediaId, expectedVersion: await version(), classification: kind, rightsStatus: "unknown" });
-        await setMediaAssociation(db, lib, randomUUID(), { mediaId, expectedVersion: await version(), status: "actual_aircraft", aircraftId });
-        await approveMedia(db, lib, { mediaId, contentVersionId: up.result.contentVersionId, expectedVersion: await version() });
+        const skip = await oneAtATime(sha256(bytes), () => addPhoto(kind, name, bytes));
+        if (skip) { out.skipped.push(skip); continue; }
         have[kind] = (have[kind] ?? 0) + 1;
         out.photos++;
       }
@@ -871,9 +894,47 @@ export async function importLibraryPack(db: Db, store: FileStore, admin: Actor, 
     if (replaced) out.retailed.push(`${label}: ${replaced} older photo${replaced === 1 ? "" : "s"} replaced`);
     // A new or changed set gets a new combined photo; an unchanged one keeps its own.
     if ((out.photos > photosBefore || replaced) && KINDS.every((k) => (have[k] ?? 0) >= (LIBRARY_NEEDS[k] ?? 0))) {
-      try { await makeCombinedPhoto(db, store, lib, { kind: "aircraft", aircraftId, aircraftTypeId: type.id }, { replace: true }); }
+      try { await makeCombinedPhoto(db, store, lib, { kind: "aircraft", aircraftId: acId, aircraftTypeId: type.id }, { replace: true }); }
       catch (e) { console.error("Library combined photo failed", e); }
     }
-  }
-  return out;
+  };
+
+  // Aircraft of one type are matched against each other (no tail, hidden tails), so each type is one lane worked
+  // through in pack order; lanes run side by side. Results are reported in pack order whatever finishes first.
+  const typeOf = new Map<string, { id: string } | undefined>();
+  for (const a of pack.aircraft) if (!typeOf.has(a.type)) typeOf.set(a.type, (await resolveAircraftTypesExact(db, LIBRARY_TENANT_ID, a.type))[0]);
+  const lanes = new Map<string, number[]>();
+  pack.aircraft.forEach((a, i) => {
+    const key = typeOf.get(a.type)?.id ?? `unknown:${i}`;
+    lanes.set(key, [...(lanes.get(key) ?? []), i]);
+  });
+  const results: PackResult[] = pack.aircraft.map(() => ({ created: 0, matched: 0, photos: 0, skipped: [], retailed: [] }));
+  const total = pack.aircraft.length;
+  let done = 0;
+  opts.onProgress?.({ done, total, current: "" });
+  const queue = [...lanes.values()];
+  const worker = async () => {
+    for (let lane = queue.shift(); lane; lane = queue.shift()) {
+      for (const i of lane) {
+        const a = pack.aircraft[i];
+        // Each aircraft keeps the bytes it uploads, so its combined photo is built without fetching them back.
+        const mine = new RememberingStore(store);
+        try { await importOne(a, typeOf.get(a.type), results[i], mine); }
+        catch (e) {
+          // One aircraft failing does not stop the rest; running the pack again picks up where it left off.
+          console.error("Library import failed for", a.type, a.tail, e);
+          results[i].skipped.push(`${a.type}${a.tail ? ` ${a.tail}` : ""}: failed (${(e as Error).message})`);
+        }
+        finally { mine.forget(); }
+        done++;
+        opts.onProgress?.({ done, total, current: `${a.type}${a.tail ? ` ${a.tail}` : ""}` });
+      }
+    }
+  };
+  await Promise.all(Array.from({ length: Math.max(1, Math.min(opts.concurrency ?? 4, queue.length)) }, worker));
+
+  return results.reduce<PackResult>((o, r) => ({
+    created: o.created + r.created, matched: o.matched + r.matched, photos: o.photos + r.photos,
+    skipped: [...o.skipped, ...r.skipped], retailed: [...o.retailed, ...r.retailed],
+  }), { created: 0, matched: 0, photos: 0, skipped: [], retailed: [] });
 }

@@ -18,6 +18,7 @@ import * as contacts from "@/domain/contacts";
 import * as quoteTemplates from "@/domain/quoteTemplates";
 import * as quoteShares from "@/domain/quoteShares";
 import * as library from "@/domain/library";
+import { startImportJob } from "@/domain/importJobs";
 import { after } from "next/server";
 import * as media from "@/domain/media";
 import * as settings from "@/domain/settings";
@@ -843,7 +844,7 @@ export async function importLibraryPackAction(fd: FormData) {
   const { admin, db, store } = await libraryAdmin();
   const files = new Map<string, Uint8Array>();
   let pack: library.LibraryPack | null = null;
-  let msg: string;
+  let jobId: string;
   try {
     for (const f of fd.getAll("files")) {
       if (!(f instanceof File) || f.size === 0) continue;
@@ -852,13 +853,19 @@ export async function importLibraryPackAction(fd: FormData) {
       else files.set(f.name, bytes);
     }
     if (!pack) throw new Error("Choose pack.json together with its photos.");
-    const r = await library.importLibraryPack(db, store, admin, pack, files);
-    msg = `${pack.operator}: ${r.created} aircraft added, ${r.matched} already there, ${r.photos} photo${r.photos === 1 ? "" : "s"} added.${r.retailed.length ? ` Updated: ${r.retailed.join("; ")}.` : ""}${r.skipped.length ? ` Passed over: ${r.skipped.join("; ")}.` : ""}`;
+    if (!pack.operator?.trim() || !Array.isArray(pack.aircraft) || !pack.aircraft.length) throw new Error("The pack needs an operator name and its aircraft.");
+    const p = pack;
+    // The work goes on after this answer, so the page can show progress instead of a form that seems stuck.
+    jobId = startImportJob(p.operator, p.aircraft.length, async (job) => {
+      const r = await library.importLibraryPack(db, store, admin, p, files, {
+        onProgress: (x) => { job.done = x.done; job.total = x.total; job.current = x.current; },
+      });
+      return `${p.operator}: ${r.created} aircraft added, ${r.matched} already there, ${r.photos} photo${r.photos === 1 ? "" : "s"} added.${r.retailed.length ? ` Updated: ${r.retailed.join("; ")}.` : ""}${r.skipped.length ? ` Passed over: ${r.skipped.join("; ")}.` : ""}`;
+    }).id;
   } catch (e) {
     redirect(withParam("/library/import", "error", (e as Error).message));
   }
-  revalidatePath("/library");
-  redirect(withParam("/library", "ok", msg));
+  redirect(withParam("/library/import", "job", jobId));
 }
 
 /**

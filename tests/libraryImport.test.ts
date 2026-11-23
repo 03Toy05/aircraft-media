@@ -6,6 +6,7 @@ import { getAircraftCard } from "../src/domain/directory";
 import { getLineup, ingestUpload, retireMedia } from "../src/domain/media";
 import { randomUUID } from "node:crypto";
 import { users } from "../src/db/schema";
+import type { FileStore } from "../src/storage";
 import { LIBRARY_TENANT_ID, addingNow, copiedLibraryAircraft, importLibraryPack, isMaskedTail, queueAdds, type LibraryPack } from "../src/domain/library";
 
 describe("Library import", () => {
@@ -84,6 +85,34 @@ describe("Library import", () => {
     const again = await importLibraryPack(t.db, t.store, t.actor, pack, files);
     expect(again).toMatchObject({ created: 0, matched: 4, photos: 0 });
   }, 120_000);
+
+  it("works on several types at once: a photo shared across types still goes to each, and combined photos are built without reading storage back", async () => {
+    const t = await setup();
+    const files = new Map<string, Uint8Array>();
+    files.set("plan.png", await makeImage(600, 200, 1990));
+    const types = ["Pilatus PC-12 NGX", "Pilatus PC-24", "Beechcraft King Air 350i", "Cessna Citation Mustang", "Embraer Phenom 300"];
+    for (const [i] of types.entries()) for (const k of ["ext", "c1", "c2"]) files.set(`${i}-${k}.png`, await makeImage(500, 300, 2000 + i * 10 + k.length + k.charCodeAt(1)));
+    const pack: LibraryPack = { operator: "Luxaviation", aircraft: types.map((type, i) => ({
+      type, tail: `ZS-T${i}A`, base: ["Johannesburg"],
+      photos: { exterior: [`${i}-ext.png`], cabin: [`${i}-c1.png`, `${i}-c2.png`], floor_plan: ["plan.png"] },
+    })) };
+    let reads = 0;
+    const counting = { get kind() { return t.store.kind; }, put: t.store.put.bind(t.store), get: (ref: string, kind?: "local" | "drive") => { reads++; return (t.store as FileStore).get(ref, kind); } };
+    const seen: number[] = [];
+    const r = await importLibraryPack(t.db, counting, t.actor, pack, files, { concurrency: 5, onProgress: (p) => seen.push(p.done) });
+    expect(r.skipped).toEqual([]);
+    expect(r).toMatchObject({ created: 5, photos: 20 });
+    expect(reads).toBe(0);
+    expect(seen).toEqual([0, 1, 2, 3, 4, 5]);
+    const rows = await getCatalogue(t.db, LIBRARY_TENANT_ID);
+    expect(rows).toHaveLength(5);
+    for (const row of rows) {
+      const lineup = await getLineup(t.db, { aircraftId: row.aircraftId, aircraftTypeId: row.aircraftTypeId });
+      const actual = lineup.filter((p) => p.associationStatus === "actual_aircraft");
+      expect(actual.filter((p) => p.classification === "floor_plan")).toHaveLength(1);
+      expect(actual.filter((p) => p.classification === "combined")).toHaveLength(1);
+    }
+  }, 300_000);
 
   it("adds library aircraft in the background, once each, one after another", async () => {
     const t = await setup();

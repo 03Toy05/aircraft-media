@@ -58,6 +58,30 @@ export class StorageRouter implements FileStore {
   }
 }
 
+/**
+ * A store that keeps the bytes it was just given, so reading them back (e.g. to build a combined photo from the
+ * photos uploaded a moment ago) costs no round trip to Drive. Meant for one short job; forget() frees the memory.
+ */
+export class RememberingStore implements FileStore {
+  private kept = new Map<string, Uint8Array>();
+  constructor(private inner: FileStore) {}
+  get kind() {
+    return this.inner.kind;
+  }
+  async put(bytes: Uint8Array, name: string, area?: StorageArea, mimeType?: string) {
+    const ref = await this.inner.put(bytes, name, area, mimeType);
+    this.kept.set(`${this.inner.kind}:${ref}`, bytes);
+    return ref;
+  }
+  get(ref: string, kind?: StorageKind) {
+    const b = this.kept.get(`${kind ?? this.inner.kind}:${ref}`);
+    return b ? Promise.resolve(b) : this.inner.get(ref, kind);
+  }
+  forget() {
+    this.kept.clear();
+  }
+}
+
 let store: FileStore | undefined;
 let driveClient: DriveClient | null | undefined;
 
