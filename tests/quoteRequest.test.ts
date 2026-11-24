@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { parseQuoteRequest } from "../src/domain/chocksShare";
+import { parseQuoteRequest } from "../src/domain/toyShare";
 import { setup, key } from "./helpers";
 import { createAircraft, createAircraftType, createOrganisation } from "../src/domain/directory";
-import { converse, emptyDraft } from "../src/domain/chocks";
+import { converse, emptyDraft } from "../src/domain/toy";
 
-describe("Chocks drafts the quote from a short request", () => {
+describe("Toy drafts the quote from a short request", () => {
   it("fills in each price and opens the Quote page the same way", async () => {
     const t = await setup();
     const g280 = (await createAircraftType(t.db, t.actor, key(), { manufacturer: "Gulfstream", model: "G280", category: "super_midsize_jet" })).result.aircraftTypeId;

@@ -4,7 +4,7 @@ import type { QuoteLanguage } from "./quote";
 /**
  * Spoken or typed commands on the Quote page ("add the Jet Aviation G650ER, Chinese, price 85,000, copy").
  * Deterministic: each clause is matched against a short list of patterns and your own aircraft. Anything it does not
- * understand is handed back so the caller can pass it to Chocks.
+ * understand is handed back so the caller can pass it to Toy.
  */
 
 export interface CommandAircraft { id: string; type: string; tail: string | null; operator: string | null; /** The operator's other names ("VJ"). */ aliases?: string[] }
@@ -80,7 +80,7 @@ export function parseQuoteCommands(text: string, aircraft: CommandAircraft[], ch
   };
 
   for (const raw of clauses(text)) {
-    const c = raw.replace(/^(?:please|ok(?:ay)?|chocks|toy)[\s,]+/i, "").replace(/[\s,]+please$/i, "").trim();
+    const c = raw.replace(/^(?:please|ok(?:ay)?|toy|chocks)[\s,]+/i, "").replace(/[\s,]+please$/i, "").trim();
     let m: RegExpMatchArray | null;
     if (/^(?:copy|copy (?:the |it|that|message)|複製|复制)/i.test(c)) { commands.push({ do: "copy" }); continue; }
     if ((m = c.match(/^(?:send|share)(?:\s+it|\s+this|\s+the message)?(?:\s+(?:by|on|to|via|through|with))?\s+(.+)$/i)) && APPS.some(([re]) => re.test(m![1]))) {

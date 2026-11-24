@@ -685,7 +685,7 @@ export interface WaitingGroup {
 }
 
 /**
- * Every photo waiting in Review, grouped by how it arrived: the same upload (or Chocks message), the same PDF,
+ * Every photo waiting in Review, grouped by how it arrived: the same upload (or Toy message), the same PDF,
  * or the same card text from the same person. A group carries one source evidence, so it is assigned in one go.
  * Newest group first.
  */

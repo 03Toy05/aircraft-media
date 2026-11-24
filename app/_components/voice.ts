@@ -21,10 +21,10 @@ export const getRecognition = (): RecognitionCtor | null => {
   return w.SpeechRecognition ?? w.webkitSpeechRecognition ?? null;
 };
 
-const VOICE_KEY = "chocksVoice";
+const VOICE_KEY = "toyVoice";
 /** The voice language picked next to Toy's microphone on this device, if one was picked. */
 export function savedVoice(): string | null {
-  try { return window.localStorage.getItem(VOICE_KEY); } catch { return null; }
+  try { return window.localStorage.getItem(VOICE_KEY) ?? window.localStorage.getItem("chocksVoice"); } catch { return null; }
 }
 export function saveVoice(v: string) {
   try { window.localStorage.setItem(VOICE_KEY, v); } catch { /* storage blocked: kept for this visit only */ }
@@ -35,7 +35,7 @@ export function voiceLang(): string {
   const picked = savedVoice();
   if (picked) return picked;
   try {
-    const l = window.localStorage.getItem("chocksLang");
+    const l = window.localStorage.getItem("toyLang") ?? window.localStorage.getItem("chocksLang");
     return l === "zh-Hant" ? "zh-HK" : l === "zh-Hans" ? "zh-CN" : "en-US";
   } catch { return "en-US"; }
 }

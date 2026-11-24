@@ -99,7 +99,7 @@ describe("Platform library", () => {
 
 import { addInformationVersion, getAircraftCard } from "../src/domain/directory";
 import { addToWorkspace, acceptUpdates, copyStatus, offerUpdate, offerablePhotos, updateCopy } from "../src/domain/library";
-import { converse, emptyDraft } from "../src/domain/chocks";
+import { converse, emptyDraft } from "../src/domain/toy";
 
 /** A library with Tag's T7-LXX (full set), made from the first user's photos. */
 async function libraryWithTag(t: T) {

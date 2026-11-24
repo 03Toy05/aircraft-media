@@ -2,16 +2,16 @@
 
 import Link from "next/link";
 import { useEffect, useRef, useState, useTransition } from "react";
-import { chocksTurnAction, type TurnResult } from "../chatActions";
+import { toyTurnAction, type TurnResult } from "../chatActions";
 import { recordQuoteShareAction } from "../actions";
 import { report } from "./speedClock";
-import type { ChocksPhoto, Draft } from "@/domain/chocks";
+import type { ToyPhoto, Draft } from "@/domain/toy";
 import { CLASSIFICATION_LABEL, type Classification } from "@/domain/constants";
 import { prepareShareAction, type SharePayload } from "../shareActions";
 import { ShareBox } from "./ShareBox";
 import { copyText, fetchPhoto } from "./copyText";
 import Icon from "./Icon";
-import { CHAT_LANGUAGES, parseChatLang, toHans, trClassification, type ChatLang } from "@/domain/chocksText";
+import { CHAT_LANGUAGES, parseChatLang, toHans, trClassification, type ChatLang } from "@/domain/toyText";
 import { VOICE_ON, savedVoice, saveVoice } from "./voice";
 
 /** The words on the chat itself. Toy's own sentences come from the server in the chosen language. */
@@ -115,7 +115,7 @@ const KINDS: Classification[] = ["exterior", "cabin", "floor_plan", "combined"];
  * The quote's photos with what to send: tick the kinds (EXT, CABIN, FLOOR PLAN, COMBINED), then share option by
  * option (option 1's photos and message, then option 2's...), or everything at once.
  */
-function QuoteSend({ photos, options, text, ui, lang, asked, quoteKey }: { photos: ChocksPhoto[]; options: { title: string; text: string }[]; text?: string; ui: UI; lang: ChatLang; asked?: string[]; quoteKey: string }) {
+function QuoteSend({ photos, options, text, ui, lang, asked, quoteKey }: { photos: ToyPhoto[]; options: { title: string; text: string }[]; text?: string; ui: UI; lang: ChatLang; asked?: string[]; quoteKey: string }) {
   // The kinds the broker asked for ("with EXT and cabin photos"), or every single view.
   const [kinds, setKinds] = useState<Set<string>>(() => new Set(asked ?? ["exterior", "cabin", "floor_plan", "unclassified"]));
   const [busy, setBusy] = useState(false);
@@ -134,7 +134,7 @@ function QuoteSend({ photos, options, text, ui, lang, asked, quoteKey }: { photo
   // Only say "single photos instead" when that is what happens (no single kinds ticked).
   const fallback = kinds.has("combined") && !KINDS.some((k) => k !== "combined" && kinds.has(k));
 
-  async function share(list: ChocksPhoto[], message: string | undefined, after: () => void) {
+  async function share(list: ToyPhoto[], message: string | undefined, after: () => void) {
     setBusy(true); setDone(null);
     try {
       const files = await Promise.all(list.map(async (p, i) => {
@@ -216,7 +216,7 @@ function SharePanel({ aircraftId, contactId }: { aircraftId: string; contactId: 
 
 type Msg =
   | { id: string; role: "user"; text: string; files: string[] }
-  | { id: string; role: "chocks"; say: string[]; chips: { label: string; send: string }[]; draft: Draft; done?: boolean; aircraftId?: string | null; failures: string[]; share?: { aircraftId: string; contactId: string }; link?: { href: string; label: string }; photos?: ChocksPhoto[]; copy?: string; options?: { title: string; text: string }[]; kinds?: string[] };
+  | { id: string; role: "toy"; say: string[]; chips: { label: string; send: string }[]; draft: Draft; done?: boolean; aircraftId?: string | null; failures: string[]; share?: { aircraftId: string; contactId: string }; link?: { href: string; label: string }; photos?: ToyPhoto[]; copy?: string; options?: { title: string; text: string }[]; kinds?: string[] };
 
 // Browser speech APIs (Chrome, Edge, Safari). Typed minimally because they are not in the standard DOM typings.
 interface Recognition {
@@ -267,7 +267,7 @@ export default function ChatClient() {
   // Remember the chosen language on this device.
   useEffect(() => {
     try {
-      const saved = parseChatLang(window.localStorage.getItem("chocksLang"));
+      const saved = parseChatLang(window.localStorage.getItem("toyLang") ?? window.localStorage.getItem("chocksLang"));
       if (saved !== "en") { setChatLang(saved); setVoice(saved === "zh-Hans" ? "zh-CN" : "zh-HK"); }
     } catch { /* storage blocked: stay in English */ }
     // A voice language chosen on purpose wins over the one that follows the chat language.
@@ -277,7 +277,7 @@ export default function ChatClient() {
   const changeChatLang = (l: ChatLang) => {
     setChatLang(l);
     if (!savedVoice()) setVoice(l === "zh-Hans" ? "zh-CN" : l === "zh-Hant" ? "zh-HK" : "en-US");
-    try { window.localStorage.setItem("chocksLang", l); } catch { /* ignore */ }
+    try { window.localStorage.setItem("toyLang", l); } catch { /* ignore */ }
   };
   const chooseVoice = (v: string) => {
     if (listening) stopListening(false);
@@ -297,7 +297,8 @@ export default function ChatClient() {
   useEffect(() => {
     try {
       const saved = JSON.parse(window.sessionStorage.getItem(QUOTE_KEY) ?? "null") as { quote: Draft["quote"]; msg: Msg } | null;
-      if (!saved?.quote?.ids?.length || saved.msg?.role !== "chocks") return;
+      if (saved?.msg && (saved.msg.role as string) === "chocks") saved.msg.role = "toy"; // saved before the rename
+      if (!saved?.quote?.ids?.length || saved.msg?.role !== "toy") return;
       setDraft(JSON.stringify({ photos: [], quote: saved.quote }));
       setMsgs([saved.msg]);
     } catch { /* storage blocked or old data: start fresh */ }
@@ -324,16 +325,16 @@ export default function ChatClient() {
       let r: TurnResult;
       const asked = performance.now();
       try {
-        r = await chocksTurnAction(fd);
+        r = await toyTurnAction(fd);
         // What the broker waited for Toy, and what kind of reply it was (for the Speed page).
         const kind = r.reply.options?.length ? "quote" : fd.getAll("files").some((f) => f instanceof File && f.size > 0) ? "photos" : r.reply.share ? "share" : r.applied ? "saved" : "message";
         report({ kind: "toy", name: kind, ms: performance.now() - asked, serverMs: r.serverMs });
       } catch {
-        setMsgs((m) => [...m, { id: crypto.randomUUID(), role: "chocks", say: [ui.sorry], chips: [], draft: JSON.parse(draft || "null") ?? ({ photos: [] } as unknown as Draft), failures: [] }]);
+        setMsgs((m) => [...m, { id: crypto.randomUUID(), role: "toy", say: [ui.sorry], chips: [], draft: JSON.parse(draft || "null") ?? ({ photos: [] } as unknown as Draft), failures: [] }]);
         return;
       }
       setDraft(JSON.stringify(r.draft));
-      const reply: Msg = { id: crypto.randomUUID(), role: "chocks", say: r.reply.say, chips: r.reply.chips, draft: r.draft, done: r.reply.done, aircraftId: r.applied?.aircraftId, failures: r.failures, share: r.reply.share, link: r.reply.link, photos: r.reply.photos, copy: r.reply.copy, options: r.reply.options, kinds: r.reply.kinds };
+      const reply: Msg = { id: crypto.randomUUID(), role: "toy", say: r.reply.say, chips: r.reply.chips, draft: r.draft, done: r.reply.done, aircraftId: r.applied?.aircraftId, failures: r.failures, share: r.reply.share, link: r.reply.link, photos: r.reply.photos, copy: r.reply.copy, options: r.reply.options, kinds: r.reply.kinds };
       setMsgs((m) => [...m, reply]);
       try {
         if (!r.draft.quote) window.sessionStorage.removeItem(QUOTE_KEY);
@@ -427,12 +428,12 @@ export default function ChatClient() {
   toggleRef.current = toggleMic;
   useEffect(() => {
     const on = () => toggleRef.current();
-    window.addEventListener("chocks:mic", on);
-    return () => window.removeEventListener("chocks:mic", on);
+    window.addEventListener("toy:mic", on);
+    return () => window.removeEventListener("toy:mic", on);
   }, []);
-  useEffect(() => { window.dispatchEvent(new CustomEvent("chocks:listening", { detail: listening })); }, [listening]);
+  useEffect(() => { window.dispatchEvent(new CustomEvent("toy:listening", { detail: listening })); }, [listening]);
 
-  const lastChocks = [...msgs].reverse().find((m) => m.role === "chocks");
+  const lastToy = [...msgs].reverse().find((m) => m.role === "toy");
   /** "Add an aircraft or photos" / Template: put the labelled template in the box and focus it. */
   const startAdd = () => {
     setAdding(true);
@@ -470,7 +471,7 @@ export default function ChatClient() {
             <p className="small" style={{ margin: "0 0 6px" }}><b>Toy</b></p>
             {m.failures.map((f, i) => <div key={i} className="flash err">{f}</div>)}
             {m.say.map((l, i) => <p key={i} style={{ margin: "4px 0", whiteSpace: "pre-wrap" }}>{l}</p>)}
-            {m === lastChocks && m.draft.photos.length > 0 && !m.done && (
+            {m === lastToy && m.draft.photos.length > 0 && !m.done && (
               <div style={{ display: "flex", gap: 8, flexWrap: "wrap", margin: "8px 0" }}>
                 {m.draft.photos.map((p) => (
                   <div key={p.mediaId} className="small" style={{ width: 96 }}>
@@ -501,7 +502,7 @@ export default function ChatClient() {
                 <Link href="/review">{ui.review}</Link>
               </p>
             )}
-            {m === lastChocks && !m.done && m.chips.length > 0 && (
+            {m === lastToy && !m.done && m.chips.length > 0 && (
               <div className="row" style={{ marginTop: 6 }}>
                 {m.chips.map((c) => (
                   <div key={c.label} style={{ flex: "0 0 auto" }}>
@@ -526,7 +527,7 @@ export default function ChatClient() {
           onChange={(e) => setText(e.target.value)}
           onKeyDown={(e) => { if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); send(); } }}
           rows={Math.min(8, Math.max(2, text.split("\n").length))}
-          placeholder={lastChocks && !lastChocks.done ? ui.placeholderReply : ui.placeholderNew}
+          placeholder={lastToy && !lastToy.done ? ui.placeholderReply : ui.placeholderNew}
           style={{ width: "100%" }}
         />
         <input ref={fileRef} type="file" hidden accept="image/jpeg,image/png,image/webp,application/pdf" multiple onChange={(e) => setFiles([...(e.target.files ?? [])])} />

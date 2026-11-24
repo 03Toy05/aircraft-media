@@ -1,7 +1,7 @@
 import type { Classification } from "./constants";
 
 /**
- * Chocks speaks the language you pick. Every sentence Chocks says is written once in English and looked up here;
+ * Toy speaks the language you pick. Every sentence Toy says is written once in English and looked up here;
  * Traditional Chinese is written out, and Simplified Chinese is made from it by a fixed character table, so the two
  * never drift apart. A sentence with no entry is simply said in English, never lost.
  *

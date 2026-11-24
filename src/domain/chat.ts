@@ -3,7 +3,7 @@ import type { Db } from "../db/client";
 import { aircraft, aircraftMedia, aircraftTypes, organisationAircraftRelationships } from "../db/schema";
 import type { Actor } from "./action";
 import type { ParsedCard } from "./card";
-import type { AircraftChanges } from "./chocks";
+import type { AircraftChanges } from "./toy";
 import { guessClassificationFromFilename, CLASSIFICATIONS, type Classification, type WifiStatus, type YesNoStatus } from "./constants";
 import { addInformationVersion, addOrganisationAlias, setOrganisationRegion, createAircraft, createOrganisation, findAircraftByTail, getAircraftCard, resolveAircraftTypes, resolveAircraftTypesExact, resolveOrganisations, setBases, setOperator } from "./directory";
 import { DomainError } from "./errors";

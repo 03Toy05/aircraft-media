@@ -4,11 +4,11 @@ import { setup, key, makeImage } from "./helpers";
 import { createAircraft, createAircraftType, createOrganisation, getAircraftCard, listInformationVersions, setOrganisationRegion, getOrganisationBase, renameOrganisation, resolveOrganisationsExact } from "../src/domain/directory";
 import { ingestUpload } from "../src/domain/media";
 import { applyChatProposal, matchCard } from "../src/domain/chat";
-import { converse, emptyDraft, type Draft, type DraftPhoto } from "../src/domain/chocks";
+import { converse, emptyDraft, type Draft, type DraftPhoto } from "../src/domain/toy";
 import { formatAircraftCard, parseAircraftCard } from "../src/domain/card";
 import { aircraftMedia, organisations } from "../src/db/schema";
 import { contactLink, createContact, findContacts } from "../src/domain/contacts";
-import { parseQuoteRequest, parseShareRequest } from "../src/domain/chocksShare";
+import { parseQuoteRequest, parseShareRequest } from "../src/domain/toyShare";
 import { QUOTE_LANGUAGES, QUOTE_WORDS, buildQuote, buildQuoteParts, defaultQuoteTemplate, validateQuoteTemplate } from "../src/domain/quote";
 import { getQuoteTemplates, resetQuoteTemplate, saveQuoteTemplate } from "../src/domain/quoteTemplates";
 
@@ -140,7 +140,7 @@ describe("No tail number needed", () => {
     });
     expect(applied.aircraftId).toBeTruthy();
     expect(await getAircraftCard(t.db, applied.aircraftId!)).toMatchObject({ tailNumber: null, operator: "Advanced Aviation", yom: 2025 });
-    // second time the same operator + type: Chocks asks whether it is the aircraft it already has
+    // second time the same operator + type: Toy asks whether it is the aircraft it already has
     r = await converse(t.db, t.actor.tenantId, emptyDraft("n3"), ["Operator: Advanced Aviation", "Aircraft type: G280"].join("\n"), [fakePhoto("b.png")]);
     expect(r.draft.asked).toMatchObject({ kind: "tail", noTail: true });
     r = await converse(t.db, t.actor.tenantId, r.draft, "Same aircraft", []);
@@ -154,7 +154,7 @@ describe("No tail number needed", () => {
   });
 });
 
-describe("Chocks conversation", () => {
+describe("Toy conversation", () => {
   it("asks about an unknown operator, explains when the user is unsure, and carries on after 'new'", async () => {
     let d: Draft = emptyDraft("k1");
     let r = await converse(t.db, t.actor.tenantId, d, ["Operator: Advanced Aviation", "Aircraft type: G280", "Tail number: B-KXX"].join("\n"), [fakePhoto("G280 Int 1.png")]);
@@ -272,7 +272,7 @@ describe("Contacts and sending to a person", () => {
     expect(parseShareRequest("Operator: Metrojet")).toBeNull();
   });
 
-  it("Chocks prepares the message for a saved contact and asks when the aircraft is ambiguous", async () => {
+  it("Toy prepares the message for a saved contact and asks when the aircraft is ambiguous", async () => {
     const org = (await createOrganisation(t.db, t.actor, key(), { name: "Metrojet", region: "Asia" })).result.organisationId;
     const c = (await createContact(t.db, t.actor, key(), { name: "Mr Chan", app: "whatsapp", handle: "+85291234567" })).result.contactId;
     await createAircraft(t.db, t.actor, key(), { aircraftTypeId: g280, registration: "B-AAA", operatorId: org });
@@ -333,7 +333,7 @@ describe("Questions about what you already have", () => {
   });
 });
 
-describe("Chocks runs the Operators & aircraft filters and sorting", () => {
+describe("Toy runs the Operators & aircraft filters and sorting", () => {
   async function fleet() {
     const heavy = (await createAircraftType(t.db, t.actor, key(), { manufacturer: "Gulfstream", model: "G650", category: "heavy_jet" })).result.aircraftTypeId;
     const asia = (await createOrganisation(t.db, t.actor, key(), { name: "Metrojet", region: "Asia" })).result.organisationId;
@@ -450,7 +450,7 @@ describe("Quotation message", () => {
     expect(QUOTE_WORDS.ru.seats(1)).toBe("1 место"); expect(QUOTE_WORDS.ru.seats(3)).toBe("3 места"); expect(QUOTE_WORDS.ru.seats(12)).toBe("12 мест");
   });
 
-  it("Chocks opens the Quote page with the named aircraft chosen", async () => {
+  it("Toy opens the Quote page with the named aircraft chosen", async () => {
     const org = (await createOrganisation(t.db, t.actor, key(), { name: "Metrojet" })).result.organisationId;
     const a = (await createAircraft(t.db, t.actor, key(), { aircraftTypeId: g280, registration: "B-AAA", operatorId: org })).result.aircraftId;
     const turn = await converse(t.db, t.actor.tenantId, emptyDraft("q"), "make a quote for the G280", []);
@@ -469,7 +469,7 @@ describe("WIFI details", () => {
     const card = (await getAircraftCard(t.db, a))!;
     expect(card).toMatchObject({ wifi: "yes", wifiDetail: "at USD 10/MB" });
     expect(formatAircraftCard(card)).toMatch(/WIFI: Yes, at USD 10\/MB/);
-    // Updating through Chocks keeps the status and changes only the detail given.
+    // Updating through Toy keeps the status and changes only the detail given.
     await applyChatProposal(t.db, t.actor, "k-wifi", { mediaIds: [], classifications: {}, aircraftTypeId: g280, aircraft: { mode: "existing", aircraftId: a }, info: { yom: null, yor: null, capacity: null, wifiStatus: "yes", wifiDetail: "free for the first 100 MB", notes: null } });
     expect((await getAircraftCard(t.db, a))!.wifiDetail).toBe("free for the first 100 MB");
   });
@@ -535,7 +535,7 @@ describe("Quote wording template", () => {
   });
 });
 
-describe("Chocks: 'give me X's G550 and Y's G650ER template and photos'", () => {
+describe("Toy: 'give me X's G550 and Y's G650ER template and photos'", () => {
   it("reads the request, tolerates typos, and returns the message, photos and a copy text for both aircraft", async () => {
     expect(parseQuoteRequest("Give me CapacJet's G550 and Tag's G650ER template and photos")).toEqual({ what: ["CapacJet's G550", "Tag's G650ER"] });
     expect(parseQuoteRequest("get me the G550 message")).toEqual({ what: ["G550"] });

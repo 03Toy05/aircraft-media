@@ -4,7 +4,7 @@ import { aircraft, aircraftTypes, organisations } from "../db/schema";
 import { fleetLink, looksLikeFleetRequest, parseFleetQuery, runFleetQuery, sortAircraft } from "./fleetQuery";
 import { getCatalogue } from "./catalogue";
 import { AIRCRAFT_CATEGORIES, AIRCRAFT_CATEGORY_LABEL, normalizeKey, normalizeRegistration, type Classification } from "./constants";
-import { isChinese, plural, tr, trUnderstood, trWifi, type ChatLang } from "./chocksText";
+import { isChinese, plural, tr, trUnderstood, trWifi, type ChatLang } from "./toyText";
 import { getAircraftCard, orgAliasesFor } from "./directory";
 import { getLineup } from "./media";
 import { buildQuote, buildQuoteParts } from "./quote";
@@ -151,7 +151,7 @@ export async function fleetBasics(db: Db, tenantId: string) {
 
 /**
  * The quotation message (in your saved wording, in the chat language) and a few photos for each chosen aircraft,
- * so Chocks can show "template and photos" right in the chat.
+ * so Toy can show "template and photos" right in the chat.
  */
 export async function quotePreview(db: Db, tenantId: string, ids: string[], lang?: ChatLang, prices: Record<string, string> = {}, alsoTenants: string[] = []): Promise<{
   text: string;

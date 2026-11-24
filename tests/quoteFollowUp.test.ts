@@ -3,8 +3,8 @@ import { setup, key } from "./helpers";
 import { addOrganisationAlias, createAircraft, createAircraftType, createOrganisation, getAircraftCard, listInformationVersions } from "../src/domain/directory";
 import { matchAircraft } from "../src/domain/quoteCommands";
 import { changeAircraftFields } from "../src/domain/chat";
-import { converse, emptyDraft, type Draft } from "../src/domain/chocks";
-import { parseQuoteFollowUp } from "../src/domain/chocksQuoteEdit";
+import { converse, emptyDraft, type Draft } from "../src/domain/toy";
+import { parseQuoteFollowUp } from "../src/domain/toyQuoteEdit";
 
 let t: Awaited<ReturnType<typeof setup>>;
 let c605: string;

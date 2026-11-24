@@ -3,10 +3,10 @@ import type { Db } from "../db/client";
 import { aircraft, aircraftTypes, organisations } from "../db/schema";
 import { parseAircraftCard } from "./card";
 import { AIRCRAFT_CATEGORY_LABEL, CLASSIFICATION_LABEL, normalizeKey, parseClassification, type AircraftCategory, type Classification, type WifiStatus, type YesNoStatus } from "./constants";
-import { isChinese, plural, tr, trCategory, trClassification, trLoose, trWifi, type ChatLang } from "./chocksText";
-import { parseShareRequest, parseQuoteRequest, findAircraftsForShare } from "./chocksShare";
+import { isChinese, plural, tr, trCategory, trClassification, trLoose, trWifi, type ChatLang } from "./toyText";
+import { parseShareRequest, parseQuoteRequest, findAircraftsForShare } from "./toyShare";
 import { normalizeRegion } from "./places";
-import { answerFleet, answerLookup, fleetBasics, isLookupQuestion, quotePreview } from "./chocksLookup";
+import { answerFleet, answerLookup, fleetBasics, isLookupQuestion, quotePreview } from "./toyLookup";
 import { LIBRARY_TENANT_ID, scopeHasAircraft, withinLibraryScope, type LibraryScope } from "./library";
 
 /** What of the library Toy may use for this person: true (tests) = all of it; null/false = none. */
@@ -15,13 +15,13 @@ const scopeOf = (ctx: LibraryCtx): LibraryScope | null => (ctx.library === true 
 import { operatorAliasesByName } from "./catalogue";
 import { parseFleetQuery } from "./fleetQuery";
 import { findContacts } from "./contacts";
-import { parseQuoteFollowUp, validEdit, type EditField, type FieldEdit } from "./chocksQuoteEdit";
+import { parseQuoteFollowUp, validEdit, type EditField, type FieldEdit } from "./toyQuoteEdit";
 import { findAircraftByTail, findAircraftWithoutTail, getAircraftCard, orgAliasesFor, typeAliasesFor, resolveAircraftTypes, resolveAircraftTypesExact, resolveOrganisations, resolveOrganisationsExact } from "./directory";
 
 /**
- * Chocks, the assistant. It is deterministic: it reads labelled text, checks the directory, and asks one plain
+ * Toy, the assistant. It is deterministic: it reads labelled text, checks the directory, and asks one plain
  * question at a time. The whole conversation state lives in the Draft, which the browser sends back each turn,
- * so a short reply ("new", "yes", "cabin") is always read against the question Chocks just asked.
+ * so a short reply ("new", "yes", "cabin") is always read against the question Toy just asked.
  */
 
 export interface Option { id: string; name: string; note?: string }
@@ -73,16 +73,16 @@ export interface Draft {
   asked: Asked | null;
   evidence: string[];
   submitKey: string;
-  /** The language Chocks speaks; the browser sets it on every turn. */
+  /** The language Toy speaks; the browser sets it on every turn. */
   lang?: ChatLang;
   /** The last quote shown in this chat. */
   quote?: DraftQuote;
 }
 
 export interface Chip { label: string; send: string }
-/** A photo Chocks shows with a quote: which option (aircraft, from 0) it belongs to and what view it is. */
-export interface ChocksPhoto { id: string; label: string; classification?: Classification; option?: number }
-export interface ChocksReply { say: string[]; chips: Chip[]; ready: boolean; done?: boolean; link?: { href: string; label: string }; photos?: ChocksPhoto[]; copy?: string; options?: { title: string; text: string }[]; /** Photo kinds the broker asked for ([] = none). */ kinds?: Classification[]; share?: { aircraftId: string; contactId: string } }
+/** A photo Toy shows with a quote: which option (aircraft, from 0) it belongs to and what view it is. */
+export interface ToyPhoto { id: string; label: string; classification?: Classification; option?: number }
+export interface ToyReply { say: string[]; chips: Chip[]; ready: boolean; done?: boolean; link?: { href: string; label: string }; photos?: ToyPhoto[]; copy?: string; options?: { title: string; text: string }[]; /** Photo kinds the broker asked for ([] = none). */ kinds?: Classification[]; share?: { aircraftId: string; contactId: string } }
 
 export function emptyDraft(submitKey: string): Draft {
   return {
@@ -91,7 +91,7 @@ export function emptyDraft(submitKey: string): Draft {
   };
 }
 
-// ---------------------------------------------------------------- similarity (so Chocks can say "did you mean…")
+// ---------------------------------------------------------------- similarity (so Toy can say "did you mean…")
 
 function editDistance(a: string, b: string) {
   const dp = Array.from({ length: a.length + 1 }, (_, i) => [i, ...Array(b.length).fill(0)]);
@@ -147,7 +147,7 @@ function pickOption(text: string, options: Option[]): Option | null {
   return options.find((o) => normalizeKey(o.name) === n) ?? options.find((o) => n.length >= 3 && normalizeKey(o.name).includes(n)) ?? null;
 }
 
-function sharePrepared(L: ChatLang | undefined, aircraftId: string, contactId: string): ChocksReply {
+function sharePrepared(L: ChatLang | undefined, aircraftId: string, contactId: string): ToyReply {
   return { say: [tr(L, "Here you go. I've prepared the card. Nothing is sent until you press Send in the messenger.")], chips: [], ready: false, done: true, share: { aircraftId, contactId } };
 }
 
@@ -161,7 +161,7 @@ export async function converse(
   newPhotos: DraftPhoto[],
   /** library: the platform library (or the operators of it) shared with this user, so quotes can use its aircraft too. */
   ctx: LibraryCtx = {},
-): Promise<{ draft: Draft; reply: ChocksReply; confirm: boolean; /** Record changes the broker said yes to. */ edits?: AircraftEdit[] }> {
+): Promise<{ draft: Draft; reply: ToyReply; confirm: boolean; /** Record changes the broker said yes to. */ edits?: AircraftEdit[] }> {
   let d: Draft = structuredClone(input);
   const L = d.lang;
   const say: string[] = [];
@@ -217,7 +217,7 @@ export async function converse(
     if (asked) d.asked = asked;
     const priced = Object.keys(prices).length > 0;
     if (ids.length) d.quote = { ids, prices, ...(quoteReq.kinds ? { kinds: quoteReq.kinds } : {}) };
-    const reply: ChocksReply = ids.length
+    const reply: ToyReply = ids.length
       ? await quoteReply(db, tenantId, d, ctx, [[tr(L, priced ? "Your quote is ready, prices included, for:" : "Your quote is ready for:"), ...names.map((n) => `• ${n}`)].join(String.fromCharCode(10))], priced)
       : { say: [quoteReq.what.length ? tr(L, "I couldn't find {names}.", { names: missing.join(isChinese(L) ? "、" : " or ") }) : tr(L, "Open the Quote page to choose the aircraft.")], chips: [], ready: false, link: { href: "/quote", label: tr(L, "Open the quote") } };
     if (ids.length && missing.length) reply.say.push(tr(L, "I couldn't find: {names}.", { names: missing.join(", ") }));
@@ -281,7 +281,7 @@ export async function converse(
     const fleet = fleetFirst ? await answerFleet(db, tenantId, message, L) : null;
     const answer = fleet ? null : await answerLookup(db, tenantId, message, L);
     const fleetAny = fleet ?? (answer ? null : await answerFleet(db, tenantId, message, L));
-    if (asked) d.asked = asked; // a side question must not make Chocks forget what it was waiting for
+    if (asked) d.asked = asked; // a side question must not make Toy forget what it was waiting for
     const f = fleet ?? fleetAny;
     return {
       draft: d,
@@ -294,7 +294,7 @@ export async function converse(
     };
   }
 
-  // Sending an aircraft to a saved contact ("send the G280 to Mr Chan"). Nothing is saved; Chocks only prepares the message.
+  // Sending an aircraft to a saved contact ("send the G280 to Mr Chan"). Nothing is saved; Toy only prepares the message.
   if (asked?.kind === "share_aircraft" || asked?.kind === "share_contact") {
     const picked = pickOption(message, asked.options);
     if (picked) return { draft: d, reply: sharePrepared(L, asked.kind === "share_aircraft" ? picked.id : asked.aircraftId, asked.kind === "share_aircraft" ? asked.contactId : picked.id), confirm: false };
@@ -466,7 +466,7 @@ function recordChange(L: ChatLang | undefined, card: NonNullable<Awaited<ReturnT
 }
 
 /** The quote in the draft as a Toy reply: the message, the photos to send and a link to the Quote page. */
-export async function quoteReply(db: Db, tenantId: string, d: Draft, ctx: LibraryCtx, lead: string[], priced: boolean): Promise<ChocksReply> {
+export async function quoteReply(db: Db, tenantId: string, d: Draft, ctx: LibraryCtx, lead: string[], priced: boolean): Promise<ToyReply> {
   const L = d.lang;
   const q = d.quote!;
   const ids = await withinLibraryScope(db, scopeOf(ctx), q.ids);
@@ -499,7 +499,7 @@ function operatorChips(d: Draft, options: Option[]): Chip[] {
   ];
 }
 
-async function nextStep(db: Db, tenantId: string, d: Draft, say: string[]): Promise<{ draft: Draft; reply: ChocksReply }> {
+async function nextStep(db: Db, tenantId: string, d: Draft, say: string[]): Promise<{ draft: Draft; reply: ToyReply }> {
   const L = d.lang;
   // -- operator
   if (d.operatorText && d.operator.kind === "unset") {

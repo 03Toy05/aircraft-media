@@ -3,7 +3,7 @@ import type { CatalogueRow } from "./catalogue";
 import { AIRCRAFT_CATEGORIES, AIRCRAFT_CATEGORY_LABEL, normalizeKey, type AircraftCategory, type WifiStatus } from "./constants";
 
 /**
- * The filters and sorting of the Operators & aircraft page, as one function. The page and Chocks both call it,
+ * The filters and sorting of the Operators & aircraft page, as one function. The page and Toy both call it,
  * so "show heavy jets based in Hong Kong, newest first" gives the same answer in either place.
  */
 export const AC_SORTS = [
@@ -176,7 +176,7 @@ export interface ParsedFleetQuery { query: FleetQuery; understood: string[] }
 /**
  * Turns "show me heavy jets based in Hong Kong with wifi, newest first" into filters and a sort.
  * Only things that match what you really have are used (a region or base that isn't in your data is ignored,
- * so a stray word never filters everything away). `understood` lists what was applied, for Chocks to repeat back.
+ * so a stray word never filters everything away). `understood` lists what was applied, for Toy to repeat back.
  */
 export function parseFleetQuery(message: string, data: Pick<FleetData, "orgs" | "rows">): ParsedFleetQuery {
   const w = words(message);

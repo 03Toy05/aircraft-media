@@ -13,12 +13,12 @@ import { bringBackForReview, ingestPdf } from "@/domain/intake";
 import { libraryScope } from "@/domain/library";
 import { ingestUpload } from "@/domain/media";
 import { applyChatProposal, changeAircraftFields, suggestClassification, type ApplyResult } from "@/domain/chat";
-import { parseChatLang, tr, trStep } from "@/domain/chocksText";
-import { converse, emptyDraft, quoteReply, type ChocksReply, type Draft, type DraftPhoto } from "@/domain/chocks";
+import { parseChatLang, tr, trStep } from "@/domain/toyText";
+import { converse, emptyDraft, quoteReply, type ToyReply, type Draft, type DraftPhoto } from "@/domain/toy";
 
 export interface TurnResult {
   draft: Draft;
-  reply: ChocksReply;
+  reply: ToyReply;
   failures: string[];
   applied?: ApplyResult;
   /** How long the server took for this turn (for the Speed page). */
@@ -31,11 +31,11 @@ async function photoFor(db: Awaited<ReturnType<typeof getDb>>, tenantId: string,
 }
 
 /**
- * One Chocks turn. The browser sends the draft back with every message, so a short reply is always read against
- * the question Chocks just asked. Photos are stored (waiting in Review) when they arrive; nothing is created,
+ * One Toy turn. The browser sends the draft back with every message, so a short reply is always read against
+ * the question Toy just asked. Photos are stored (waiting in Review) when they arrive; nothing is created,
  * attached or approved until the owner confirms.
  */
-export async function chocksTurnAction(fd: FormData): Promise<TurnResult> {
+export async function toyTurnAction(fd: FormData): Promise<TurnResult> {
   const started = performance.now();
   const r = await turn(fd);
   return { ...r, serverMs: Math.round(performance.now() - started) };

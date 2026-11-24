@@ -3,10 +3,10 @@ import { join } from "node:path";
 import { beforeEach, describe, expect, it } from "vitest";
 import { setup, key } from "./helpers";
 import { createAircraft, createAircraftType, createOrganisation } from "../src/domain/directory";
-import { converse, emptyDraft, type Draft, type DraftPhoto } from "../src/domain/chocks";
+import { converse, emptyDraft, type Draft, type DraftPhoto } from "../src/domain/toy";
 import { parseAircraftCard } from "../src/domain/card";
-import { parseQuoteRequest, parseShareRequest } from "../src/domain/chocksShare";
-import { HANT, toHans, tr } from "../src/domain/chocksText";
+import { parseQuoteRequest, parseShareRequest } from "../src/domain/toyShare";
+import { HANT, toHans, tr } from "../src/domain/toyText";
 
 let t: Awaited<ReturnType<typeof setup>>;
 beforeEach(async () => {
@@ -18,9 +18,9 @@ const withLang = (lang: "en" | "zh-Hant" | "zh-Hans"): Draft => ({ ...emptyDraft
 const say = (r: { reply: { say: string[] } }) => r.reply.say.join("\n");
 const fakePhoto = (name: string): DraftPhoto => ({ mediaId: `m-${name}`, name, contentVersionId: null, classification: "unclassified" });
 
-describe("Chocks in Traditional and Simplified Chinese", () => {
-  it("every sentence Chocks says has a Chinese translation", () => {
-    const files = [...["chocks.ts", "chocksLookup.ts"].map((f) => join("src", "domain", f)), join("app", "chatActions.ts")].map((f) => readFileSync(join(__dirname, "..", f), "utf8"));
+describe("Toy in Traditional and Simplified Chinese", () => {
+  it("every sentence Toy says has a Chinese translation", () => {
+    const files = [...["toy.ts", "toyLookup.ts"].map((f) => join("src", "domain", f)), join("app", "chatActions.ts")].map((f) => readFileSync(join(__dirname, "..", f), "utf8"));
     const keys = new Set<string>();
     for (const src of files)
       for (const m of src.matchAll(/\btr\(\s*(?:L|lang|d\.lang)\s*,\s*(?:[^"`]*?\?\s*)?"((?:[^"\\]|\\.)*)"(?:\s*:\s*"((?:[^"\\]|\\.)*)")?/g))

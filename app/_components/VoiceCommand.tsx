@@ -25,10 +25,10 @@ export default function VoiceCommand() {
   const startRef = useRef<() => void>(() => {});
   useEffect(() => {
     const on = () => { if (path !== "/") startRef.current(); };
-    window.addEventListener("chocks:mic", on);
-    return () => window.removeEventListener("chocks:mic", on);
+    window.addEventListener("toy:mic", on);
+    return () => window.removeEventListener("toy:mic", on);
   }, [path]);
-  useEffect(() => { window.dispatchEvent(new CustomEvent("chocks:listening", { detail: state === "listening" })); }, [state]);
+  useEffect(() => { window.dispatchEvent(new CustomEvent("toy:listening", { detail: state === "listening" })); }, [state]);
 
   if (!can || path === "/") return null; // Toy's own page has its microphone in the message box
 

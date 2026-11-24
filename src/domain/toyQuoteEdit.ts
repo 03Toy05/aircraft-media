@@ -1,5 +1,5 @@
 import { parseWifiValue, parseYesNoValue } from "./card";
-import { takePrice } from "./chocksShare";
+import { takePrice } from "./toyShare";
 import type { WifiStatus, YesNoStatus } from "./constants";
 import { matchAircraft, type CommandAircraft } from "./quoteCommands";
 

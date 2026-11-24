@@ -92,7 +92,7 @@ export default async function Quote({ searchParams }: { searchParams: SP }) {
   for (const o of options) if (o.operator) o.aliases = aliases.get(normalizeKey(o.operator));
   const preferred = await getPreferredOperators(db, actor.tenantId);
   const initial = (one(sp.ids) ?? "").split(",").filter((id) => options.some((o) => o.id === id));
-  // From Chocks: the prices it read ({"<aircraftId>": "USD 90,000"}) and the photo kinds asked for ("exterior,cabin" or "none").
+  // From Toy: the prices it read ({"<aircraftId>": "USD 90,000"}) and the photo kinds asked for ("exterior,cabin" or "none").
   let initialPrices: Record<string, string> = {};
   try {
     const p = JSON.parse(one(sp.prices) ?? "{}") as unknown;

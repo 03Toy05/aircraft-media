@@ -1,7 +1,7 @@
 import type { Db } from "../db/client";
 import { getAircraftNames, operatorAliasesByName } from "./catalogue";
 import { normalizeKey, type Classification } from "./constants";
-import { mentions } from "./chocksLookup";
+import { mentions } from "./toyLookup";
 
 /** "send the G280 photos to Mr Chan" -> { what: "G280", who: "Mr Chan" }. Single-line messages only. */
 export function parseShareRequest(message: string): { what: string; who: string } | null {

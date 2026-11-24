@@ -40,8 +40,8 @@ plus one HTTP route. The HTTP resource API in handoff §18 arrives with the What
 | `whatsapp.addVerifiedNumber` / `deactivateNumber` | client | phone / numberId | one active record per number | `NUMBER_IN_USE` |
 | `user.setLanguage` | client | language | one of 7 supported codes | `INVALID` |
 
-## Chocks (assistant, `/chat`)
-Not an action itself. Each message is one server call that stores any attached photos (`media.upload`, waiting in Review) and returns Chocks' reply; the conversation state (the draft) travels with the browser. Nothing is created or approved until the owner confirms, which then runs the normal actions with keys derived from one submission key: `organisation.create`, `organisation.addAlias`, `aircraft.create` (tail optional) or, for an existing aircraft, `aircraft.addInformationVersion` / `setBases` / `setOperator` for the provided fields only, then per photo `media.updateMetadata`, `media.setAssociation`, `media.approve`. A failed step is reported and the others still run.
+## Toy (assistant, `/chat`)
+Not an action itself. Each message is one server call that stores any attached photos (`media.upload`, waiting in Review) and returns Toy's reply; the conversation state (the draft) travels with the browser. Nothing is created or approved until the owner confirms, which then runs the normal actions with keys derived from one submission key: `organisation.create`, `organisation.addAlias`, `aircraft.create` (tail optional) or, for an existing aircraft, `aircraft.addInformationVersion` / `setBases` / `setOperator` for the provided fields only, then per photo `media.updateMetadata`, `media.setAssociation`, `media.approve`. A failed step is reported and the others still run.
 
 ## Drive import (not a single action)
 `importDriveFolder` lists one folder tree inside the root (refusing others), then runs each file as its own idempotent action (`media.importDrive` / `media.uploadPdf`), skipping already-imported revisions before download. Per-file outcomes: imported, already imported, unsupported, failed. A failure does not affect other files and a retry repeats only that file. Bookkeeping lives in `drive_sync_state`.

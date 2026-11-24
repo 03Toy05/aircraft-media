@@ -25,8 +25,8 @@ export default function MobileNav({ email, signOut, isAdmin = false, library = f
   useEffect(() => setCanTalk(!!getRecognition()), []);
   useEffect(() => {
     const on = (e: Event) => setTalking((e as CustomEvent<boolean>).detail);
-    window.addEventListener("chocks:listening", on);
-    return () => window.removeEventListener("chocks:listening", on);
+    window.addEventListener("toy:listening", on);
+    return () => window.removeEventListener("toy:listening", on);
   }, []);
   const moreActive = path.startsWith("/review") || path.startsWith("/contacts") || path.startsWith("/settings") || path.startsWith("/photos") || path.startsWith("/intake") || path.startsWith("/admin");
 
@@ -51,7 +51,7 @@ export default function MobileNav({ email, signOut, isAdmin = false, library = f
           <span key={t.href} style={{ display: "contents" }}>
             {i === 2 && (canTalk ? (
               // The Ask Toy microphone: VoiceCommand (or Toy's own message box on the Toy page) listens for this.
-              <button type="button" className={`mic-tab${talking ? " on" : ""}`} onClick={() => window.dispatchEvent(new Event("chocks:mic"))} aria-label={talking ? "Stop listening" : "Ask Toy by voice"} aria-pressed={talking}>
+              <button type="button" className={`mic-tab${talking ? " on" : ""}`} onClick={() => window.dispatchEvent(new Event("toy:mic"))} aria-label={talking ? "Stop listening" : "Ask Toy by voice"} aria-pressed={talking}>
                 <span className="mic-dot"><Icon name="mic" size={22} /></span>
               </button>
             ) : (

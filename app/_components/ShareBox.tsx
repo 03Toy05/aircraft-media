@@ -20,7 +20,7 @@ const EXT: Record<string, string> = { "image/jpeg": "jpg", "image/png": "png", "
 
 /**
  * Send an aircraft to a client:
- *  - With a contact (from Chocks or the Contacts list): one button opens that person's chat in their preferred app with the card.
+ *  - With a contact (from Toy or the Contacts list): one button opens that person's chat in their preferred app with the card.
  *  - Share photos: the phone's share sheet with the photos attached. Links can never carry photos, so the owner picks the
  *    person there; the sheet lists every installed messenger.
  *  - Messenger shortcuts, Copy card, Download zip.

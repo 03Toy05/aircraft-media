@@ -57,12 +57,12 @@ type Sort = "name" | "aircraft" | "recent";
 /**
  * Find the operator (preferred ones first, then recently added, or search, filter and sort them all), tick the
  * aircraft, then edit the message: an opening line, one block per aircraft (with its price and an extra line) and a
- * closing line. Every box has Bold / Italic / Underline and a microphone. The Ask Chocks microphone runs spoken
+ * closing line. Every box has Bold / Italic / Underline and a microphone. The Ask Toy microphone runs spoken
  * commands on this page ("add the G280, Chinese, price 40,000").
  */
 export default function QuoteBuilder({ aircraft, operators, preferred: preferredInitial, initialIds, initialPrices, initialKinds, templates }: {
   aircraft: QuoteAircraftOption[]; operators: QuoteOperator[]; preferred: string[]; initialIds: string[]; templates: SavedTemplates;
-  /** From Chocks: prices per aircraft, and the photo kinds asked for ([] = no photos). */
+  /** From Toy: prices per aircraft, and the photo kinds asked for ([] = no photos). */
   initialPrices?: Record<string, string>; initialKinds?: string[];
 }) {
   const [ids, setIds] = useState<string[]>(initialIds);
@@ -73,7 +73,7 @@ export default function QuoteBuilder({ aircraft, operators, preferred: preferred
   const [extras, setExtras] = useState<Record<string, string>>({});
   const [edits, setEdits] = useState<Record<string, string>>({}); // "greeting" | "closing" | "block:<aircraftId>" -> the broker's own text
   // Photos ("<aircraftId>|<photo url>") ticked or unticked by hand, against their default (singles on, combined off).
-  // Chocks may ask for some kinds only; an aircraft without the combined photo asked for sends its single photos.
+  // Toy may ask for some kinds only; an aircraft without the combined photo asked for sends its single photos.
   const [flip, setFlip] = useState<Set<string>>(() => {
     const n = new Set<string>();
     if (!initialKinds) return n;
@@ -113,7 +113,7 @@ export default function QuoteBuilder({ aircraft, operators, preferred: preferred
   const [starMsg, setStarMsg] = useState<string | null>(null);
   const shareBtn = useRef<HTMLButtonElement>(null);
   const messageRef = useRef<HTMLDivElement>(null);
-  // Steps fold to a one-line summary. Steps 1 and 2 start folded when Chocks already chose the aircraft.
+  // Steps fold to a one-line summary. Steps 1 and 2 start folded when Toy already chose the aircraft.
   const [steps, setSteps] = useState({ op: initialIds.length === 0, ac: true, lang: false });
 
   // -- the draft: brought back when the page opens without aircraft chosen elsewhere, saved on every change
@@ -292,7 +292,7 @@ export default function QuoteBuilder({ aircraft, operators, preferred: preferred
 
   const rows = (v: string) => Math.max(2, v.split("\n").length);
 
-  // -- spoken commands (the Ask Chocks microphone on this page)
+  // -- spoken commands (the Ask Toy microphone on this page)
   const live = useRef({ aircraft, ids, operators, handEdits: anyEdits });
   live.current = { aircraft, ids, operators, handEdits: anyEdits };
   const actions = useRef({ copy, sharePhotos });
@@ -321,7 +321,7 @@ export default function QuoteBuilder({ aircraft, operators, preferred: preferred
         case "price": if (c.id) { setPrices((p) => ({ ...p, [c.id!]: c.value })); out.push(`Price for ${name(c.id)}: ${c.value}.`); } else out.push("Add an aircraft first, then say the price."); break;
         case "extra": if (c.id) { setExtras((p) => ({ ...p, [c.id!]: c.value })); out.push(`Extra line for ${name(c.id)}: ${c.value}.`); } else out.push("Add an aircraft first."); break;
         case "show": setInc((v) => ({ ...v, [c.what]: c.on })); out.push(`${c.on ? "Showing" : "Hiding"} the ${c.what === "greeting" ? "opening line" : c.what === "closing" ? "closing line" : c.what}.`); break;
-        // Copying and sharing need a tap on the phone, so Chocks offers the button.
+        // Copying and sharing need a tap on the phone, so Toy offers the button.
         case "copy": followUp = { label: "Copy message", run: () => actions.current.copy() }; break;
         case "share": followUp = { label: "Share photos + message", run: () => { actions.current.sharePhotos(); } }; shareBtn.current?.scrollIntoView({ block: "center" }); break;
         // Links cannot carry photos, so "send it on WeChat" also goes through the share sheet.

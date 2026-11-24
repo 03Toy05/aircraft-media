@@ -7,8 +7,8 @@ import { randomUUID } from "node:crypto";
 import { createMemoryDb } from "../src/db/client";
 import { aircraft, aircraftMedia, aircraftRegistrations, aircraftTypes, mediaAssociations, mediaContentVersions, organisationAircraftRelationships, organisations, users } from "../src/db/schema";
 import { getCatalogue } from "../src/domain/catalogue";
-import { findAircraftsForShare } from "../src/domain/chocksShare";
-import { converse, emptyDraft } from "../src/domain/chocks";
+import { findAircraftsForShare } from "../src/domain/toyShare";
+import { converse, emptyDraft } from "../src/domain/toy";
 
 const KINDS = ["exterior", "cabin", "cabin", "floor_plan", "combined", "cabin"] as const;
 const TYPES = ["G280", "G450", "G550", "G650ER", "Global 6000", "Global 7500", "Challenger 350", "Legacy 650E"];
