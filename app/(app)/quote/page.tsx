@@ -3,8 +3,8 @@ import { getDb } from "@/db/client";
 import { getCatalogue, operatorAliasesByName } from "@/domain/catalogue";
 import { and, eq } from "drizzle-orm";
 import { organisations } from "@/db/schema";
-import { getAircraftCard, getPreferredOperators } from "@/domain/directory";
-import { getLineup } from "@/domain/media";
+import { getAircraftCards, getPreferredOperators } from "@/domain/directory";
+import { getLineups } from "@/domain/media";
 import { getQuoteTemplates } from "@/domain/quoteTemplates";
 import { LIBRARY_TENANT_ID, copiedLibraryAircraft, libraryScope, scopeHasAircraft, scopeHasOperator } from "@/domain/library";
 import { normalizeKey, normalizeRegistration } from "@/domain/constants";
@@ -33,16 +33,21 @@ export default async function Quote({ searchParams }: { searchParams: SP }) {
   // An operator the broker has under the same name is one operator: library aircraft go under the broker's own.
   const ownOrgByName = new Map<string, QuoteOperator>();
   for (const src of sources) {
-    const rows = await getCatalogue(db, src.tenantId);
+    const rows = (await getCatalogue(db, src.tenantId))
+      .filter((r) => !src.library || (!copied.has(r.aircraftId) && scopeHasOperator(scope, r.operatorId) && scopeHasAircraft(scope, r.aircraftId)));
+    // Every aircraft's details and photos in a few queries, not several per aircraft.
+    const [cards, lineups] = await Promise.all([
+      getAircraftCards(db, rows.map((r) => r.aircraftId)),
+      getLineups(db, rows.map((r) => ({ aircraftId: r.aircraftId, aircraftTypeId: r.aircraftTypeId }))),
+    ]);
     const mine: QuoteAircraftOption[] = [];
     for (const r of rows) {
-      if (src.library && (copied.has(r.aircraftId) || !scopeHasOperator(scope, r.operatorId) || !scopeHasAircraft(scope, r.aircraftId))) continue;
-      const card = await getAircraftCard(db, r.aircraftId);
+      const card = cards.get(r.aircraftId);
       if (!card) continue;
       const k = sameKey({ operator: card.operator, type: card.aircraft, tail: card.tailNumber, yom: card.yom });
       if (!src.library) ownKeys.add(k);
       else if (ownKeys.has(k)) continue;
-      const lineup = await getLineup(db, { aircraftId: r.aircraftId, aircraftTypeId: r.aircraftTypeId });
+      const lineup = lineups.get(r.aircraftId) ?? [];
       mine.push({
         id: r.aircraftId,
         operatorId: r.operatorId,

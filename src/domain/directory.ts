@@ -1,4 +1,4 @@
-import { and, asc, eq } from "drizzle-orm";
+import { and, asc, eq, inArray } from "drizzle-orm";
 import {
   aircraft,
   aircraftBases,
@@ -783,33 +783,56 @@ export interface AircraftCard {
 }
 
 export async function getAircraftCard(db: Q, aircraftId: string): Promise<AircraftCard | null> {
-  const [ac] = await db.select().from(aircraft).where(eq(aircraft.id, aircraftId));
-  if (!ac) return null;
-  const [type] = await db.select().from(aircraftTypes).where(eq(aircraftTypes.id, ac.aircraftTypeId));
-  const [reg] = await db
-    .select()
-    .from(aircraftRegistrations)
-    .where(and(eq(aircraftRegistrations.aircraftId, aircraftId), eq(aircraftRegistrations.isCurrent, true)));
-  const [info] = await db
-    .select()
-    .from(aircraftInformationVersions)
-    .where(and(eq(aircraftInformationVersions.aircraftId, aircraftId), eq(aircraftInformationVersions.isCurrent, true)));
-  const bases = await db
-    .select()
-    .from(aircraftBases)
-    .where(and(eq(aircraftBases.aircraftId, aircraftId), eq(aircraftBases.active, true)))
-    .orderBy(asc(aircraftBases.displayOrder));
-  const [op] = await db
-    .select({ name: organisations.canonicalName })
-    .from(organisationAircraftRelationships)
-    .innerJoin(organisations, eq(organisations.id, organisationAircraftRelationships.organisationId))
-    .where(
-      and(
-        eq(organisationAircraftRelationships.aircraftId, aircraftId),
-        eq(organisationAircraftRelationships.role, "operator"),
-        eq(organisationAircraftRelationships.active, true),
-      ),
-    );
+  return (await getAircraftCards(db, [aircraftId])).get(aircraftId) ?? null;
+}
+
+/**
+ * Many aircraft cards at once: six queries in all, however many aircraft (pages like Quote list every aircraft, and
+ * one aircraft at a time meant six trips to the database each).
+ */
+export async function getAircraftCards(db: Q, aircraftIds: string[]): Promise<Map<string, AircraftCard>> {
+  const out = new Map<string, AircraftCard>();
+  const ids = [...new Set(aircraftIds)];
+  if (!ids.length) return out;
+  const acs = await db.select().from(aircraft).where(inArray(aircraft.id, ids));
+  if (!acs.length) return out;
+  const typeIds = [...new Set(acs.map((a) => a.aircraftTypeId))];
+  const [types, regs, infos, bases, ops] = await Promise.all([
+    db.select().from(aircraftTypes).where(inArray(aircraftTypes.id, typeIds)),
+    db.select().from(aircraftRegistrations).where(and(inArray(aircraftRegistrations.aircraftId, ids), eq(aircraftRegistrations.isCurrent, true))),
+    db.select().from(aircraftInformationVersions).where(and(inArray(aircraftInformationVersions.aircraftId, ids), eq(aircraftInformationVersions.isCurrent, true))),
+    db.select().from(aircraftBases).where(and(inArray(aircraftBases.aircraftId, ids), eq(aircraftBases.active, true))).orderBy(asc(aircraftBases.displayOrder)),
+    db
+      .select({ aircraftId: organisationAircraftRelationships.aircraftId, name: organisations.canonicalName })
+      .from(organisationAircraftRelationships)
+      .innerJoin(organisations, eq(organisations.id, organisationAircraftRelationships.organisationId))
+      .where(and(inArray(organisationAircraftRelationships.aircraftId, ids), eq(organisationAircraftRelationships.role, "operator"), eq(organisationAircraftRelationships.active, true))),
+  ]);
+  const first = <T extends { aircraftId: string | null }>(rows: T[]) => {
+    const m = new Map<string, T>();
+    for (const r of rows) if (r.aircraftId && !m.has(r.aircraftId)) m.set(r.aircraftId, r);
+    return m;
+  };
+  const typeById = new Map(types.map((t) => [t.id, t]));
+  const regBy = first(regs), infoBy = first(infos), opBy = first(ops);
+  const basesBy = new Map<string, typeof bases>();
+  for (const b of bases) basesBy.set(b.aircraftId, [...(basesBy.get(b.aircraftId) ?? []), b]);
+  for (const ac of acs) {
+    const type = typeById.get(ac.aircraftTypeId);
+    if (!type) continue;
+    out.set(ac.id, cardFrom(ac.id, type, regBy.get(ac.id), infoBy.get(ac.id), basesBy.get(ac.id) ?? [], opBy.get(ac.id)));
+  }
+  return out;
+}
+
+function cardFrom(
+  aircraftId: string,
+  type: { manufacturer: string; model: string },
+  reg: { registration: string } | undefined,
+  info: typeof aircraftInformationVersions.$inferSelect | undefined,
+  bases: { mode: string; location: string | null }[],
+  op: { name: string } | undefined,
+): AircraftCard {
   const base = bases.length === 0 ? null : bases[0].mode === "floating" ? "Floating" : bases.map((b) => b.location).join(" / ");
   return {
     aircraftId,

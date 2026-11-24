@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, or, sql } from "drizzle-orm";
 import sharp from "sharp";
 import {
   aircraft,
@@ -638,9 +638,46 @@ export async function getLineup(db: Q, opts: { aircraftId: string; aircraftTypeI
       ),
     )
     .orderBy(asc(aircraftMedia.displayOrder), asc(aircraftMedia.createdAt));
+  return lineupFrom(rows, opts);
+}
+
+type LineupRow = { m: typeof aircraftMedia.$inferSelect; a: typeof mediaAssociations.$inferSelect; cv: typeof mediaContentVersions.$inferSelect };
+
+/**
+ * Many aircraft's lineups at once (pages like Quote list every aircraft): one query for all their photos, then each
+ * aircraft gets exactly what getLineup would give it.
+ */
+export async function getLineups(db: Q, list: { aircraftId: string; aircraftTypeId: string }[]): Promise<Map<string, LineupItem[]>> {
+  const out = new Map<string, LineupItem[]>();
+  if (!list.length) return out;
+  const typeIds = [...new Set(list.map((x) => x.aircraftTypeId))];
+  const types = await db.select({ id: aircraftTypes.id, tenantId: aircraftTypes.tenantId }).from(aircraftTypes).where(inArray(aircraftTypes.id, typeIds));
+  const tenantOfType = new Map(types.map((t) => [t.id, t.tenantId]));
+  const tenants = [...new Set(types.map((t) => t.tenantId))];
+  const rows: LineupRow[] = tenants.length ? await db
+    .select({ m: aircraftMedia, a: mediaAssociations, cv: mediaContentVersions })
+    .from(aircraftMedia)
+    .innerJoin(mediaAssociations, and(eq(mediaAssociations.aircraftMediaId, aircraftMedia.id), eq(mediaAssociations.active, true)))
+    .innerJoin(mediaContentVersions, eq(mediaContentVersions.id, aircraftMedia.currentContentVersionId))
+    .where(and(
+      eq(aircraftMedia.reviewState, "approved"),
+      eq(aircraftMedia.lifecycleState, "active"),
+      inArray(aircraftMedia.tenantId, tenants),
+      or(inArray(mediaAssociations.aircraftId, list.map((x) => x.aircraftId)), inArray(mediaAssociations.aircraftTypeId, typeIds)),
+    ))
+    .orderBy(asc(aircraftMedia.displayOrder), asc(aircraftMedia.createdAt)) : [];
+  for (const x of list) {
+    const tenant = tenantOfType.get(x.aircraftTypeId);
+    const mine = rows.filter((r) => r.m.tenantId === tenant && (r.a.aircraftId === x.aircraftId || r.a.aircraftTypeId === x.aircraftTypeId));
+    out.set(x.aircraftId, lineupFrom(mine, x));
+  }
+  return out;
+}
+
+function lineupFrom(rows: LineupRow[], opts: { aircraftId: string; aircraftTypeId: string }): LineupItem[] {
   const counters = new Map<Classification, number>();
   const out: LineupItem[] = [];
-  const isActual = (r: (typeof rows)[number]) => r.a.associationStatus === "actual_aircraft" && r.a.aircraftId === opts.aircraftId;
+  const isActual = (r: LineupRow) => r.a.associationStatus === "actual_aircraft" && r.a.aircraftId === opts.aircraftId;
   // An aircraft's own combined photo replaces the type's: one combined picture per aircraft is enough.
   const ownCombined = rows.some((r) => isActual(r) && r.m.primaryClassification === "combined");
   for (const r of rows) {
