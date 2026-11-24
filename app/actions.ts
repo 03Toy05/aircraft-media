@@ -819,14 +819,27 @@ export async function setLibraryAccessAction(fd: FormData) {
   redirect(withParam("/admin", "ok", on ? "Library shared with them." : "Library no longer shared with them."));
 }
 
+/** Users page: which library operators this person may see (all of them, or only the ticked ones). */
+export async function setLibraryOperatorsAction(fd: FormData) {
+  await requireAdmin();
+  const chosen = str(fd, "mode") === "chosen";
+  const ops = fd.getAll("op").map(String).filter((id) => /^[0-9a-f-]{36}$/.test(id));
+  await library.setLibraryOperators(await getDb(), str(fd, "userId"), chosen ? ops : null);
+  revalidatePath("/admin");
+  redirect(withParam("/admin", "ok", chosen ? `They now see ${ops.length} library operator${ops.length === 1 ? "" : "s"}.` : "They now see every library operator."));
+}
+
 /** Library page: add one aircraft (or a whole operator) to my workspace, with its photos. */
 export async function addFromLibraryAction(fd: FormData) {
   const session = await requireWriter().catch((e) => { if (e instanceof DomainError) redirect(withParam("/library", "error", e.message)); throw e; });
   const db = await getDb();
-  if (!(await library.hasLibraryAccess(db, session))) redirect(withParam("/library", "error", "The library is not shared with you yet."));
+  const scope = await library.libraryScope(db, session);
+  if (!scope) redirect(withParam("/library", "error", "The library is not shared with you yet."));
   const back = `/library${str(fd, "q") ? `?q=${encodeURIComponent(str(fd, "q"))}` : ""}`;
   const operatorId = str(fd, "libraryOperatorId");
-  const ids = operatorId ? await library.libraryOperatorAircraft(db, operatorId) : [str(fd, "libraryAircraftId")].filter(Boolean);
+  // Only aircraft of the operators opened to them.
+  const ids = (operatorId ? await library.libraryOperatorAircraft(db, operatorId) : [str(fd, "libraryAircraftId")].filter(Boolean))
+    .filter((id) => library.scopeHasAircraft(scope, id));
   const have = await library.copiedLibraryAircraft(db, session.actor.tenantId);
   // Copying the photos takes a while (each one goes through Google Drive), so it carries on after this page answers.
   const { queued, done } = library.queueAdds(db, getFileStore(), session.actor, ids.filter((id) => !have.has(id)));

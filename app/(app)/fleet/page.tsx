@@ -7,7 +7,7 @@ import Icon from "../../_components/Icon";
 import OpenSection from "../../_components/OpenSection";
 import CollapseOnMobile from "../../_components/CollapseOnMobile";
 import { AC_SORTS, matchesWords, runFleetQuery, searchWords, sortAircraft, type AcSort, type OperatorSort } from "@/domain/fleetQuery";
-import { LIBRARY_TENANT_ID, hasLibraryAccess } from "@/domain/library";
+import { LIBRARY_TENANT_ID, libraryScope, scopeHasOperator } from "@/domain/library";
 import { orgAliasesFor } from "@/domain/directory";
 import FleetSearch, { type FleetSuggestion } from "../../_components/FleetSearch";
 import RememberFilters from "../../_components/RememberFilters";
@@ -139,9 +139,10 @@ export default async function Fleet({ searchParams }: { searchParams: SP }) {
     }),
   ];
   let libraryHits = 0;
-  if (await hasLibraryAccess(db, session)) {
-    const libRows = await getCatalogue(db, LIBRARY_TENANT_ID);
-    const libOrgs = await db.select().from(organisations).where(and(eq(organisations.tenantId, LIBRARY_TENANT_ID), eq(organisations.active, true)));
+  const scope = await libraryScope(db, session);
+  if (scope) {
+    const libRows = (await getCatalogue(db, LIBRARY_TENANT_ID)).filter((r) => scopeHasOperator(scope, r.operatorId));
+    const libOrgs = (await db.select().from(organisations).where(and(eq(organisations.tenantId, LIBRARY_TENANT_ID), eq(organisations.active, true)))).filter((o) => scopeHasOperator(scope, o.id));
     const libAliases = await orgAliasesFor(db, LIBRARY_TENANT_ID);
     const aliasOf = (id: string | null) => libAliases.filter((a) => a.organisationId === id).map((a) => a.alias).join(" ");
     const libLink = (text: string) => `/library?q=${encodeURIComponent(text)}`;

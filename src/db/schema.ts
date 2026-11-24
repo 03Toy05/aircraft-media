@@ -68,6 +68,8 @@ export const users = pgTable(
     libraryOptIn: boolean("library_opt_in").notNull().default(false),
     /** May use the platform library (browse, quote from it, add to their workspace). The admin turns it on per person. */
     libraryAccess: boolean("library_access").notNull().default(false),
+    /** Which library operators they may see: null = all of them, otherwise only these (library organisation ids). */
+    libraryOperators: jsonb("library_operators").$type<string[] | null>(),
     createdAt: created(),
     updatedAt: updated(),
   },
@@ -588,4 +590,21 @@ export const timings = pgTable(
     createdAt: created(),
   },
   (t) => [index("timings_created_idx").on(t.createdAt)],
+);
+
+/**
+ * Sign-in links emailed to invited people who don't use Google. Only a hash of the link's secret is kept; a link
+ * works once, for a short time.
+ */
+export const signInLinks = pgTable(
+  "sign_in_links",
+  {
+    id: pk(),
+    email: text("email").notNull(),
+    tokenHash: text("token_hash").notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    usedAt: timestamp("used_at", { withTimezone: true }),
+    createdAt: created(),
+  },
+  (t) => [uniqueIndex("sign_in_links_token_uq").on(t.tokenHash), index("sign_in_links_email_idx").on(t.email, t.createdAt)],
 );

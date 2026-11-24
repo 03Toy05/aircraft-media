@@ -1,11 +1,11 @@
 import { NextResponse } from "next/server";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { getDb } from "@/db/client";
-import { aircraftMedia, libraryContributions, mediaContentVersions } from "@/db/schema";
+import { aircraftMedia, libraryContributions, mediaAssociations, mediaContentVersions } from "@/db/schema";
 import { getFileStore } from "@/storage";
 import { readContentBytes } from "@/domain/media";
 import { requireOwner } from "@/lib/session";
-import { LIBRARY_TENANT_ID, hasLibraryAccess } from "@/domain/library";
+import { LIBRARY_TENANT_ID, libraryScope, scopeHasAircraft } from "@/domain/library";
 
 /** Authenticated, server-side streaming of exact stored bytes. No unrestricted storage URLs are exposed. */
 export async function GET(_req: Request, ctx: { params: Promise<{ versionId: string }> }) {
@@ -15,7 +15,7 @@ export async function GET(_req: Request, ctx: { params: Promise<{ versionId: str
   if (!/^[0-9a-f-]{36}$/.test(versionId)) return new NextResponse("Not found", { status: 404 });
   const db = await getDb();
   const [row] = await db
-    .select({ tenantId: aircraftMedia.tenantId })
+    .select({ tenantId: aircraftMedia.tenantId, mediaId: aircraftMedia.id })
     .from(mediaContentVersions)
     .innerJoin(aircraftMedia, eq(aircraftMedia.id, mediaContentVersions.aircraftMediaId))
     .where(eq(mediaContentVersions.id, versionId));
@@ -23,7 +23,16 @@ export async function GET(_req: Request, ctx: { params: Promise<{ versionId: str
   // Your own workspace's photos. The library's, for people it is shared with. Photos offered to it, for the admin.
   let allowed = row.tenantId === actor.tenantId;
   // The library: everyone it is shared with.
-  if (!allowed && row.tenantId === LIBRARY_TENANT_ID) allowed = await hasLibraryAccess(db, session);
+  if (!allowed && row.tenantId === LIBRARY_TENANT_ID) {
+    const scope = await libraryScope(db, session);
+    if (scope?.all) allowed = true;
+    else if (scope) {
+      // Only the photos of the operators opened to them (a type's general photos belong to no operator: those are fine).
+      const links = await db.select({ aircraftId: mediaAssociations.aircraftId }).from(mediaAssociations)
+        .where(and(eq(mediaAssociations.aircraftMediaId, row.mediaId), eq(mediaAssociations.active, true)));
+      allowed = links.some((l) => !l.aircraftId || scopeHasAircraft(scope, l.aircraftId));
+    }
+  }
   if (!allowed && isAdmin) {
     allowed = (await db.select({ id: libraryContributions.id }).from(libraryContributions).where(eq(libraryContributions.sourceContentVersionId, versionId)).limit(1)).length > 0;
   }

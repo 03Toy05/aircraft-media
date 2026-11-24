@@ -1,14 +1,15 @@
 import Link from "next/link";
 import { headers } from "next/headers";
 import InviteCopy from "../../_components/InviteCopy";
-import { asc, count, eq } from "drizzle-orm";
+import { and, asc, count, eq } from "drizzle-orm";
 import { getDb } from "@/db/client";
 import { aircraft, aircraftMedia, organisations, users } from "@/db/schema";
 import { requireAdmin } from "@/lib/session";
 import { TRIAL_DAYS, accessFor } from "@/domain/accounts";
+import { LIBRARY_TENANT_ID } from "@/domain/library";
 import { quoteShareStats, type QuoteShareStats } from "@/domain/quoteShares";
 import {
-  extendTrialAction, inviteUserAction, setBlockedAction, setLibraryAccessAction, setPlanAction, viewAsAction, withdrawInviteAction,
+  extendTrialAction, inviteUserAction, setBlockedAction, setLibraryAccessAction, setLibraryOperatorsAction, setPlanAction, viewAsAction, withdrawInviteAction,
 } from "../../actions";
 import { Flash, Key, one, type SP } from "../../_components/ui";
 import Choice from "../../_components/Choice";
@@ -31,6 +32,9 @@ export default async function Admin({ searchParams }: { searchParams: SP }) {
   const planes = toMap(await db.select({ t: aircraft.tenantId, n: count() }).from(aircraft).where(eq(aircraft.active, true)).groupBy(aircraft.tenantId));
   const ops = toMap(await db.select({ t: organisations.tenantId, n: count() }).from(organisations).where(eq(organisations.active, true)).groupBy(organisations.tenantId));
   const shares = await quoteShareStats(db);
+  // The library's operators, to choose which ones each person may see.
+  const libOps = await db.select({ id: organisations.id, name: organisations.canonicalName }).from(organisations)
+    .where(and(eq(organisations.tenantId, LIBRARY_TENANT_ID), eq(organisations.active, true))).orderBy(asc(organisations.canonicalName));
   const mine = me.viewingAs ? undefined : shares.get(me.actor.tenantId);
 
   return (
@@ -81,7 +85,9 @@ export default async function Admin({ searchParams }: { searchParams: SP }) {
                 {q?.lastAt ? ` · last quote shared ${day(q.lastAt)}` : ""}
                 {trialNote ? ` · ${trialNote}` : ""}
                 {u.libraryOptIn ? " · shares photos with the library" : ""}
-                {u.libraryAccess ? " · can use the library" : " · no library access"}
+                {!u.libraryAccess ? " · no library access"
+                  : u.libraryOperators == null ? " · can use the library (all operators)"
+                  : ` · can use the library (${u.libraryOperators.filter((id) => libOps.some((o) => o.id === id)).length} of ${libOps.length} operators)`}
               </div>
               <div className="person-actions">
                 {u.plan === "trial" && (
@@ -103,6 +109,24 @@ export default async function Admin({ searchParams }: { searchParams: SP }) {
                   <form action={withdrawInviteAction}><Key /><input type="hidden" name="userId" value={u.id} /><button className="danger small-btn" type="submit">Withdraw invite</button></form>
                 )}
               </div>
+              {u.libraryAccess && libOps.length > 0 && (
+                <details className="lib-ops">
+                  <summary className="small">Choose which library operators they see</summary>
+                  <form action={setLibraryOperatorsAction}>
+                    <input type="hidden" name="userId" value={u.id} />
+                    <div className="lib-ops-mode small">
+                      <label><input type="radio" name="mode" value="all" defaultChecked={u.libraryOperators == null} /> All operators (new ones too)</label>
+                      <label><input type="radio" name="mode" value="chosen" defaultChecked={u.libraryOperators != null} /> Only the ones ticked below</label>
+                    </div>
+                    <div className="lib-ops-list">
+                      {libOps.map((o) => (
+                        <label key={o.id} className="small"><input type="checkbox" name="op" value={o.id} defaultChecked={u.libraryOperators == null || u.libraryOperators.includes(o.id)} /> {o.name}</label>
+                      ))}
+                    </div>
+                    <button className="secondary small-btn" type="submit">Save</button>
+                  </form>
+                </details>
+              )}
             </div>
           );
         })}

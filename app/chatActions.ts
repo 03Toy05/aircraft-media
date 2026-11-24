@@ -10,7 +10,7 @@ import { requireUser } from "@/lib/session";
 import { exportAfterResponse } from "@/lib/cbosExportRunner";
 import { DomainError } from "@/domain/errors";
 import { bringBackForReview, ingestPdf } from "@/domain/intake";
-import { hasLibraryAccess } from "@/domain/library";
+import { libraryScope } from "@/domain/library";
 import { ingestUpload } from "@/domain/media";
 import { applyChatProposal, changeAircraftFields, suggestClassification, type ApplyResult } from "@/domain/chat";
 import { parseChatLang, tr, trStep } from "@/domain/chocksText";
@@ -97,7 +97,7 @@ async function turn(fd: FormData): Promise<TurnResult> {
     }
   }
 
-  const turn = await converse(db, actor.tenantId, draft, message, photos, { library: await hasLibraryAccess(db, session) });
+  const turn = await converse(db, actor.tenantId, draft, message, photos, { library: await libraryScope(db, session) });
   if (turn.edits) {
     // The broker said yes to changing an aircraft's record from the chat; then the quote is shown again with it.
     if (readOnlyWhy) return { draft: turn.draft, reply: { say: [readOnlyWhy], chips: [], ready: false }, failures };
@@ -116,7 +116,7 @@ async function turn(fd: FormData): Promise<TurnResult> {
     revalidatePath("/", "layout");
     const d = turn.draft;
     if (!d.quote?.ids.length) return { draft: d, reply: { say: done, chips: [], ready: false }, failures };
-    const reply = await quoteReply(db, actor.tenantId, d, { library: await hasLibraryAccess(db, session) }, done, Object.keys(d.quote.prices).length > 0);
+    const reply = await quoteReply(db, actor.tenantId, d, { library: await libraryScope(db, session) }, done, Object.keys(d.quote.prices).length > 0);
     return { draft: d, reply, failures };
   }
   revalidatePath("/", "layout");

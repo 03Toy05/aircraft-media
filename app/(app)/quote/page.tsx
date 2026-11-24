@@ -6,7 +6,7 @@ import { organisations } from "@/db/schema";
 import { getAircraftCard, getPreferredOperators } from "@/domain/directory";
 import { getLineup } from "@/domain/media";
 import { getQuoteTemplates } from "@/domain/quoteTemplates";
-import { LIBRARY_TENANT_ID, copiedLibraryAircraft, hasLibraryAccess } from "@/domain/library";
+import { LIBRARY_TENANT_ID, copiedLibraryAircraft, libraryScope, scopeHasOperator } from "@/domain/library";
 import { normalizeKey, normalizeRegistration } from "@/domain/constants";
 import { CLASSIFICATION_LABEL } from "@/domain/constants";
 import QuoteBuilder, { type QuoteAircraftOption, type QuoteOperator } from "../../_components/QuoteBuilder";
@@ -22,7 +22,8 @@ export default async function Quote({ searchParams }: { searchParams: SP }) {
   const operators: QuoteOperator[] = [];
   // The broker's own aircraft, then (when the library is shared with them) the platform library's.
   const sources = [{ tenantId: actor.tenantId, library: false }];
-  if (await hasLibraryAccess(db, session)) sources.push({ tenantId: LIBRARY_TENANT_ID, library: true });
+  const scope = await libraryScope(db, session);
+  if (scope) sources.push({ tenantId: LIBRARY_TENANT_ID, library: true });
   // The same aircraft once: a library aircraft the broker already has (added from the library, or their own with
   // the same operator, type and tail, or YOM when there is no tail) is left out of the library's list.
   const sameKey = (o: { operator: string | null; type: string; tail: string | null; yom: number | null }) =>
@@ -35,7 +36,7 @@ export default async function Quote({ searchParams }: { searchParams: SP }) {
     const rows = await getCatalogue(db, src.tenantId);
     const mine: QuoteAircraftOption[] = [];
     for (const r of rows) {
-      if (src.library && copied.has(r.aircraftId)) continue;
+      if (src.library && (copied.has(r.aircraftId) || !scopeHasOperator(scope, r.operatorId))) continue;
       const card = await getAircraftCard(db, r.aircraftId);
       if (!card) continue;
       const k = sameKey({ operator: card.operator, type: card.aircraft, tail: card.tailNumber, yom: card.yom });

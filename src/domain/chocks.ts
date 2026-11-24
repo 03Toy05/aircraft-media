@@ -7,7 +7,11 @@ import { isChinese, plural, tr, trCategory, trClassification, trLoose, trWifi, t
 import { parseShareRequest, parseQuoteRequest, findAircraftsForShare } from "./chocksShare";
 import { normalizeRegion } from "./places";
 import { answerFleet, answerLookup, fleetBasics, isLookupQuestion, quotePreview } from "./chocksLookup";
-import { LIBRARY_TENANT_ID } from "./library";
+import { LIBRARY_TENANT_ID, scopeHasAircraft, withinLibraryScope, type LibraryScope } from "./library";
+
+/** What of the library Toy may use for this person: true (tests) = all of it; null/false = none. */
+type LibraryCtx = { library?: boolean | LibraryScope | null };
+const scopeOf = (ctx: LibraryCtx): LibraryScope | null => (ctx.library === true ? { all: true } : ctx.library || null);
 import { operatorAliasesByName } from "./catalogue";
 import { parseFleetQuery } from "./fleetQuery";
 import { findContacts } from "./contacts";
@@ -155,8 +159,8 @@ export async function converse(
   input: Draft,
   messageRaw: string,
   newPhotos: DraftPhoto[],
-  /** library: the platform library is shared with this user, so quotes can use its aircraft too. */
-  ctx: { library?: boolean } = {},
+  /** library: the platform library (or the operators of it) shared with this user, so quotes can use its aircraft too. */
+  ctx: LibraryCtx = {},
 ): Promise<{ draft: Draft; reply: ChocksReply; confirm: boolean; /** Record changes the broker said yes to. */ edits?: AircraftEdit[] }> {
   let d: Draft = structuredClone(input);
   const L = d.lang;
@@ -201,7 +205,8 @@ export async function converse(
     for (const [i, what] of quoteReq.what.entries()) {
       // The broker's own aircraft first; the platform library when they have none by that name.
       let found = await findAircraftsForShare(db, tenantId, what);
-      if (!found.length && ctx.library) found = (await findAircraftsForShare(db, LIBRARY_TENANT_ID, what, await operatorAliasesByName(db, [tenantId, LIBRARY_TENANT_ID]))).map((f) => ({ ...f, label: `${f.label} (library)` }));
+      if (!found.length && ctx.library) found = (await findAircraftsForShare(db, LIBRARY_TENANT_ID, what, await operatorAliasesByName(db, [tenantId, LIBRARY_TENANT_ID])))
+        .filter((f) => scopeHasAircraft(scopeOf(ctx), f.id)).map((f) => ({ ...f, label: `${f.label} (library)` }));
       if (!found.length) missing.push(what);
       for (const f of found.slice(0, 4)) {
         if (!ids.includes(f.id)) { ids.push(f.id); names.push(f.label); }
@@ -461,10 +466,11 @@ function recordChange(L: ChatLang | undefined, card: NonNullable<Awaited<ReturnT
 }
 
 /** The quote in the draft as a Toy reply: the message, the photos to send and a link to the Quote page. */
-export async function quoteReply(db: Db, tenantId: string, d: Draft, ctx: { library?: boolean }, lead: string[], priced: boolean): Promise<ChocksReply> {
+export async function quoteReply(db: Db, tenantId: string, d: Draft, ctx: LibraryCtx, lead: string[], priced: boolean): Promise<ChocksReply> {
   const L = d.lang;
   const q = d.quote!;
-  const preview = await quotePreview(db, tenantId, q.ids, L, q.prices, ctx.library ? [LIBRARY_TENANT_ID] : []);
+  const ids = await withinLibraryScope(db, scopeOf(ctx), q.ids);
+  const preview = await quotePreview(db, tenantId, ids, L, q.prices, ctx.library ? [LIBRARY_TENANT_ID] : []);
   const kinds = q.kinds;
   const kindsLine = !kinds ? null : kinds.length === 0 ? tr(L, "No photos, just the message.")
     : tr(L, "Photos ticked: {kinds}.", { kinds: kinds.map((k) => trClassification(L, k, CLASSIFICATION_LABEL[k])).join(isChinese(L) ? "、" : ", ") });

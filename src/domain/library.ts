@@ -372,6 +372,47 @@ export async function setLibraryAccess(db: Db, userId: string, on: boolean) {
   await db.update(users).set({ libraryAccess: on, updatedAt: new Date() }).where(eq(users.id, userId));
 }
 
+/**
+ * What of the library someone may see: every operator, or only the ones the admin picked for them (with those
+ * operators' aircraft). Null: the library is not shared with them at all. The admin always sees everything.
+ */
+export type LibraryScope = { all: true } | { all: false; operators: Set<string>; aircraft: Set<string> };
+
+export async function libraryScope(db: Db, s: { isAdmin: boolean; actor: { id: string } }): Promise<LibraryScope | null> {
+  if (s.isAdmin) return { all: true };
+  const [u] = await db.select({ on: users.libraryAccess, ops: users.libraryOperators }).from(users).where(eq(users.id, s.actor.id));
+  if (!u?.on) return null;
+  if (u.ops == null) return { all: true };
+  const operators = new Set(u.ops);
+  const acs = operators.size ? await db.select({ id: organisationAircraftRelationships.aircraftId }).from(organisationAircraftRelationships)
+    .innerJoin(aircraft, eq(aircraft.id, organisationAircraftRelationships.aircraftId))
+    .where(and(inArray(organisationAircraftRelationships.organisationId, [...operators]), eq(organisationAircraftRelationships.role, "operator"),
+      eq(organisationAircraftRelationships.active, true), eq(aircraft.tenantId, LIBRARY_TENANT_ID))) : [];
+  return { all: false, operators, aircraft: new Set(acs.map((a) => a.id)) };
+}
+
+/** Whether this library operator is open to them. */
+export function scopeHasOperator(scope: LibraryScope | null, operatorId: string | null): boolean {
+  return !!scope && (scope.all || (!!operatorId && scope.operators.has(operatorId)));
+}
+
+/** Whether this library aircraft is open to them. */
+export function scopeHasAircraft(scope: LibraryScope | null, aircraftId: string): boolean {
+  return !!scope && (scope.all || scope.aircraft.has(aircraftId));
+}
+
+/** Leaves out library aircraft they may not see (their own workspace's aircraft are kept). */
+export async function withinLibraryScope(db: Db, scope: LibraryScope | null, ids: string[]): Promise<string[]> {
+  if (scope?.all || !ids.length) return ids;
+  const lib = new Set((await db.select({ id: aircraft.id }).from(aircraft).where(and(inArray(aircraft.id, ids), eq(aircraft.tenantId, LIBRARY_TENANT_ID)))).map((r) => r.id));
+  return ids.filter((id) => !lib.has(id) || scopeHasAircraft(scope, id));
+}
+
+/** The admin picks which library operators someone may see: null = all of them. */
+export async function setLibraryOperators(db: Db, userId: string, operatorIds: string[] | null) {
+  await db.update(users).set({ libraryOperators: operatorIds, updatedAt: new Date() }).where(eq(users.id, userId));
+}
+
 // ---------------------------------------------------------------- "Add to my workspace"
 
 /** Whether a photo is attached to this aircraft now. */
