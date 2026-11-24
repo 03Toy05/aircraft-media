@@ -89,7 +89,7 @@ export default function FleetSearch({ defaultQ, defaultIn, items, form }: { defa
             {matches.length === 0 && <li className="muted">Nothing matches “{q.trim()}”{scope !== "all" ? ` in ${scope === "aircraft" ? "aircraft" : "operators"}` : ""}.</li>}
             {matches.map((m, i) => (
               <li key={`${m.kind}:${m.href}:${m.label}`} role="option" aria-selected={i === active} className={i === active ? "on" : ""}
-                onPointerDown={(e) => { e.preventDefault(); go(m); }}>
+                onMouseDown={(e) => e.preventDefault()} onClick={() => go(m)}>
                 <div className="sug-name"><Icon name={m.kind === "aircraft" ? "plane" : "operator"} /> <b>{m.label}</b></div>
                 {(m.sub || m.library) && (
                   <div className="sug-sub">{m.library && <span className="tag">Library</span>}{m.sub && <span className="muted">{m.sub}</span>}</div>
@@ -97,7 +97,7 @@ export default function FleetSearch({ defaultQ, defaultIn, items, form }: { defa
               </li>
             ))}
             {matches.length > 0 && (
-              <li className="muted" onPointerDown={(e) => { e.preventDefault(); submit(); }}>
+              <li className="muted" onMouseDown={(e) => e.preventDefault()} onClick={() => submit()}>
                 <Icon name="search" /> Show every match for “{q.trim()}” on this page
               </li>
             )}

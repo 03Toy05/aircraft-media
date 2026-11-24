@@ -373,8 +373,10 @@ export async function setLibraryAccess(db: Db, userId: string, on: boolean) {
 }
 
 /**
- * What of the library someone may see: every operator, or only the ones the admin picked for them (with those
- * operators' aircraft). Null: the library is not shared with them at all. The admin always sees everything.
+ * What of the library someone may see. Null: the library is not shared with them at all. The admin always sees
+ * everything; anyone else sees only library aircraft that already have an approved photo (the rest are still being
+ * put together by the admin), of every operator or only the ones the admin picked for them, and only operators
+ * with at least one such aircraft.
  */
 export type LibraryScope = { all: true } | { all: false; operators: Set<string>; aircraft: Set<string> };
 
@@ -382,13 +384,24 @@ export async function libraryScope(db: Db, s: { isAdmin: boolean; actor: { id: s
   if (s.isAdmin) return { all: true };
   const [u] = await db.select({ on: users.libraryAccess, ops: users.libraryOperators }).from(users).where(eq(users.id, s.actor.id));
   if (!u?.on) return null;
-  if (u.ops == null) return { all: true };
-  const operators = new Set(u.ops);
-  const acs = operators.size ? await db.select({ id: organisationAircraftRelationships.aircraftId }).from(organisationAircraftRelationships)
-    .innerJoin(aircraft, eq(aircraft.id, organisationAircraftRelationships.aircraftId))
-    .where(and(inArray(organisationAircraftRelationships.organisationId, [...operators]), eq(organisationAircraftRelationships.role, "operator"),
-      eq(organisationAircraftRelationships.active, true), eq(aircraft.tenantId, LIBRARY_TENANT_ID))) : [];
-  return { all: false, operators, aircraft: new Set(acs.map((a) => a.id)) };
+  const chosen = u.ops == null ? null : new Set(u.ops);
+  const ready = await readyLibraryAircraft(db);
+  const links = await db.select({ aircraftId: organisationAircraftRelationships.aircraftId, operatorId: organisationAircraftRelationships.organisationId })
+    .from(organisationAircraftRelationships).innerJoin(aircraft, eq(aircraft.id, organisationAircraftRelationships.aircraftId))
+    .where(and(eq(organisationAircraftRelationships.role, "operator"), eq(organisationAircraftRelationships.active, true), eq(aircraft.tenantId, LIBRARY_TENANT_ID)));
+  const operatorOf = new Map(links.map((l) => [l.aircraftId, l.operatorId]));
+  const acs = [...ready].filter((id) => !chosen || chosen.has(operatorOf.get(id) ?? "-"));
+  const operators = new Set(acs.map((id) => operatorOf.get(id)).filter((o): o is string => !!o));
+  return { all: false, operators, aircraft: new Set(acs) };
+}
+
+/** Library aircraft with at least one approved, active photo: the ones ready to show to brokers. */
+export async function readyLibraryAircraft(db: Db): Promise<Set<string>> {
+  const rows = await db.selectDistinct({ id: mediaAssociations.aircraftId }).from(aircraftMedia)
+    .innerJoin(mediaAssociations, and(eq(mediaAssociations.aircraftMediaId, aircraftMedia.id), eq(mediaAssociations.active, true)))
+    .innerJoin(aircraft, and(eq(aircraft.id, mediaAssociations.aircraftId), eq(aircraft.active, true)))
+    .where(and(eq(aircraftMedia.tenantId, LIBRARY_TENANT_ID), eq(aircraft.tenantId, LIBRARY_TENANT_ID), eq(aircraftMedia.reviewState, "approved"), eq(aircraftMedia.lifecycleState, "active")));
+  return new Set(rows.map((r) => r.id).filter((id): id is string => !!id));
 }
 
 /** Whether this library operator is open to them. */

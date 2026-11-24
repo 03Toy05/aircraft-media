@@ -6,7 +6,7 @@ import { organisations } from "@/db/schema";
 import { getAircraftCard, getPreferredOperators } from "@/domain/directory";
 import { getLineup } from "@/domain/media";
 import { getQuoteTemplates } from "@/domain/quoteTemplates";
-import { LIBRARY_TENANT_ID, copiedLibraryAircraft, libraryScope, scopeHasOperator } from "@/domain/library";
+import { LIBRARY_TENANT_ID, copiedLibraryAircraft, libraryScope, scopeHasAircraft, scopeHasOperator } from "@/domain/library";
 import { normalizeKey, normalizeRegistration } from "@/domain/constants";
 import { CLASSIFICATION_LABEL } from "@/domain/constants";
 import QuoteBuilder, { type QuoteAircraftOption, type QuoteOperator } from "../../_components/QuoteBuilder";
@@ -36,7 +36,7 @@ export default async function Quote({ searchParams }: { searchParams: SP }) {
     const rows = await getCatalogue(db, src.tenantId);
     const mine: QuoteAircraftOption[] = [];
     for (const r of rows) {
-      if (src.library && (copied.has(r.aircraftId) || !scopeHasOperator(scope, r.operatorId))) continue;
+      if (src.library && (copied.has(r.aircraftId) || !scopeHasOperator(scope, r.operatorId) || !scopeHasAircraft(scope, r.aircraftId))) continue;
       const card = await getAircraftCard(db, r.aircraftId);
       if (!card) continue;
       const k = sameKey({ operator: card.operator, type: card.aircraft, tail: card.tailNumber, yom: card.yom });

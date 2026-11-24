@@ -87,7 +87,7 @@ export default function PlacePicker({ name, kind, defaultValue, multiple = false
         <ul className="place-list" id={listId} role="listbox">
           {items.map((s, i) => (
             <li key={s.value + i} role="option" aria-selected={i === active} className={i === active ? "on" : ""}
-              onPointerDown={(e) => { e.preventDefault(); pick(s.value); }}>
+              onMouseDown={(e) => e.preventDefault()} onClick={() => pick(s.value)}>
               <b>{s.value}</b>{s.detail && <span className="muted"> {s.detail}</span>}
             </li>
           ))}

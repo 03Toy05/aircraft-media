@@ -8,7 +8,7 @@ import { getCatalogue } from "@/domain/catalogue";
 import { matchesWords, searchWords } from "@/domain/searchMatch";
 import { getAircraftCard } from "@/domain/directory";
 import { getLineup } from "@/domain/media";
-import { LIBRARY_TENANT_ID, addingNow, copiedLibraryAircraft, libraryScope, pendingCount, scopeHasOperator } from "@/domain/library";
+import { LIBRARY_TENANT_ID, addingNow, copiedLibraryAircraft, libraryScope, pendingCount, readyLibraryAircraft, scopeHasAircraft, scopeHasOperator } from "@/domain/library";
 import { addFromLibraryAction } from "../../actions";
 import { Flash, one, type SP } from "../../_components/ui";
 import { AutoRefresh } from "../../_components/AutoRefresh";
@@ -45,7 +45,8 @@ export default async function Library({ searchParams }: { searchParams: SP }) {
   const q = (one(sp.q) ?? "").trim().toLowerCase();
   const showAll = one(sp.all) === "1";
   const [rows, orgs, waiting, infos, myTails] = await Promise.all([
-    getCatalogue(db, LIBRARY_TENANT_ID),
+    // Only the aircraft open to this person (for brokers: ones that already have an approved photo).
+    getCatalogue(db, LIBRARY_TENANT_ID).then((list) => list.filter((r) => scopeHasAircraft(scope, r.aircraftId))),
     db.select().from(organisations).where(and(eq(organisations.tenantId, LIBRARY_TENANT_ID), eq(organisations.active, true))).orderBy(asc(organisations.canonicalName))
       // Only the operators the admin opened to this person.
       .then((list) => list.filter((o) => scopeHasOperator(scope, o.id))),
@@ -88,6 +89,8 @@ export default async function Library({ searchParams }: { searchParams: SP }) {
     // Operators with aircraft still to add go to the top.
     .sort((a, b) => Number(b.left > 0) - Number(a.left > 0));
   const totalAircraft = rows.filter((r) => scopeHasOperator(scope, r.operatorId)).length;
+  const ready = isAdmin ? await readyLibraryAircraft(db) : null;
+  const notReady = ready ? rows.filter((r) => !ready.has(r.aircraftId)).length : 0;
   const shownCount = shown.reduce((n, s) => n + s.aircraft.length, 0);
 
   // Details and photos only for what is shown, a few aircraft at a time.
@@ -125,6 +128,7 @@ export default async function Library({ searchParams }: { searchParams: SP }) {
       <div className="people-head" style={{ marginBottom: 10 }}>
         <p className="muted small" style={{ margin: 0 }}>
           The Aircraft Media library: {orgs.length} operator{orgs.length === 1 ? "" : "s"}, {totalAircraft} aircraft. Library aircraft can be quoted straight away (Quote page and Toy). Add one to your workspace to edit it or add your own photos.
+          {notReady > 0 && <> {notReady} aircraft without an approved photo yet are shown only to you.</>}
         </p>
         {isAdmin && (
           <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>

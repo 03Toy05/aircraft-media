@@ -472,3 +472,7 @@ ul.history li:last-child { border-bottom: 0; }
 .login-email label { margin: 4px 0 0; text-align: left; }
 .login-email button { margin-top: 6px; }
 .login-or { text-align: center; margin: 14px 0 8px; }
+
+/* Pick lists on phones: bigger rows, and scrolling the list does not scroll the page. */
+.place-list { overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
+@media (pointer: coarse) { .place-list li { padding: 11px 12px; } }

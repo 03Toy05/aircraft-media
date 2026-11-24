@@ -82,7 +82,7 @@ export default function SearchSelect({ name, options, defaultValue, value: contr
             const head = o.group && o.group !== list[i - 1]?.group ? o.group : null;
             return (
               <li key={o.value || "__empty"} role="option" aria-selected={o.value === value} className={i === active ? "on" : ""}
-                onPointerDown={(e) => { e.preventDefault(); pick(o); }}>
+                onMouseDown={(e) => e.preventDefault()} onClick={() => pick(o)}>
                 {head && <span className="group-head">{head}</span>}
                 {o.value === value && o.value ? "✓ " : ""}{o.label}{o.hint && <span className="muted"> {o.hint}</span>}
               </li>

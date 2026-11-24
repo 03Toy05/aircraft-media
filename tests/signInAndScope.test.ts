@@ -7,6 +7,18 @@ import type { Actor } from "../src/domain/action";
 import { createAircraft, createAircraftType, createOrganisation } from "../src/domain/directory";
 import { consumeSignInLink, createSignInLink, mayUseApp } from "../src/domain/signInLinks";
 import { LIBRARY_TENANT_ID, libraryScope, scopeHasAircraft, scopeHasOperator, setLibraryOperators, withinLibraryScope } from "../src/domain/library";
+import { aircraftMedia } from "../src/db/schema";
+import { approveMedia, ingestUpload, setMediaAssociation, updateMediaMetadata } from "../src/domain/media";
+import { makeImage } from "./helpers";
+
+/** Puts one approved photo on a library aircraft, so brokers may see it. */
+async function approvedPhoto(t: Awaited<ReturnType<typeof setup>>, lib: Actor, aircraftId: string, seed: number) {
+  const up = (await ingestUpload(t.db, t.store, lib, { filename: `p${seed}.png`, bytes: await makeImage(400, 300, seed) })).result;
+  const v = async () => (await t.db.select({ v: aircraftMedia.version }).from(aircraftMedia).where(eq(aircraftMedia.id, up.mediaId)))[0].v;
+  await updateMediaMetadata(t.db, lib, key(), { mediaId: up.mediaId, expectedVersion: await v(), classification: "exterior" });
+  await setMediaAssociation(t.db, lib, key(), { mediaId: up.mediaId, expectedVersion: await v(), status: "actual_aircraft", aircraftId });
+  await approveMedia(t.db, lib, { mediaId: up.mediaId, contentVersionId: up.contentVersionId, expectedVersion: await v() });
+}
 
 describe("Sign-in by emailed link", () => {
   it("only makes links for invited people, once each, and refuses used or expired ones", async () => {
@@ -52,6 +64,10 @@ describe("Library operators per person", () => {
     const opB = (await createOrganisation(t.db, lib, key(), { name: "Bravo Air" })).result.organisationId;
     const acA = (await createAircraft(t.db, lib, key(), { aircraftTypeId: type, operatorId: opA, registration: "B-AAA" })).result.aircraftId;
     const acB = (await createAircraft(t.db, lib, key(), { aircraftTypeId: type, operatorId: opB, registration: "B-BBB" })).result.aircraftId;
+    const opC = (await createOrganisation(t.db, lib, key(), { name: "Charlie Charter" })).result.organisationId;
+    const acC = (await createAircraft(t.db, lib, key(), { aircraftTypeId: type, operatorId: opC, registration: "B-CCC" })).result.aircraftId;
+    await approvedPhoto(t, lib, acA, 1);
+    await approvedPhoto(t, lib, acB, 2); // B-CCC has no approved photo yet: only the admin sees it
     const own = (await createAircraft(t.db, t.actor, key(), { aircraftTypeId: (await createAircraftType(t.db, t.actor, key(), { manufacturer: "Gulfstream", model: "G650ER", category: "ultra_long_range_jet" })).result.aircraftTypeId, registration: "B-OWN" })).result.aircraftId;
 
     const [u] = await t.db.insert(users).values({ tenantId: randomUUID(), email: "broker@example.test", displayName: "Broker" }).returning({ id: users.id });
@@ -59,7 +75,11 @@ describe("Library operators per person", () => {
 
     expect(await libraryScope(t.db, who)).toBeNull(); // not shared yet
     await t.db.update(users).set({ libraryAccess: true }).where(eq(users.id, u.id));
-    expect(await libraryScope(t.db, who)).toEqual({ all: true }); // shared: every operator
+    // Shared: every operator, but only aircraft that already have an approved photo.
+    const open = await libraryScope(t.db, who);
+    expect([acA, acB, acC].map((id) => scopeHasAircraft(open, id))).toEqual([true, true, false]);
+    expect([opA, opB, opC].map((id) => scopeHasOperator(open, id))).toEqual([true, true, false]);
+    expect(await withinLibraryScope(t.db, open, [own, acA, acC])).toEqual([own, acA]);
 
     await setLibraryOperators(t.db, u.id, [opA]);
     const scope = await libraryScope(t.db, who);
@@ -70,6 +90,8 @@ describe("Library operators per person", () => {
     // A quote keeps the person's own aircraft and the allowed library ones.
     expect(await withinLibraryScope(t.db, scope, [own, acA, acB])).toEqual([own, acA]);
 
+    await setLibraryOperators(t.db, u.id, [opA, opC]);
+    expect(scopeHasAircraft(await libraryScope(t.db, who), acC)).toBe(false); // chosen, but not ready yet
     await setLibraryOperators(t.db, u.id, []);
     expect(scopeHasAircraft(await libraryScope(t.db, who), acA)).toBe(false);
     // The admin always sees everything.
