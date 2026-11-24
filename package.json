@@ -13,7 +13,9 @@
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
     "drive:authorize": "tsx --env-file=.env.local scripts/drive-authorize.ts",
-    "drive:check": "tsx --env-file=.env.local scripts/drive-live-check.ts"
+    "drive:check": "tsx --env-file=.env.local scripts/drive-live-check.ts",
+    "library:upload": "tsx --env-file-if-exists=.env.local scripts/library-upload.ts",
+    "library:new-key": "tsx scripts/library-new-key.ts"
   },
   "dependencies": {
     "@electric-sql/pglite": "^0.5.16",
