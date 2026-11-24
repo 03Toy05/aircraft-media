@@ -1,7 +1,8 @@
 import Link from "next/link";
 import { and, asc, eq } from "drizzle-orm";
 import { getDb } from "@/db/client";
-import { organisations } from "@/db/schema";
+import { aircraft as aircraftTable, aircraftInformationVersions, aircraftRegistrations, organisations } from "@/db/schema";
+import { normalizeRegistration } from "@/domain/constants";
 import { requireOwner } from "@/lib/session";
 import { getCatalogue } from "@/domain/catalogue";
 import { matchesWords, searchWords } from "@/domain/searchMatch";
@@ -14,6 +15,9 @@ import { AutoRefresh } from "../../_components/AutoRefresh";
 import { PendingButton } from "../../_components/PendingButton";
 
 const WIFI: Record<string, string | null> = { yes: "WIFI", no: "No WIFI", tbc: "WIFI TBC", unknown: null };
+/** Aircraft already in the workspace are hidden unless they changed this recently (or a search or "Show all" asks). */
+const RECENT_DAYS = 7;
+const DAY = 24 * 60 * 60 * 1000;
 
 /**
  * The platform library: every operator with its region, base and fleet, and each aircraft's details and photos
@@ -38,33 +42,72 @@ export default async function Library({ searchParams }: { searchParams: SP }) {
   const adding = addingNow(session.actor.tenantId);
   for (const id of copied) adding.delete(id);
   const q = (one(sp.q) ?? "").trim().toLowerCase();
-  const rows = await getCatalogue(db, LIBRARY_TENANT_ID);
-  const orgs = await db.select().from(organisations).where(and(eq(organisations.tenantId, LIBRARY_TENANT_ID), eq(organisations.active, true))).orderBy(asc(organisations.canonicalName));
-  const waiting = isAdmin ? await pendingCount(db) : 0;
+  const showAll = one(sp.all) === "1";
+  const [rows, orgs, waiting, infos, myTails] = await Promise.all([
+    getCatalogue(db, LIBRARY_TENANT_ID),
+    db.select().from(organisations).where(and(eq(organisations.tenantId, LIBRARY_TENANT_ID), eq(organisations.active, true))).orderBy(asc(organisations.canonicalName)),
+    isAdmin ? pendingCount(db) : Promise.resolve(0),
+    db.select({ aircraftId: aircraftInformationVersions.aircraftId, at: aircraftInformationVersions.createdAt, made: aircraftTable.updatedAt })
+      .from(aircraftInformationVersions).innerJoin(aircraftTable, eq(aircraftTable.id, aircraftInformationVersions.aircraftId))
+      .where(and(eq(aircraftTable.tenantId, LIBRARY_TENANT_ID), eq(aircraftInformationVersions.isCurrent, true))),
+    // Tails already in this workspace (uploaded here, not added from the library) count as in the workspace too.
+    db.select({ t: aircraftRegistrations.normalizedRegistration }).from(aircraftRegistrations)
+      .innerJoin(aircraftTable, eq(aircraftTable.id, aircraftRegistrations.aircraftId))
+      .where(and(eq(aircraftTable.tenantId, session.actor.tenantId), eq(aircraftTable.active, true), eq(aircraftRegistrations.isCurrent, true))),
+  ]);
+  const haveTail = new Set(myTails.map((x) => x.t));
+  // Last change to an aircraft: its details or its newest approved photo.
+  const updated = new Map<string, number>();
+  for (const i of infos) updated.set(i.aircraftId, Math.max(i.at.getTime(), i.made.getTime()));
+  for (const r of rows) if (r.lastApproved) updated.set(r.aircraftId, Math.max(updated.get(r.aircraftId) ?? 0, r.lastApproved.getTime()));
+  const since = Date.now() - RECENT_DAYS * DAY;
+  const tailOf = new Map(rows.map((r) => [r.aircraftId, r.tail ? normalizeRegistration(r.tail) : ""]));
+  const toAdd = (id: string) => adding.has(id) || (!copied.has(id) && !haveTail.has(tailOf.get(id) ?? "-"));
+  const recent = (id: string) => (updated.get(id) ?? 0) >= since;
 
   // Same matching as the Fleet search: an operator found by name shows its whole fleet, otherwise only the aircraft that match.
+  // Without a search: only what still needs adding, and what changed this week (unless "Show all").
   const words = searchWords(q);
+  const everything = showAll || words.length > 0;
+  let hidden = 0;
   const shown = orgs
     .map((o) => {
       const all = rows.filter((r) => r.operatorId === o.id);
       const byName = !words.length || matchesWords(`${o.canonicalName} ${o.region ?? ""} ${o.base ?? ""}`, words);
-      return { o, aircraft: byName ? all : all.filter((a) => matchesWords(`${a.aircraft} ${a.tail ?? ""} ${o.canonicalName}`, words)) };
+      const found = byName ? all : all.filter((a) => matchesWords(`${a.aircraft} ${a.tail ?? ""} ${o.canonicalName}`, words));
+      const aircraft = everything ? found : found.filter((a) => toAdd(a.aircraftId) || recent(a.aircraftId));
+      hidden += found.length - aircraft.length;
+      // Still to add first, then the newest changes.
+      aircraft.sort((a, b) => Number(toAdd(b.aircraftId)) - Number(toAdd(a.aircraftId)) || (updated.get(b.aircraftId) ?? 0) - (updated.get(a.aircraftId) ?? 0));
+      return { o, aircraft, left: found.filter((a) => toAdd(a.aircraftId)).length };
     })
-    .filter(({ aircraft }) => aircraft.length > 0);
+    .filter(({ aircraft }) => aircraft.length > 0)
+    // Operators with aircraft still to add go to the top.
+    .sort((a, b) => Number(b.left > 0) - Number(a.left > 0));
   const totalAircraft = rows.length;
+  const shownCount = shown.reduce((n, s) => n + s.aircraft.length, 0);
 
+  // Details and photos only for what is shown, a few aircraft at a time.
   const details = new Map<string, { facts: string; photos: Awaited<ReturnType<typeof getLineup>> }>();
-  for (const { aircraft } of shown) {
-    for (const r of aircraft) {
-      const c = await getAircraftCard(db, r.aircraftId);
+  const queue = shown.flatMap((s) => s.aircraft);
+  const load = async () => {
+    for (let r = queue.shift(); r; r = queue.shift()) {
+      const [c, photos] = await Promise.all([getAircraftCard(db, r.aircraftId), getLineup(db, { aircraftId: r.aircraftId, aircraftTypeId: r.aircraftTypeId })]);
       const facts = [
         c?.yom != null && `YOM ${c.yom}`, c?.yor != null && `YOR ${c.yor}`, c?.capacity != null && `${c.capacity} seats`,
         c && WIFI[c.wifi], c?.smoking === "yes" ? "Smoking" : c?.smoking === "no" ? "No smoking" : null,
         c?.pets === "yes" ? "Pets" : c?.pets === "no" ? "No pets" : null, r.base && `Base: ${r.base}`,
       ].filter(Boolean).join(" · ");
-      details.set(r.aircraftId, { facts, photos: await getLineup(db, { aircraftId: r.aircraftId, aircraftTypeId: r.aircraftTypeId }) });
+      details.set(r.aircraftId, { facts, photos });
     }
-  }
+  };
+  await Promise.all(Array.from({ length: 4 }, load));
+  const ago = (id: string) => {
+    const t = updated.get(id);
+    if (!t) return null;
+    const d = Math.floor((Date.now() - t) / DAY);
+    return d <= 0 ? "Updated today" : d === 1 ? "Updated yesterday" : `Updated ${d} days ago`;
+  };
 
   return (
     <>
@@ -91,12 +134,20 @@ export default async function Library({ searchParams }: { searchParams: SP }) {
         <div><input name="q" defaultValue={one(sp.q) ?? ""} placeholder="Search operator, region, type or tail" aria-label="Search the library" /></div>
         <div style={{ flex: "0 0 auto" }}><button type="submit" className="secondary">Search</button></div>
       </form>
+      {!words.length && orgs.length > 0 && (
+        <p className="small muted" style={{ margin: "0 0 10px" }}>
+          {showAll
+            ? <>Showing all {totalAircraft} aircraft. <Link href="/library">Show only new and recent</Link></>
+            : <>Showing {shownCount} aircraft not in your workspace yet or updated in the last {RECENT_DAYS} days.{hidden > 0 && <> {hidden} more are hidden: search for them, or <Link href="/library?all=1">show all</Link>.</>}</>}
+        </p>
+      )}
       {shown.length === 0 && (
         <div className="card muted">
-          {orgs.length === 0 ? (isAdmin ? "The library is empty. Photos arrive in Library review once people who share with the library approve them." : "The library is empty for now.") : "Nothing matches that search."}
+          {orgs.length === 0 ? (isAdmin ? "The library is empty. Photos arrive in Library review once people who share with the library approve them." : "The library is empty for now.")
+            : words.length ? "Nothing matches that search." : `Everything in the library is in your workspace and nothing changed in the last ${RECENT_DAYS} days.`}
         </div>
       )}
-      {shown.map(({ o, aircraft }) => (
+      {shown.map(({ o, aircraft, left }) => (
         <div key={o.id} className="card">
           <div className="person-head">
             <div style={{ minWidth: 0 }}>
@@ -104,12 +155,12 @@ export default async function Library({ searchParams }: { searchParams: SP }) {
               <span className="pill wait">{aircraft.length} aircraft</span>
               <div className="small muted">{[o.region && `Region: ${o.region}`, o.base && `Base: ${o.base}`].filter(Boolean).join(" · ") || "No region or base yet"}</div>
             </div>
-            {canAdd && aircraft.length > 1 && (() => {
-              const left = aircraft.filter((r) => !copied.has(r.aircraftId) && !adding.has(r.aircraftId)).length;
-              return left > 0 && (
+            {canAdd && (() => {
+              const notAdding = aircraft.filter((r) => !copied.has(r.aircraftId) && !adding.has(r.aircraftId)).length;
+              return left > 1 && notAdding > 0 && (
                 <form action={addFromLibraryAction}>
                   <input type="hidden" name="libraryOperatorId" value={o.id} /><input type="hidden" name="q" value={one(sp.q) ?? ""} />
-                  <PendingButton className="secondary small-btn" pending="Adding…">{left === aircraft.length ? `Add all ${left} to my workspace` : `Add the other ${left} to my workspace`}</PendingButton>
+                  <PendingButton className="secondary small-btn" pending="Adding…">{notAdding === aircraft.length ? `Add all ${notAdding} to my workspace` : `Add the other ${notAdding} to my workspace`}</PendingButton>
                 </form>
               );
             })()}
@@ -122,7 +173,7 @@ export default async function Library({ searchParams }: { searchParams: SP }) {
             return (
               <div key={r.aircraftId} className="lib-ac">
                 <div className="person-head">
-                  <div><b>{r.aircraft}</b>{r.tail ? ` · ${r.tail}` : ""}</div>
+                  <div><b>{r.aircraft}</b>{r.tail ? ` · ${r.tail}` : ""}{ago(r.aircraftId) && <span className="small muted"> · {ago(r.aircraftId)}</span>}</div>
                   {copied.has(r.aircraftId) ? <span className="pill ok">In your workspace</span>
                     : adding.has(r.aircraftId) ? <span className="pill wait">Adding…</span>
                     : canAdd && (
