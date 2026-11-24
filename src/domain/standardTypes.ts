@@ -129,7 +129,9 @@ export const STANDARD_AIRCRAFT_TYPES: StandardType[] = [
   ...t("Bombardier", "light_jet", [["Learjet 45XR", ["LJ45XR"]]]),
   ...t("Nextant", "light_jet", ["400XT", "400XTi"]),
   ...t("Cessna", "light_jet", [["Citation CJ4 Gen2", ["CJ4 Gen 2", "Citation CJ4 Gen 2"]]]),
+  ...t("Beechcraft", "light_jet", [["Premier I", ["Premier 1"]]]),
+  ...t("Piaggio", "turboprop", [["Avanti II", ["P.180 Avanti II", "P180 Avanti II", "Avanti 2"]]]),
 ];
 
 /** Bump when the list grows so the app loads the new entries once (existing entries are never changed). */
-export const STANDARD_LIST_VERSION = "standard-v4";
+export const STANDARD_LIST_VERSION = "standard-v5";

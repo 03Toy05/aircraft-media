@@ -1,4 +1,5 @@
 import Link from "next/link";
+import OperatorContacts from "../../_components/OperatorContacts";
 import { and, asc, eq } from "drizzle-orm";
 import { getDb } from "@/db/client";
 import { aircraft as aircraftTable, aircraftInformationVersions, aircraftRegistrations, organisations } from "@/db/schema";
@@ -161,6 +162,7 @@ export default async function Library({ searchParams }: { searchParams: SP }) {
               <b>{o.canonicalName}</b>{" "}
               <span className="pill wait">{aircraft.length} aircraft</span>
               <div className="small muted">{[o.region && `Region: ${o.region}`, o.base && `Base: ${o.base}`].filter(Boolean).join(" · ") || "No region or base yet"}</div>
+              <OperatorContacts o={o} />
             </div>
             {canAdd && (() => {
               const notAdding = aircraft.filter((r) => !copied.has(r.aircraftId) && !adding.has(r.aircraftId)).length;

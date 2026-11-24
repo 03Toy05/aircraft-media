@@ -199,7 +199,7 @@ button.block-btn { width: 100%; justify-content: center; min-height: 42px; font-
   /* Laptop forms: the label beside its field, controls on one left edge. */
   :is(.card form, form.card):not(.row):not(.login-email):has(> label + :is(input, select, textarea, .textbox)) { display: grid; grid-template-columns: 170px minmax(0, 1fr); gap: 8px 14px; align-items: center; }
   :is(.card form, form.card):not(.row):has(> label + :is(input, select, textarea, .textbox)) > * { grid-column: 2; margin-top: 0; margin-bottom: 0; }
-  :is(.card form, form.card):not(.row):has(> label + :is(input, select, textarea, .textbox)) > label:has(+ :is(input, select, textarea, .textbox)) { grid-column: 1; text-align: right; }
+  :is(.card form, form.card):not(.row):not(.login-email):has(> label + :is(input, select, textarea, .textbox)) > label:has(+ :is(input, select, textarea, .textbox)) { grid-column: 1; text-align: right; }
   :is(.card form, form.card):not(.row):has(> label + :is(input, select, textarea, .textbox)) > input[type=hidden] { display: none; }
 }
 
@@ -476,3 +476,7 @@ ul.history li:last-child { border-bottom: 0; }
 /* Pick lists on phones: bigger rows, and scrolling the list does not scroll the page. */
 .place-list { overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
 @media (pointer: coarse) { .place-list li { padding: 11px 12px; } }
+
+/* An operator's website, email and sales contact. */
+.op-contacts { display: flex; flex-wrap: wrap; gap: 2px 14px; margin-top: 3px; overflow-wrap: anywhere; }
+.op-contacts .op-sales { white-space: pre-line; }

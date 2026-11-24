@@ -152,6 +152,41 @@ export function setOrganisationRegion(db: Db, actor: Actor, key: string, input: 
   });
 }
 
+export interface OrganisationContacts { website?: string | null; email?: string | null; salesContact?: string | null }
+
+/** Tidies the operator's contact details: a website gets https:// when typed without it; an email must look like one. */
+export function cleanContacts(input: OrganisationContacts): { website: string | null; email: string | null; salesContact: string | null } {
+  const t = (v: string | null | undefined) => (v ?? "").trim() || null;
+  let website = t(input.website);
+  if (website && !/^https?:\/\//i.test(website)) website = `https://${website}`;
+  if (website) {
+    try { const u = new URL(website); if (!/^https?:$/.test(u.protocol) || !u.hostname.includes(".")) throw new Error(); }
+    catch { throw invalid("The website doesn't look right (for example https://operator.com)."); }
+  }
+  const email = t(input.email);
+  if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw invalid("The email doesn't look right.");
+  const salesContact = t(input.salesContact);
+  if ((website?.length ?? 0) > 300 || (email?.length ?? 0) > 200 || (salesContact?.length ?? 0) > 1000) throw invalid("That is too long.");
+  return { website, email, salesContact };
+}
+
+/** Saves how to reach an operator (website, email, sales contact). Empty clears it. */
+export function setOrganisationContacts(db: Db, actor: Actor, key: string, input: OrganisationContacts & { organisationId: string }) {
+  return runAction({
+    db,
+    actor,
+    name: "organisation.setContacts",
+    idempotencyKey: key,
+    input,
+    handler: async (tx) => {
+      const [org] = await tx.select().from(organisations).where(and(eq(organisations.id, input.organisationId), eq(organisations.tenantId, actor.tenantId)));
+      if (!org) throw notFound("Organisation");
+      await tx.update(organisations).set({ ...cleanContacts(input), updatedAt: new Date() }).where(eq(organisations.id, org.id));
+      return { organisationId: org.id };
+    },
+  });
+}
+
 export const MAX_PREFERRED_OPERATORS = 5;
 
 /** The owner's preferred operators, in order (shown first on the Quote page). Replaces the whole list. */

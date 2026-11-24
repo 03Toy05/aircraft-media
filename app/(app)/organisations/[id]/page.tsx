@@ -8,7 +8,8 @@ import { getCatalogue } from "@/domain/catalogue";
 import { getAircraftCard } from "@/domain/directory";
 import { getLineup } from "@/domain/media";
 import { AIRCRAFT_CATEGORY_LABEL, type AircraftCategory } from "@/domain/constants";
-import { addOrgAliasAction, renameOrgAction, setOrgRegionAction } from "../../../actions";
+import { addOrgAliasAction, renameOrgAction, setOrgContactsAction, setOrgRegionAction } from "../../../actions";
+import OperatorContacts from "../../../_components/OperatorContacts";
 import { Flash, Key, one, type SP } from "../../../_components/ui";
 import PlacePicker from "../../../_components/PlacePicker";
 
@@ -55,6 +56,24 @@ export default async function OrganisationDetail({ params, searchParams }: { par
         <div style={{ maxWidth: 320 }}><label>Base</label><PlacePicker name="base" kind="base" multiple defaultValue={org.base ?? ""} /></div>
         <div style={{ flex: "0 0 auto" }}><button className="secondary" type="submit">Save</button></div>
       </form>
+
+      <div className="card">
+        <h3 style={{ marginTop: 0 }}>Contact</h3>
+        <OperatorContacts o={org} empty="No contact details yet." />
+        <details style={{ marginTop: 8 }}>
+          <summary className="small">Edit contact details</summary>
+          <form action={setOrgContactsAction} className="login-email" style={{ maxWidth: 520 }}>
+            <Key /><input type="hidden" name="organisationId" value={id} />
+            <label htmlFor="website" className="small">Website</label>
+            <input id="website" name="website" type="text" inputMode="url" autoComplete="url" placeholder="https://operator.com" defaultValue={org.website ?? ""} />
+            <label htmlFor="email" className="small">Email</label>
+            <input id="email" name="email" type="email" placeholder="info@operator.com" defaultValue={org.email ?? ""} />
+            <label htmlFor="sales" className="small">Sales contact (name, email, phone)</label>
+            <textarea id="sales" name="salesContact" rows={3} defaultValue={org.salesContact ?? ""} />
+            <div><button className="secondary" type="submit">Save contact details</button></div>
+          </form>
+        </details>
+      </div>
 
       {cards.length === 0 && <div className="card muted">No aircraft yet for this operator. Add one with Toy or from the Aircraft page.</div>}
       {cards.map(({ row, card, photos, category }) => (

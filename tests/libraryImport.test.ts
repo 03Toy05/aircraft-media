@@ -261,3 +261,37 @@ describe("Library import", () => {
     expect(await getAircraftCard(t.db, mine.aircraftId)).toMatchObject({ notes: "Owner's approval required. Pets TBC.", smoking: "no", base: expect.stringContaining("Tokyo") });
   }, 60_000);
 });
+
+describe("Operator contact details", () => {
+  it("come in with a pack, are copied into a workspace, and are checked", async () => {
+    const { addToWorkspace } = await import("../src/domain/library");
+    const { cleanContacts, setOrganisationContacts } = await import("../src/domain/directory");
+    const { organisations } = await import("../src/db/schema");
+    const { eq } = await import("drizzle-orm");
+    const t = await setup();
+    const files = new Map([["x-ext.png", await makeImage(500, 300, 990)]]);
+    const pack: LibraryPack = {
+      operator: "Jung Sky", region: "Europe", website: "www.jungsky.hr", email: "info@jungsky.hr", salesContact: "Charter: +385 1 000 0000",
+      aircraft: [{ type: "Cessna Citation CJ2", tail: "9A-JSD", base: ["Zagreb"], photos: { exterior: ["x-ext.png"] } }],
+    };
+    await importLibraryPack(t.db, t.store, t.actor, pack, files);
+    const [lib] = await t.db.select().from(organisations).where(eq(organisations.tenantId, LIBRARY_TENANT_ID));
+    expect(lib).toMatchObject({ website: "https://www.jungsky.hr", email: "info@jungsky.hr", salesContact: "Charter: +385 1 000 0000" });
+
+    // A pack without contacts keeps the ones already there.
+    await importLibraryPack(t.db, t.store, t.actor, { ...pack, website: undefined, email: undefined, salesContact: undefined }, files);
+    expect((await t.db.select().from(organisations).where(eq(organisations.id, lib.id)))[0].email).toBe("info@jungsky.hr");
+
+    // Added to a broker's workspace: the operator comes with its contacts.
+    const [libAc] = await getCatalogue(t.db, LIBRARY_TENANT_ID);
+    await addToWorkspace(t.db, t.store, t.actor, libAc.aircraftId);
+    const [mine] = await t.db.select().from(organisations).where(eq(organisations.tenantId, t.actor.tenantId));
+    expect(mine).toMatchObject({ website: "https://www.jungsky.hr", email: "info@jungsky.hr" });
+
+    // The broker's own edits are checked, and empty clears.
+    await expect(setOrganisationContacts(t.db, t.actor, randomUUID(), { organisationId: mine.id, email: "not an email" })).rejects.toThrow();
+    await setOrganisationContacts(t.db, t.actor, randomUUID(), { organisationId: mine.id, website: "", email: "sales@jungsky.hr", salesContact: "Ana" });
+    expect((await t.db.select().from(organisations).where(eq(organisations.id, mine.id)))[0]).toMatchObject({ website: null, email: "sales@jungsky.hr", salesContact: "Ana" });
+    expect(() => cleanContacts({ website: "javascript:alert(1)" })).toThrow();
+  }, 60_000);
+});

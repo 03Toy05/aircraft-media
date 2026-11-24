@@ -251,6 +251,14 @@ export async function setOrgRegionAction(fd: FormData) {
   await run(str(fd, "returnTo") || "/fleet", "Region saved", () => dir.setOrganisationRegion(db, actor, key(fd), { organisationId: id, region: str(fd, "region") || null, base: str(fd, "base") })); 
 }
 
+/** Operator page: its website, email and sales contact. */
+export async function setOrgContactsAction(fd: FormData) {
+  const { actor, db } = await ctx();
+  const id = str(fd, "organisationId");
+  await run(`/organisations/${id}`, "Contact details saved", () =>
+    dir.setOrganisationContacts(db, actor, key(fd), { organisationId: id, website: str(fd, "website"), email: str(fd, "email"), salesContact: String(fd.get("salesContact") ?? "") }));
+}
+
 export async function saveQuoteTemplateAction(fd: FormData) {
   const { actor, db } = await ctx();
   const language = str(fd, "language");

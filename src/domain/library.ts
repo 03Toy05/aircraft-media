@@ -9,7 +9,7 @@ import {
 import type { Actor } from "./action";
 import { normalizeKey, normalizeRegistration, type Classification } from "./constants";
 import {
-  addInformationVersion, changeRegistration, createAircraft, createAircraftType, createOrganisation, findAircraftByTail, findAircraftWithoutTail, getAircraftCard,
+  addInformationVersion, changeRegistration, cleanContacts, createAircraft, createAircraftType, createOrganisation, findAircraftByTail, findAircraftWithoutTail, getAircraftCard,
   loadStandardAircraftTypes, resolveAircraftTypesExact, resolveOrganisationsExact,
 } from "./directory";
 import { approveMedia, getLineup, ingestUpload, readContentBytes, retireMedia, setMediaAssociation, updateMediaMetadata } from "./media";
@@ -485,6 +485,7 @@ export async function addToWorkspace(db: Db, store: FileStore, actor: Actor, lib
   if (org) {
     operatorId = (await resolveOrganisationsExact(db, actor.tenantId, org.o.canonicalName))[0]?.id
       ?? (await createOrganisation(db, actor, randomUUID(), { name: org.o.canonicalName, region: org.o.region, base: org.o.base })).result.organisationId;
+    await copyMissingContacts(db, org.o, operatorId);
   }
   const typeName = `${src.t.manufacturer} ${src.t.model}`;
   const typeId = (await resolveAircraftTypesExact(db, actor.tenantId, typeName))[0]?.id
@@ -758,7 +759,24 @@ export interface PackAircraft {
   /** Kinds whose current library photos these replace: those are retired (kept in history) before these go in. */
   replace?: ("exterior" | "cabin" | "floor_plan")[];
 }
-export interface LibraryPack { operator: string; region?: string | null; base?: string | null; aircraft: PackAircraft[] }
+export interface LibraryPack {
+  operator: string; region?: string | null; base?: string | null;
+  /** How to reach the operator, shown with it in the library (and copied with it into workspaces). */
+  website?: string | null; email?: string | null; salesContact?: string | null;
+  aircraft: PackAircraft[];
+}
+
+/** Gives a workspace's operator the library operator's contact details, field by field, where it has none of its own. */
+async function copyMissingContacts(db: Db, from: { website: string | null; email: string | null; salesContact: string | null }, toId: string) {
+  const [to] = await db.select().from(organisations).where(eq(organisations.id, toId));
+  if (!to) return;
+  const set = {
+    ...(!to.website && from.website ? { website: from.website } : {}),
+    ...(!to.email && from.email ? { email: from.email } : {}),
+    ...(!to.salesContact && from.salesContact ? { salesContact: from.salesContact } : {}),
+  };
+  if (Object.keys(set).length) await db.update(organisations).set({ ...set, updatedAt: new Date() }).where(eq(organisations.id, toId));
+}
 export interface PackResult { created: number; matched: number; photos: number; skipped: string[]; retailed: string[] }
 
 /**
@@ -815,6 +833,12 @@ export async function importLibraryPack(
   await loadStandardAircraftTypes(db, lib, `auto:${STANDARD_LIST_VERSION}`);
   const operatorId = (await resolveOrganisationsExact(db, LIBRARY_TENANT_ID, operatorName))[0]?.id
     ?? (await createOrganisation(db, lib, randomUUID(), { name: operatorName, region: pack.region ?? null, base: pack.base ?? null })).result.organisationId;
+  // Contact details in the pack replace the library's (a field the pack leaves out is kept).
+  if (pack.website != null || pack.email != null || pack.salesContact != null) {
+    const [cur] = await db.select().from(organisations).where(eq(organisations.id, operatorId));
+    const c = cleanContacts({ website: pack.website ?? cur.website, email: pack.email ?? cur.email, salesContact: pack.salesContact ?? cur.salesContact });
+    await db.update(organisations).set({ ...c, updatedAt: new Date() }).where(eq(organisations.id, operatorId));
+  }
 
   const realTails = new Set(pack.aircraft.filter((x) => x.realTail && x.tail).map((x) => x.tail!.trim().toUpperCase()));
   const hidden = (t: string | null | undefined) => isMaskedTail(t) && !realTails.has((t ?? "").trim().toUpperCase());
