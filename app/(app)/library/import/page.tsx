@@ -62,7 +62,7 @@ export default async function LibraryImport({ searchParams }: { searchParams: SP
           no tail. Photos go in approved; an aircraft that already has its 1 EXT, 2 CABIN and 1 FLOOR PLAN keeps them.
         </p>
         <form action={importLibraryPackAction} className="inline-form">
-          <input type="file" name="files" multiple accept=".json,image/*" required aria-label="Pack files" />
+          <input type="file" name="files" multiple accept=".json,application/json,image/*" required aria-label="Pack files" />
           <button type="submit">Import</button>
         </form>
       </div>

@@ -57,6 +57,7 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
           <button type="submit" className="secondary" style={{ width: "100%" }}>Sign in with Google</button>
         </form>
       </div>
+      <p className="small muted" style={{ textAlign: "center" }}><Link href="/privacy">Privacy</Link> · <Link href="/terms">Terms</Link></p>
     </main>
   );
 }
