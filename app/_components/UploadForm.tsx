@@ -59,7 +59,7 @@ export default function UploadForm({ action }: { action: (fd: FormData) => Promi
   const pct = total ? Math.round((bytes.all ? bytes.sent / bytes.all : done / total) * 100) : 0;
 
   return (
-    <form ref={form} action={action} onSubmit={send} className="card">
+    <form ref={form} action={action} onSubmit={send} className="card" data-own-busy>
       <p className="muted small" style={{ marginTop: 0 }}>You&apos;ll check each photo in Review before anything is saved to an aircraft. Photos inside a PDF come out as separate photos.</p>
       <PhotoPicker name="files" accept="image/jpeg,image/png,image/webp,application/pdf" />
       <details className="collapse" style={{ marginTop: 10 }}>

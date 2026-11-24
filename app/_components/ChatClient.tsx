@@ -30,7 +30,7 @@ const UI_EN = {
   noVoice: "Voice input isn't available in this browser. Chrome or Edge work best.",
   blocked: "The microphone is blocked. Allow it in the browser's address bar.",
   stopped: "Voice input stopped ({e}).", nothingHeard: "I stopped listening because I heard nothing for a while.",
-  files: "{n} file(s) attached", checking: "Toy is checking…", sorry: "Sorry, something went wrong on my side. Please try that again.",
+  files: "{n} file(s) attached", checking: "Toy is working on it…", working: "Working…", sorry: "Sorry, something went wrong on my side. Please try that again.",
   attached: "Attached:", copy: "Copy message", copied: "Copied. Paste it into your chat or email.",
   copyFail: "Could not copy automatically. Select the message above and copy it.",
   openAircraft: "Open the aircraft →", review: "Review queue →", view: "view?",
@@ -62,7 +62,7 @@ const UI_HANT: UI = {
   noVoice: "此瀏覽器不支援語音輸入。建議使用 Chrome 或 Edge。",
   blocked: "麥克風已被封鎖。請在瀏覽器網址列允許使用麥克風。",
   stopped: "語音輸入已停止（{e}）。", nothingHeard: "因為一段時間沒有聽到聲音，已停止收音。",
-  files: "已附上 {n} 個檔案", checking: "Toy 正在查核…", sorry: "抱歉，我這邊出了問題，請再試一次。",
+  files: "已附上 {n} 個檔案", checking: "Toy 正在處理…", working: "處理中…", sorry: "抱歉，我這邊出了問題，請再試一次。",
   attached: "附件：", copy: "複製訊息", copied: "已複製。請貼到你的聊天或電郵中。",
   copyFail: "無法自動複製。請選取上面的訊息再複製。",
   openAircraft: "打開飛機 →", review: "審核隊列 →", view: "角度？",
@@ -290,7 +290,8 @@ export default function ChatClient() {
     setText("");
     setTimeout(() => boxRef.current?.focus(), 0);
   };
-  useEffect(() => { endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" }); }, [msgs]);
+  // Also when Toy starts working, so the "working on it" note is in view.
+  useEffect(() => { endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" }); }, [msgs, pending]);
   // The last quote survives a reload or a visit to another page (in this tab), so prices and changes can still be typed.
   useEffect(() => {
     try {
@@ -301,9 +302,13 @@ export default function ChatClient() {
     } catch { /* storage blocked or old data: start fresh */ }
   }, []);
 
+  /** Set the moment a message goes, before React re-renders: a quick second tap or Ctrl+Enter sends nothing. */
+  const sendingRef = useRef(false);
   const send = (override?: { text: string; label?: string }) => {
     const t = override?.text ?? text;
     if (!t.trim() && files.length === 0) return;
+    if (pending || sendingRef.current) return;
+    sendingRef.current = true;
     const fd = new FormData();
     fd.set("text", t);
     fd.set("draft", draft);
@@ -313,7 +318,8 @@ export default function ChatClient() {
     if (!override) setText("");
     setFiles([]);
     if (fileRef.current) fileRef.current.value = "";
-    start(async () => {
+    start(async () => { try { await turn(); } finally { sendingRef.current = false; } });
+    async function turn() {
       let r: TurnResult;
       const asked = performance.now();
       try {
@@ -338,7 +344,7 @@ export default function ChatClient() {
         u.lang = voice;
         window.speechSynthesis.speak(u);
       }
-    });
+    }
   };
   sendRef.current = (t) => send({ text: t });
   autoSendRef.current = autoSend;
@@ -506,7 +512,7 @@ export default function ChatClient() {
           </div>
         ),
       )}
-      {pending && <div className="card muted" style={{ marginRight: "8%" }}>{ui.checking}</div>}
+      {pending && <div className="card muted toy-working" role="status" aria-live="polite" style={{ marginRight: "8%" }}><span className="spinner" aria-hidden="true" />{ui.checking}</div>}
       <div ref={endRef} />
 
       <div className="card composer">
@@ -527,7 +533,7 @@ export default function ChatClient() {
           <button type="button" className="secondary" onClick={() => fileRef.current?.click()} aria-label={ui.attach}><Icon name="photos" />{files.length > 0 && <b>{files.length}</b>}<span className="lbl">{files.length > 0 ? "" : ui.attach}</span></button>
           <button type="button" className="secondary" onClick={startAdd}>{ui.templateBtn}</button>
           {canListen && <button type="button" className={listening ? "danger" : "secondary"} onClick={toggleMic} aria-pressed={listening}><Icon name="mic" /><span className="lbl">{listening ? ui.stop : ui.speak}</span></button>}
-          <button type="button" className="send" onClick={() => send()} disabled={pending || (!text.trim() && files.length === 0)}><Icon name="send" />{ui.send}</button>
+          <button type="button" className="send" onClick={() => send()} disabled={pending || (!text.trim() && files.length === 0)} aria-busy={pending}>{pending ? <><span className="spinner" aria-hidden="true" />{ui.working}</> : <><Icon name="send" />{ui.send}</>}</button>
         </div>
         {listening && <p className="small muted">{ui.listening}</p>}
         {voiceMsg && <p className="small" style={{ color: "var(--warn)" }}>{voiceMsg}</p>}

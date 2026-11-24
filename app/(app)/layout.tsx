@@ -11,6 +11,7 @@ import { Suspense } from "react";
 import { SpeedTracker } from "../_components/SpeedTracker";
 import VoiceCommand from "../_components/VoiceCommand";
 import TableLabels from "../_components/TableLabels";
+import BusyHints from "../_components/BusyHints";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const s = await requireUser(); // redirects to /login unless an invited user (or the admin) is signed in
@@ -53,7 +54,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       ) : s.daysLeft !== null ? (
         <div className="account-bar">Trial: {s.daysLeft <= 1 ? "last day" : `${s.daysLeft} days left`}</div>
       ) : null}
-      <Suspense fallback={null}><SpeedTracker /></Suspense>
+      <Suspense fallback={null}><SpeedTracker /><BusyHints /></Suspense>
       <main>{children}</main>
       <VoiceCommand />
       <TableLabels />
