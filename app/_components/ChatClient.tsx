@@ -12,7 +12,7 @@ import { ShareBox } from "./ShareBox";
 import { copyText, fetchPhoto } from "./copyText";
 import Icon from "./Icon";
 import { CHAT_LANGUAGES, parseChatLang, toHans, trClassification, type ChatLang } from "@/domain/chocksText";
-import { savedVoice, saveVoice } from "./voice";
+import { VOICE_ON, savedVoice, saveVoice } from "./voice";
 
 /** The words on the chat itself. Toy's own sentences come from the server in the chosen language. */
 const UI_EN = {
@@ -20,7 +20,7 @@ const UI_EN = {
   intro: "What can I do for you?",
   doQuote: "Draft a quote", doAdd: "Add an aircraft or photos", doFind: "Find aircraft",
   addHint: "Fill in what you know (leave the rest blank), attach photos if you have them, then press Send. Nothing is saved until you confirm.",
-  askHint: "Or just type or say what you need, e.g. “Give me CapaJet's G550 quote and photos”.",
+  askHint: "Or just type what you need, e.g. “Give me CapaJet's G550 quote and photos”.",
   template: "Operator: \nRegion: \nAircraft type: \nTail number: \nYOM: \nCapacity: ",
   placeholderNew: "Ask Toy, or tap Template…",
   placeholderReply: "Reply to Toy, or add more details…",
@@ -52,7 +52,7 @@ const UI_HANT: UI = {
   intro: "有什麼可以幫你？",
   doQuote: "草擬報價", doAdd: "新增飛機或相片", doFind: "搜尋飛機",
   addHint: "填上你知道的資料（其餘留空），有相片可一併附上，然後按傳送。確認前不會儲存任何內容。",
-  askHint: "也可以直接輸入或說出你的需要，例如「給我 CapaJet 的 G550 報價和相片」。",
+  askHint: "也可以直接輸入你的需要，例如「給我 CapaJet 的 G550 報價和相片」。",
   template: "營運商：\n地區：\n機型：\n機尾號：\n出廠年份：\n載客量：",
   placeholderNew: "問 Toy，或按「範本」…",
   placeholderReply: "回覆 Toy，或補充更多資料…",
@@ -227,6 +227,7 @@ interface Recognition {
 }
 type RecognitionCtor = new () => Recognition;
 const getRecognition = (): RecognitionCtor | null => {
+  if (!VOICE_ON) return null; // voice input is switched off (see voice.ts)
   const w = window as unknown as { SpeechRecognition?: RecognitionCtor; webkitSpeechRecognition?: RecognitionCtor };
   return w.SpeechRecognition ?? w.webkitSpeechRecognition ?? null;
 };
@@ -546,7 +547,7 @@ export default function ChatClient() {
             </select>
           </label>
         )}
-        <details className="voice-opts">
+        {canListen && <details className="voice-opts">
           <summary className="small muted">{ui.voiceOptions}</summary>
           {(canListen || canSpeak) ? (
             <div className="row small" style={{ marginTop: 6, alignItems: "center" }}>
@@ -554,8 +555,7 @@ export default function ChatClient() {
               {canListen && <label style={{ flex: "0 0 auto" }}><input type="checkbox" checked={autoSend} onChange={(e) => setAutoSend(e.target.checked)} /> {ui.autoSend}</label>}
             </div>
           ) : null}
-          {!canListen && <p className="small muted" style={{ margin: "6px 0 0" }}>{ui.noVoice}</p>}
-        </details>
+        </details>}
       </div>
     </div>
   );

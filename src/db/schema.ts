@@ -70,6 +70,10 @@ export const users = pgTable(
     libraryAccess: boolean("library_access").notNull().default(false),
     /** Which library operators they may see: null = all of them, otherwise only these (library organisation ids). */
     libraryOperators: jsonb("library_operators").$type<string[] | null>(),
+    /** Password sign-in (scrypt; null = no password set, Google only). Too many wrong tries lock it for a while. */
+    passwordHash: text("password_hash"),
+    passwordFailures: integer("password_failures").notNull().default(0),
+    passwordLockedUntil: timestamp("password_locked_until", { withTimezone: true }),
     createdAt: created(),
     updatedAt: updated(),
   },
@@ -602,6 +606,8 @@ export const signInLinks = pgTable(
     id: pk(),
     email: text("email").notNull(),
     tokenHash: text("token_hash").notNull(),
+    /** sign_in (older emailed sign-in links) | password (set or reset a password) */
+    purpose: text("purpose").notNull().default("sign_in"),
     expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
     usedAt: timestamp("used_at", { withTimezone: true }),
     createdAt: created(),

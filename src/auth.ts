@@ -1,20 +1,25 @@
-import NextAuth from "next-auth";
+import NextAuth, { CredentialsSignin } from "next-auth";
 import Google from "next-auth/providers/google";
 import Credentials from "next-auth/providers/credentials";
 import { getDb } from "./db/client";
-import { mayUseApp, consumeSignInLink } from "./domain/signInLinks";
+import { mayUseApp } from "./domain/signInLinks";
+import { checkPassword } from "./domain/passwords";
+
+/** Too many wrong passwords: the sign-in page says to wait (or reset it). */
+class LockedSignin extends CredentialsSignin { code = "locked"; }
 
 // Reads AUTH_SECRET, AUTH_GOOGLE_ID and AUTH_GOOGLE_SECRET from the environment.
 export const { handlers, auth, signIn, signOut } = NextAuth({
   providers: [
     Google,
-    // An emailed sign-in link (for people who don't use Google): the link's secret is checked and used up here.
+    // Email and password, for people who don't sign in with Google (set by an emailed link, see /login/password).
     Credentials({
-      id: "email-link",
-      credentials: { token: {} },
+      id: "password",
+      credentials: { email: {}, password: {} },
       async authorize(c) {
-        const email = await consumeSignInLink(await getDb(), String(c?.token ?? ""));
-        return email ? { id: email, email } : null;
+        const r = await checkPassword(await getDb(), String(c?.email ?? ""), String(c?.password ?? ""));
+        if (r.result === "locked") throw new LockedSignin();
+        return r.result === "ok" ? { id: r.email, email: r.email } : null;
       },
     }),
   ],
@@ -22,11 +27,11 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   pages: { signIn: "/login" },
   trustHost: true,
   callbacks: {
-    // Invite-only: the admin (OWNER_EMAIL) and anyone the admin invited, with a verified Google account or an
-    // emailed link (which proves the email, and was only sent to invited people).
+    // Invite-only: the admin (OWNER_EMAIL) and anyone the admin invited, with a verified Google account or their
+    // password (only invited people can set one).
     async signIn({ account, profile, user }) {
       let email: string | null | undefined;
-      if (account?.provider === "email-link") email = user.email;
+      if (account?.provider === "password") email = user.email;
       else if (profile?.email_verified === true) email = profile.email;
       if (!email) return false;
       const ok = await mayUseApp(await getDb(), email);

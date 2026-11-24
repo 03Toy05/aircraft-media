@@ -17,6 +17,7 @@ import * as dir from "@/domain/directory";
 import * as contacts from "@/domain/contacts";
 import * as quoteTemplates from "@/domain/quoteTemplates";
 import * as quoteShares from "@/domain/quoteShares";
+import * as passwords from "@/domain/passwords";
 import * as library from "@/domain/library";
 import { startImportJob } from "@/domain/importJobs";
 import { after } from "next/server";
@@ -817,6 +818,26 @@ export async function setLibraryAccessAction(fd: FormData) {
   await library.setLibraryAccess(await getDb(), str(fd, "userId"), on);
   revalidatePath("/admin");
   redirect(withParam("/admin", "ok", on ? "Library shared with them." : "Library no longer shared with them."));
+}
+
+/** Settings: set (Google users) or change my password. Changing needs the current one. */
+export async function changePasswordAction(fd: FormData) {
+  const { email } = await requireUser();
+  const db = await getDb();
+  // Passwords exactly as typed (not trimmed).
+  const raw = (k: string) => String(fd.get(k) ?? "");
+  const pw = raw("password");
+  const back = (k: "error" | "ok", msg: string) => redirect(withParam("/settings", k, msg));
+  if (pw !== raw("again")) back("error", "The two new passwords aren't the same.");
+  const problem = passwords.passwordProblem(pw);
+  if (problem) back("error", problem);
+  if (await passwords.hasPassword(db, email)) {
+    const r = await passwords.checkPassword(db, email, raw("current"));
+    if (r.result === "locked") back("error", "Too many wrong tries. Wait 15 minutes and try again.");
+    if (r.result !== "ok") back("error", "The current password isn't right.");
+  }
+  if (!(await passwords.setPassword(db, email, pw))) back("error", "The password couldn't be saved.");
+  back("ok", "Password saved. Use it with your email on the sign-in page.");
 }
 
 /** Users page: which library operators this person may see (all of them, or only the ticked ones). */

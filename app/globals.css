@@ -13,6 +13,7 @@ nav.top a { padding: 6px 10px; border-radius: 6px; color: var(--text); }
 nav.top a:hover { background: var(--bg); text-decoration: none; }
 nav.top .brand { font-weight: 700; margin-right: 12px; }
 nav.top .spacer { flex: 1; }
+.nav-trial { color: var(--muted); white-space: nowrap; margin-right: 8px; }
 main { max-width: 1180px; margin: 0 auto; padding: 20px 16px 60px; }
 h1 { font-size: 20px; margin: 0 0 12px; } h2 { font-size: 16px; margin: 20px 0 8px; } h3 { font-size: 14px; margin: 0 0 8px; }
 .card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; margin-bottom: 14px; }
@@ -196,7 +197,7 @@ button.block-btn { width: 100%; justify-content: center; min-height: 42px; font-
 @media (min-width: 900px) {
   .quote-right { position: sticky; top: 12px; max-height: calc(100vh - 24px); overflow: auto; }
   /* Laptop forms: the label beside its field, controls on one left edge. */
-  :is(.card form, form.card):not(.row):has(> label + :is(input, select, textarea, .textbox)) { display: grid; grid-template-columns: 170px minmax(0, 1fr); gap: 8px 14px; align-items: center; }
+  :is(.card form, form.card):not(.row):not(.login-email):has(> label + :is(input, select, textarea, .textbox)) { display: grid; grid-template-columns: 170px minmax(0, 1fr); gap: 8px 14px; align-items: center; }
   :is(.card form, form.card):not(.row):has(> label + :is(input, select, textarea, .textbox)) > * { grid-column: 2; margin-top: 0; margin-bottom: 0; }
   :is(.card form, form.card):not(.row):has(> label + :is(input, select, textarea, .textbox)) > label:has(+ :is(input, select, textarea, .textbox)) { grid-column: 1; text-align: right; }
   :is(.card form, form.card):not(.row):has(> label + :is(input, select, textarea, .textbox)) > input[type=hidden] { display: none; }
@@ -223,6 +224,7 @@ details.collapse[open] > summary { margin-bottom: 8px; }
   nav.top { padding: 8px 12px; flex-wrap: nowrap; position: sticky; top: 0; z-index: 20; padding-top: calc(8px + env(safe-area-inset-top)); }
   nav.top > a, nav.top > .spacer, nav.top > span.muted, nav.top > form { display: none; }
   nav.top .brand { margin-right: 0; }
+  nav.top .nav-trial { margin-left: auto; margin-right: 0; font-size: 12px; }
   main { padding: 12px 12px calc(84px + env(safe-area-inset-bottom)); }
   h1 { font-size: 20px; margin-bottom: 10px; }
   .card { padding: 12px; margin-bottom: 12px; }
@@ -464,3 +466,9 @@ ul.history li:last-child { border-bottom: 0; }
 .lib-ops-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 2px 12px; width: 100%; max-height: 260px; overflow: auto; }
 .lib-ops label { display: flex; align-items: center; gap: 6px; font-weight: 400; margin: 0; }
 .lib-ops input[type=radio], .lib-ops input[type=checkbox] { width: auto; min-height: 0; margin: 0; }
+
+/* Sign-in and password forms: one field under another. */
+.login-email { display: flex; flex-direction: column; gap: 6px; }
+.login-email label { margin: 4px 0 0; text-align: left; }
+.login-email button { margin-top: 6px; }
+.login-or { text-align: center; margin: 14px 0 8px; }

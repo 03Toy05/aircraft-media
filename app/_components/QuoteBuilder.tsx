@@ -561,7 +561,7 @@ export default function QuoteBuilder({ aircraft, operators, preferred: preferred
               <TextBox dir={dir} speechLang={speech} rows={rows(closing)} value={closing} onChange={(v) => setEdit("closing", v)} ariaLabel="Closing line" />
             </Piece>
           )}
-          {chosen.length > 0 && <p className="small muted">Tap a box for Bold, Italic, Underline and the microphone. Prices and extra lines stay when you change the details or the language.</p>}
+          {chosen.length > 0 && <p className="small muted">Tap a box for Bold, Italic and Underline. Prices and extra lines stay when you change the details or the language.</p>}
           {styled && (
             <details className="collapse" open>
               <summary className="small">Preview</summary>

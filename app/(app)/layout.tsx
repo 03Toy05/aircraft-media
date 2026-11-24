@@ -39,6 +39,9 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         {libraryOn && <Link href="/library"><Icon name="plane" />Library</Link>}
         {s.isAdmin && <Link href="/admin"><Icon name="contacts" />Users</Link>}
         <span className="spacer" />
+        {!s.viewingAs && !s.trialEnded && s.daysLeft !== null && (
+          <span className="nav-trial small">Trial: {s.daysLeft <= 1 ? "last day" : `${s.daysLeft} days left`}</span>
+        )}
         <span className="muted small">{email}</span>
         <form action={signOutAction}>
           <button className="secondary" type="submit"><Icon name="signout" />Sign out</button>
@@ -51,8 +54,6 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         </div>
       ) : s.trialEnded ? (
         <div className="account-bar ended">Your 14-day trial has ended. You can still look and share, but not add or change anything. Ask the admin to extend it.</div>
-      ) : s.daysLeft !== null ? (
-        <div className="account-bar">Trial: {s.daysLeft <= 1 ? "last day" : `${s.daysLeft} days left`}</div>
       ) : null}
       <Suspense fallback={null}><SpeedTracker /><BusyHints /></Suspense>
       <main>{children}</main>

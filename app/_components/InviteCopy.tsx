@@ -3,11 +3,11 @@
 import { useState } from "react";
 import { copyText } from "./copyText";
 
-/** The invite message for one person (the app link and the exact Google email to sign in with), ready to paste. */
+/** The invite message for one person (the app link and the email to sign in with), ready to paste. */
 export function inviteMessage(name: string, email: string, link: string, days: number | null) {
   return [
     `Hi ${name}, you're invited to Aircraft Media: ${link}`,
-    `Tap "Sign in with Google" and choose ${email}. It has to be that Google account; another one will not get in.`,
+    `First time: tap "First time here, or forgot your password?", enter ${email}, and set a password from the email you get. Or, if ${email} is a Google account, tap "Sign in with Google". It has to be that email; another one will not get in.`,
     days ? `You have a ${days}-day free trial from your first sign-in.` : null,
   ].filter(Boolean).join("\n\n");
 }

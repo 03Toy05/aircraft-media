@@ -103,7 +103,7 @@ export default async function Quote({ searchParams }: { searchParams: SP }) {
   return (
     <>
       <h1>Quote</h1>
-      <p className="muted">Find the operator, tick the aircraft, then edit and send the message with the photos. Or tap the microphone and say it. <a href="/quote/template">Change the standard wording</a>.</p>
+      <p className="muted">Find the operator, tick the aircraft, then edit and send the message with the photos. <a href="/quote/template">Change the standard wording</a>.</p>
       <QuoteBuilder aircraft={options} operators={operators} preferred={preferred} initialIds={initial} initialPrices={initialPrices} initialKinds={initialKinds} templates={await getQuoteTemplates(db, actor.tenantId)} />
     </>
   );

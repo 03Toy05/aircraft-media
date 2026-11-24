@@ -27,7 +27,7 @@ describe("Sign-in by emailed link", () => {
     expect(await consumeSignInLink(t.db, token!)).toBeNull(); // works once
 
     const old = await createSignInLink(t.db, "owner@example.test");
-    expect(await consumeSignInLink(t.db, old!, new Date(Date.now() + 21 * 60_000))).toBeNull(); // expired
+    expect(await consumeSignInLink(t.db, old!, "password", new Date(Date.now() + 31 * 60_000))).toBeNull(); // expired
   });
 
   it("stops after a few links in a quarter of an hour, and refuses people turned off since", async () => {
@@ -74,5 +74,39 @@ describe("Library operators per person", () => {
     expect(scopeHasAircraft(await libraryScope(t.db, who), acA)).toBe(false);
     // The admin always sees everything.
     expect(await libraryScope(t.db, { isAdmin: true, actor: { id: u.id } })).toEqual({ all: true });
+  });
+});
+
+describe("Passwords", () => {
+  it("sets, checks, and locks after five wrong tries", async () => {
+    const t = await setup();
+    const { checkPassword, hasPassword, passwordProblem, setPassword } = await import("../src/domain/passwords");
+    expect(passwordProblem("short")).toBeTruthy();
+    expect(passwordProblem(" spaced out ")).toBeTruthy();
+    expect(await hasPassword(t.db, "owner@example.test")).toBe(false);
+    expect((await checkPassword(t.db, "owner@example.test", "anything1")).result).toBe("wrong"); // none set yet
+
+    expect(await setPassword(t.db, "Owner@Example.test", "correct horse")).toBe(true);
+    expect(await setPassword(t.db, "nobody@example.test", "correct horse")).toBe(false);
+    const [u] = await t.db.select({ h: users.passwordHash }).from(users).where(eq(users.email, "owner@example.test"));
+    expect(u.h).not.toContain("correct horse"); // stored hashed
+    expect(await checkPassword(t.db, " OWNER@example.test", "correct horse")).toEqual({ result: "ok", email: "owner@example.test" });
+
+    for (let i = 0; i < 4; i++) expect((await checkPassword(t.db, "owner@example.test", "wrong guess")).result).toBe("wrong");
+    expect((await checkPassword(t.db, "owner@example.test", "wrong guess")).result).toBe("locked");
+    expect((await checkPassword(t.db, "owner@example.test", "correct horse")).result).toBe("locked"); // even the right one, for now
+    expect((await checkPassword(t.db, "owner@example.test", "correct horse", new Date(Date.now() + 16 * 60_000))).result).toBe("ok");
+
+    // A new password from an emailed link clears the lock.
+    for (let i = 0; i < 5; i++) await checkPassword(t.db, "owner@example.test", "wrong guess");
+    const token = await createSignInLink(t.db, "owner@example.test", "password");
+    expect(await consumeSignInLink(t.db, token!, "sign_in")).toBeNull(); // a password link is only for passwords
+    expect(await consumeSignInLink(t.db, token!, "password")).toBe("owner@example.test");
+    await setPassword(t.db, "owner@example.test", "new password 2");
+    expect((await checkPassword(t.db, "owner@example.test", "new password 2")).result).toBe("ok");
+
+    // Turned off: the right password no longer gets in.
+    await t.db.update(users).set({ status: "blocked" }).where(eq(users.email, "owner@example.test"));
+    expect((await checkPassword(t.db, "owner@example.test", "new password 2")).result).toBe("wrong");
   });
 });

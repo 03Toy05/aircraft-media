@@ -4,7 +4,8 @@ import { actionExecutions, organisations, users, verifiedWhatsappNumbers } from 
 import { requireOwner } from "@/lib/session";
 import { LANGUAGES } from "@/domain/settings";
 import { MAX_PREFERRED_OPERATORS, getPreferredOperators } from "@/domain/directory";
-import { addNumberAction, deactivateNumberAction, setLanguageAction, setLibraryOptInAction, setPreferredOperatorsAction } from "../../actions";
+import { addNumberAction, changePasswordAction, deactivateNumberAction, setLanguageAction, setLibraryOptInAction, setPreferredOperatorsAction } from "../../actions";
+import { MIN_PASSWORD, hasPassword } from "@/domain/passwords";
 import Choice from "../../_components/Choice";
 import { Flash, Key, one, type SP } from "../../_components/ui";
 import SearchSelect from "../../_components/SearchSelect";
@@ -22,12 +23,27 @@ export default async function Settings({ searchParams }: { searchParams: SP }) {
   const history = await db.select().from(actionExecutions).where(eq(actionExecutions.tenantId, actor.tenantId)).orderBy(desc(actionExecutions.createdAt)).limit(60);
   const orgs = (await db.select().from(organisations).where(and(eq(organisations.tenantId, actor.tenantId), eq(organisations.active, true)))).sort((a, b) => a.canonicalName.localeCompare(b.canonicalName));
   const preferred = await getPreferredOperators(db, actor.tenantId);
+  const havePassword = await hasPassword(db, email);
   const configured =(name: string) => (process.env[name] ? "configured" : "not configured");
   return (
     <>
       <h1>Settings</h1>
       <Flash error={one(sp.error)} ok={one(sp.ok)} />
       <div className="grid g2">
+        <div className="card">
+          <h3>Password</h3>
+          <p className="small muted">{havePassword ? "Change the password you sign in with." : "You sign in with Google. Set a password to sign in with your email instead (Google keeps working)."}</p>
+          <form action={changePasswordAction} className="login-email">
+            <input type="email" name="username" value={email} autoComplete="username" readOnly hidden />
+            {havePassword && <><label htmlFor="current" className="small">Current password</label>
+              <input id="current" name="current" type="password" required autoComplete="current-password" /></>}
+            <label htmlFor="newpw" className="small">New password (at least {MIN_PASSWORD} characters)</label>
+            <input id="newpw" name="password" type="password" required minLength={MIN_PASSWORD} autoComplete="new-password" />
+            <label htmlFor="again" className="small">Type it again</label>
+            <input id="again" name="again" type="password" required minLength={MIN_PASSWORD} autoComplete="new-password" />
+            <div><button className="secondary" type="submit">{havePassword ? "Change password" : "Set password"}</button></div>
+          </form>
+        </div>
         <div className="card">
           <h3>Owner</h3>
           <p>{email}</p>

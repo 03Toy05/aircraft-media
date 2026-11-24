@@ -9,8 +9,14 @@ export interface Recognition {
 }
 type RecognitionCtor = new () => Recognition;
 
+/**
+ * Voice input is switched off: the browsers' own speech recognition got too little right (aviation words, mixed
+ * Cantonese and English). With it off, every microphone in the app is hidden. Turn on again with a better speech service.
+ */
+export const VOICE_ON = false;
+
 export const getRecognition = (): RecognitionCtor | null => {
-  if (typeof window === "undefined") return null;
+  if (!VOICE_ON || typeof window === "undefined") return null;
   const w = window as unknown as { SpeechRecognition?: RecognitionCtor; webkitSpeechRecognition?: RecognitionCtor };
   return w.SpeechRecognition ?? w.webkitSpeechRecognition ?? null;
 };
