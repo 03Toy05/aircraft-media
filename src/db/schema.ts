@@ -654,3 +654,36 @@ export const quoteVersions = pgTable(
   },
   (t) => [uniqueIndex("quote_versions_uq").on(t.requestId, t.version)],
 );
+
+/**
+ * The private link a client opens to see a request's quote (the latest version). Only whoever has the link sees it;
+ * the broker can switch it off or let it expire. When it was first and last opened is kept, nothing more.
+ */
+export const quoteLinks = pgTable(
+  "quote_links",
+  {
+    id: pk(),
+    tenantId: uuid("tenant_id").notNull(),
+    requestId: uuid("request_id").notNull().references(() => requests.id),
+    token: text("token").notNull(),
+    active: boolean("active").notNull().default(true),
+    expiresAt: timestamp("expires_at", { withTimezone: true }),
+    firstViewedAt: timestamp("first_viewed_at", { withTimezone: true }),
+    lastViewedAt: timestamp("last_viewed_at", { withTimezone: true }),
+    createdBy: uuid("created_by").notNull(),
+    createdAt: created(),
+  },
+  (t) => [uniqueIndex("quote_links_token_uq").on(t.token), index("quote_links_request_idx").on(t.requestId)],
+);
+
+/** A workspace's look on its quotes (PDF and client page): its logo (a PNG, kept small) and its colour. */
+export const brands = pgTable("brands", {
+  tenantId: uuid("tenant_id").primaryKey(),
+  /** Base64 PNG, at most 800 x 400. */
+  logoPng: text("logo_png"),
+  logoWidth: integer("logo_width"),
+  logoHeight: integer("logo_height"),
+  /** "#1f3a5f" */
+  color: text("color"),
+  updatedAt: updated(),
+});

@@ -12,6 +12,10 @@ import { routeLabel, routingLines, type AirportInfo, type Airports, type Leg } f
 import { estimateMinutes } from "@/domain/flightTime";
 import type { AircraftCategory } from "@/domain/constants";
 import RoutingPanel, { emptyLeg } from "./RoutingPanel";
+import ClientLinkButtons from "./ClientLinkButtons";
+
+/** Languages the PDF can be made in (see quotePdf.ts); the client link shows every language. */
+const PDF_LANGS: string[] = ["en", "zh-Hant", "ja", "vi", "fr", "de", "id", "ru"];
 import { QUOTE_LANGUAGES, QUOTE_LOCALE, QUOTE_SUBJECT, QUOTE_WORDS, buildQuoteParts, defaultQuoteTemplate, renumberBlock, type QuoteLanguage, type QuoteTemplate } from "@/domain/quote";
 import { forOtherApps, parseStyled } from "@/domain/textStyle";
 import { parseQuoteCommands, type QuoteCommand } from "@/domain/quoteCommands";
@@ -86,7 +90,8 @@ export default function QuoteBuilder({ aircraft, operators, preferred: preferred
 }) {
   // -- the routing (top of the page) and the request it is saved under
   const [req, setReq] = useState<{ id: string; reference: string } | null>(request ? { id: request.id, reference: request.reference } : null);
-  const [locked, setLocked] = useState(!!request?.locked);
+  // Every version may add, remove or change legs (the request keeps one reference).
+  const locked = false;
   const [legs, setLegs] = useState<Leg[]>(opened?.legs?.length ? opened.legs : request?.legs.length ? request.legs : [emptyLeg()]);
   const [airportMap, setAirportMap] = useState<Airports>(airports ?? {});
   const addAirport = (a: AirportInfo) => setAirportMap((m) => (m[a.icao] ? m : { ...m, [a.icao]: a }));
@@ -121,6 +126,8 @@ export default function QuoteBuilder({ aircraft, operators, preferred: preferred
   const [emailTo, setEmailTo] = useState("");
   const [subject, setSubject] = useState("");
   const [copyMe, setCopyMe] = useState(true);
+  const [emailPdf, setEmailPdf] = useState(true);
+  const [emailLink, setEmailLink] = useState(true);
   const styleFor: "whatsapp" | "other" = app === "whatsapp" ? "whatsapp" : "other";
 
   // -- finding the operator
@@ -184,7 +191,7 @@ export default function QuoteBuilder({ aircraft, operators, preferred: preferred
     try { localStorage.removeItem(draftKey); } catch { /* ignore */ }
     setIds([]); setPrices({}); setExtras({}); setEdits({}); setFlip(new Set()); setOpId(""); setRestored(false); setMsg(null); setQuoteKey(""); setEmailTo(""); setSubject("");
     setSteps({ op: true, ac: true, lang: false });
-    if (req) { setReq(null); setLocked(false); window.history.replaceState(null, "", "/quote"); }
+    if (req) { setReq(null); window.history.replaceState(null, "", "/quote"); }
     setLegs([emptyLeg()]); setSaved(null);
   };
 
@@ -362,7 +369,9 @@ export default function QuoteBuilder({ aircraft, operators, preferred: preferred
       if (!quoteKey) setQuoteKey(k);
       const r = await sendQuoteEmailAction({
         to: emailTo, subject: subject.trim() || (routeText ? `${QUOTE_SUBJECT[lang]} – ${routeText}` : QUOTE_SUBJECT[lang]), text: textFor("whatsapp"), rtl: lang === "ar", copyMe, quoteKey: k, options: chosen.length,
-        photos: photos.map(({ a, i, p }) => ({ id: p.url.replace(/^.*\/api\/media\//, ""), name: `Option ${i + 1} - ${a.type} - ${p.label}${p.representative ? " (representative)" : ""}` })),
+        // With the PDF attached, the photos are already in it: send them only if still ticked below.
+        photos: emailPdf && savedVersion ? [] : photos.map(({ a, i, p }) => ({ id: p.url.replace(/^.*\/api\/media\//, ""), name: `Option ${i + 1} - ${a.type} - ${p.label}${p.representative ? " (representative)" : ""}` })),
+        request: req ? { id: req.id, version: savedVersion ?? undefined, pdf: emailPdf && !!savedVersion, link: emailLink } : undefined,
       });
       setMsg(r.message);
     } catch {
@@ -372,11 +381,13 @@ export default function QuoteBuilder({ aircraft, operators, preferred: preferred
 
   // -- saving the quote (with its routing) as the next version of its request, or the first of a new one
   const [saved, setSaved] = useState<SaveResult | null>(null);
+  /** The version on screen as saved (just saved, or reopened): the one a PDF is made of. */
+  const savedVersion = saved?.ok && saved.version ? saved.version : opened?.version ?? null;
   async function saveVersion(asNew = false) {
     setBusy(true); setSaved(null);
     try {
       const snapshot = {
-        lang, text: textFor("whatsapp"), legs: fullLegs,
+        lang, text: textFor("whatsapp"), legs: fullLegs, greeting, closing, utc: tpl.times !== "local",
         options: chosen.map((a, i) => ({
           aircraftId: a.id, type: a.type, operator: a.operator, tail: a.tail, base: a.base, yom: a.yom, yor: a.yor, capacity: a.capacity,
           price: prices[a.id] ?? "", extra: extras[a.id] ?? "",
@@ -394,7 +405,6 @@ export default function QuoteBuilder({ aircraft, operators, preferred: preferred
           try { localStorage.removeItem(draftKey); } catch { /* ignore */ }
         }
         setReq({ id: r.requestId, reference: r.reference });
-        setLocked(true);
         window.history.replaceState(null, "", `/quote?request=${r.requestId}&version=${r.version}`);
       }
     } catch {
@@ -466,8 +476,8 @@ export default function QuoteBuilder({ aircraft, operators, preferred: preferred
   };
   const shownToggles: [keyof typeof inc, string][] = [...(fullLegs.length ? [["routing", "Routing"] as [keyof typeof inc, string]] : []), ["operator", "Operator"], ["tail", "Tail"], ["base", "Base"], ["notes", "Notes"]];
   const newRequest = () => {
-    if (!window.confirm("Keep this quote, but save it under a new request with different airports or dates?")) return;
-    setReq(null); setLocked(false); setSaved(null);
+    if (!window.confirm("Keep this quote, but save it under a new request (a new reference) the next time you save?")) return;
+    setReq(null); setSaved(null);
     window.history.replaceState(null, "", "/quote");
   };
 
@@ -483,7 +493,8 @@ export default function QuoteBuilder({ aircraft, operators, preferred: preferred
         <details className="card step" open>
           <summary><h3>Routing</h3><span className="sum">{routeText || "Airports, dates, passengers"}</span></summary>
           <RoutingPanel legs={legs} airports={airportMap} onChange={setLegs} onAirport={addAirport} locked={locked}
-            estimateFrom={estimateFor?.type ?? null} onNewRequest={req ? newRequest : undefined} />
+            estimateFrom={estimateFor?.type ?? null} />
+          {req && <p className="small muted" style={{ margin: "6px 0 0" }}>Change any leg and save: it becomes the next version of {req.reference}. <button type="button" className="linkish" onClick={newRequest}>Start a new request instead</button></p>}
         </details>
         {restored && !opened && (
           <div className="draft-note small">
@@ -702,7 +713,8 @@ export default function QuoteBuilder({ aircraft, operators, preferred: preferred
               {saved ? (
                 <span className="small" role="status">
                   {saved.message} {saved.ok && saved.requestId && <a href={`/requests/${saved.requestId}`}>See all versions</a>}
-                  {saved.routingChanged && <> <button type="button" className="linkish" onClick={() => saveVersion(true)}>Save as a new request</button></>}
+                  {saved.ok && saved.requestId && <><br /><ClientLinkButtons requestId={saved.requestId} compact />
+                    {PDF_LANGS.includes(lang) && <a className="btn secondary small-btn" style={{ marginLeft: 6 }} href={`/api/requests/${saved.requestId}/pdf?version=${saved.version}`} target="_blank" rel="noopener">PDF</a>}</>}
                 </span>
               ) : (
                 <span className="small muted">{req ? `Keeps it under ${req.reference}; change times or passengers and save again for the next version.` : "Gives this routing a reference and keeps this quote as version 1."}</span>
@@ -769,7 +781,20 @@ export default function QuoteBuilder({ aircraft, operators, preferred: preferred
               <label className="small" style={{ display: "flex", gap: 8, alignItems: "center" }}>
                 <input type="checkbox" checked={copyMe} onChange={(e) => setCopyMe(e.target.checked)} /> Send me a copy
               </label>
-              <div><button type="submit" disabled={busy || chosen.length === 0 || !text.trim() || !emailTo.trim()}><Icon name="send" />{busy ? "Sending…" : `Email the quote${photos.length ? ` with ${photos.length} photo${photos.length === 1 ? "" : "s"}` : ""}`}</button></div>
+              {req ? (
+                <>
+                  <label className="small" style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                    <input type="checkbox" checked={emailPdf && !!savedVersion && PDF_LANGS.includes(lang)} disabled={!savedVersion || !PDF_LANGS.includes(lang)} onChange={(e) => setEmailPdf(e.target.checked)} />
+                    {!PDF_LANGS.includes(lang) ? "Attach the PDF (not available in this language yet; add the link instead)" : savedVersion ? `Attach the PDF of version ${savedVersion} (photos included, so they aren't attached separately)` : "Attach the PDF (save the quote first)"}
+                  </label>
+                  <label className="small" style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                    <input type="checkbox" checked={emailLink} onChange={(e) => setEmailLink(e.target.checked)} /> Add the client link (always shows the latest version)
+                  </label>
+                </>
+              ) : (
+                <p className="small muted" style={{ margin: 0 }}>Save the quote as a request to attach its PDF or add the client link.</p>
+              )}
+              <div><button type="submit" disabled={busy || chosen.length === 0 || !text.trim() || !emailTo.trim()}><Icon name="send" />{busy ? "Sending…" : emailPdf && savedVersion && PDF_LANGS.includes(lang) ? "Email the quote with its PDF" : `Email the quote${photos.length ? ` with ${photos.length} photo${photos.length === 1 ? "" : "s"}` : ""}`}</button></div>
               <p className="small muted" style={{ margin: 0 }}>Sent from Aircraft Media under your name; the client&apos;s reply comes to your own email. All options go in one email, with the ticked photos attached.</p>
             </form>
           ) : chosen.length > 1 ? (

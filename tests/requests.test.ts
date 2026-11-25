@@ -6,7 +6,7 @@ import { offsetLabel, utcFromLocal } from "../src/domain/zoneTime";
 import { estimateMinutes, parseDuration } from "../src/domain/flightTime";
 import { cleanLegs, legTimes, requestLabel, routeLabel, routingKey, routingLines, type Leg } from "../src/domain/routing";
 import { QUOTE_WORDS } from "../src/domain/quote";
-import { RoutingChanged, cleanSnapshot, getRequest, listRequests, listVersions, nextReference, saveQuoteVersion, setArchived } from "../src/domain/requests";
+import { cleanSnapshot, getRequest, listRequests, listVersions, nextReference, saveQuoteVersion, setArchived } from "../src/domain/requests";
 
 const legs: Leg[] = [
   { from: "HKG", to: "EGLF", date: "2026-12-12", time: "16:30", flight: 765, pax: 4 },
@@ -101,18 +101,22 @@ describe("Requests and saved quotes", () => {
     expect(second).toMatchObject({ requestId: first.requestId, version: 2 });
     expect((await getRequest(t.db, t.actor.tenantId, first.requestId))?.legs[0]).toMatchObject({ from: "VHHH", time: "18:00", pax: 6 });
 
-    // Another date is another request.
-    await expect(saveQuoteVersion(t.db, t.actor, first.requestId, [{ ...legs[0], date: "2026-12-13" }, legs[1]], cleanSnapshot(snap("x")))).rejects.toBeInstanceOf(RoutingChanged);
+    // Any version may change the legs too: another date, and the return leg dropped.
+    const third = await saveQuoteVersion(t.db, t.actor, first.requestId, [{ ...moved[0], date: "2026-12-13" }], cleanSnapshot(snap("USD 88,000")));
+    expect(third).toMatchObject({ requestId: first.requestId, version: 3 });
 
     const vs = await listVersions(t.db, t.actor.tenantId, first.requestId);
-    expect(vs.map((v) => v.version)).toEqual([2, 1]);
-    expect(vs[0].content.options[0].price).toBe("USD 89,000");
-    expect(vs[0].content.legs[0]).toMatchObject({ time: "18:00", pax: 6 }); // each version keeps its own times
-    expect(vs[1].content.legs[0]).toMatchObject({ time: "16:30", pax: 4 });
+    expect(vs.map((v) => v.version)).toEqual([3, 2, 1]);
+    expect(vs[0].content.legs).toHaveLength(1); // each version keeps its own routing
+    expect(vs[0].content.legs[0]).toMatchObject({ date: "2026-12-13" });
+    expect(vs[1].content.options[0].price).toBe("USD 89,000");
+    expect(vs[1].content.legs[0]).toMatchObject({ time: "18:00", pax: 6 });
+    expect(vs[2].content.legs[0]).toMatchObject({ time: "16:30", pax: 4 });
+    await saveQuoteVersion(t.db, t.actor, first.requestId, moved, cleanSnapshot(snap("USD 89,000"))); // back to both legs (v4)
     expect(vs[0].content.options[0].photos).toHaveLength(1); // a bad photo id is dropped
 
     const list = await listRequests(t.db, t.actor.tenantId);
-    expect(list[0]).toMatchObject({ versions: 2, label: "HKG → FAB → HKG · 12 Dec – 18 Dec · 6 pax" });
+    expect(list[0]).toMatchObject({ versions: 4, label: "HKG → FAB → HKG · 12 Dec – 18 Dec · 6 pax" }); // the latest routing
     expect((await listRequests(t.db, t.actor.tenantId, { q: "fab" })).length).toBe(1);
     await setArchived(t.db, t.actor, first.requestId, true);
     expect(await listRequests(t.db, t.actor.tenantId)).toEqual([]);

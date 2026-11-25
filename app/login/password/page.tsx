@@ -1,19 +1,10 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { headers } from "next/headers";
 import { devBypassEnabled } from "@/lib/owner";
 import { getDb } from "@/db/client";
 import { LINK_MINUTES, createSignInLink } from "@/domain/signInLinks";
 import { sendMail } from "@/lib/mail";
-
-/** The site's own address (Render sets RENDER_EXTERNAL_URL), never one taken from the request: a faked request must
- * not get a working link sent to someone that points at another site. */
-async function siteAddress(): Promise<string | null> {
-  const site = process.env.APP_URL || process.env.RENDER_EXTERNAL_URL || "";
-  if (site) return site.replace(/\/+$/, "");
-  if (process.env.NODE_ENV !== "production") return `http://${(await headers()).get("host")}`;
-  return null;
-}
+import { siteAddress } from "@/lib/site";
 
 async function sendPasswordLinkAction(fd: FormData) {
   "use server";

@@ -2,7 +2,7 @@ import { and, desc, eq, inArray, like, max, sql } from "drizzle-orm";
 import type { Db } from "../db/client";
 import { quoteVersions, requests } from "../db/schema";
 import type { Actor } from "./action";
-import { cleanLegs, requestLabel, routingKey, type Leg } from "./routing";
+import { cleanLegs, requestLabel, type Leg } from "./routing";
 import { airportsFor, findAirport } from "./airports";
 
 /**
@@ -16,12 +16,12 @@ export interface QuoteSnapshotOption {
   yom: number | null; yor: number | null; capacity: number | null; price: string; extra: string; photos: QuoteSnapshotPhoto[];
 }
 /** What a saved quote holds: the routing and message as sent, each option as quoted, and the Quote page's state to reopen it. */
-export interface QuoteSnapshot { lang: string; text: string; legs: Leg[]; options: QuoteSnapshotOption[]; builder: Record<string, unknown> }
-
-/** The airports and dates changed: that is another request, not a new version of this one. */
-export class RoutingChanged extends Error {
-  constructor() { super("The airports or dates are different from this request's. Save it as a new request instead."); }
+export interface QuoteSnapshot {
+  lang: string; text: string; legs: Leg[]; options: QuoteSnapshotOption[]; builder: Record<string, unknown>;
+  /** The opening and closing lines as written (for the client's page and the PDF), and whether times show UTC. */
+  greeting?: string | null; closing?: string | null; utc?: boolean;
 }
+
 
 export const MAX_SNAPSHOT_BYTES = 300_000;
 
@@ -105,15 +105,18 @@ export function cleanSnapshot(input: unknown): QuoteSnapshot {
     yom: numOrNull(o?.yom), yor: numOrNull(o?.yor), capacity: numOrNull(o?.capacity), price: str(o?.price, 120), extra: str(o?.extra, 500),
     photos: (Array.isArray(o?.photos) ? o.photos : []).slice(0, 30).map((p) => ({ id: str(p?.id, 40), label: str(p?.label, 40), classification: str(p?.classification, 30) })).filter((p) => /^[0-9a-f-]{36}$/.test(p.id)),
   }));
-  const snap: QuoteSnapshot = { lang: str(s.lang, 10) || "en", text: s.text.slice(0, 20_000), legs: [], options, builder: (s.builder && typeof s.builder === "object" ? s.builder : {}) as Record<string, unknown> };
+  const snap: QuoteSnapshot = {
+    lang: str(s.lang, 10) || "en", text: s.text.slice(0, 20_000), legs: [], options,
+    greeting: str(s.greeting, 2000) || null, closing: str(s.closing, 2000) || null, utc: s.utc !== false,
+    builder: (s.builder && typeof s.builder === "object" ? s.builder : {}) as Record<string, unknown> };
   if (JSON.stringify(snap).length > MAX_SNAPSHOT_BYTES) throw new Error("This quote is too large to save.");
   return snap;
 }
 
 /**
- * Saves the quote as the next version of its request, or as version 1 of a new request (no `requestId`). Within one
- * request the airports and dates stay the same; departure times, flight times and passengers may change, and the
- * request keeps the latest. Photos must already have been checked as the broker's to use.
+ * Saves the quote as the next version of its request, or as version 1 of a new request (no `requestId`). Any
+ * version may add, remove or change legs; the request keeps the latest routing, and each version keeps its own.
+ * Photos must already have been checked as the broker's to use.
  */
 export async function saveQuoteVersion(
   db: Db, actor: Actor, requestId: string | null, legsInput: unknown, snapshot: QuoteSnapshot,
@@ -121,7 +124,6 @@ export async function saveQuoteVersion(
   const legs = cleanLegs(legsInput, findAirport);
   let r = requestId ? await getRequest(db, actor.tenantId, requestId) : null;
   if (requestId && !r) throw new Error("That request is no longer here.");
-  if (r && routingKey(r.legs) !== routingKey(legs)) throw new RoutingChanged();
   if (!r) {
     const made = await createRequest(db, actor, { legs });
     r = await getRequest(db, actor.tenantId, made.id);

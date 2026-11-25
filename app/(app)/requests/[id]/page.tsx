@@ -6,7 +6,11 @@ import { getRequest, listVersions } from "@/domain/requests";
 import { airportsFor } from "@/domain/airports";
 import { requestLabel, routingLines } from "@/domain/routing";
 import { QUOTE_WORDS } from "@/domain/quote";
-import { archiveRequestAction } from "../../../requestActions";
+import { archiveRequestAction, clientLinkSettingsAction } from "../../../requestActions";
+import { linkFor } from "@/domain/quoteLinks";
+import { pdfSupported } from "@/domain/quotePdf";
+import { siteAddress } from "@/lib/site";
+import ClientLinkButtons from "../../../_components/ClientLinkButtons";
 import { Flash, one, type SP } from "../../../_components/ui";
 import LocalTime from "../../../_components/LocalTime";
 
@@ -20,6 +24,10 @@ export default async function RequestPage({ params, searchParams }: { params: Pr
   if (!r) notFound();
   const versions = await listVersions(db, actor.tenantId, id);
   const airports = airportsFor(r.legs.flatMap((l) => [l.from, l.to]));
+  const link = await linkFor(db, actor.tenantId, id);
+  const site = await siteAddress();
+  const linkUrl = link && site ? `${site}/q/${link.token}` : null;
+  const expired = !!link?.expiresAt && link.expiresAt <= new Date();
   return (
     <>
       <p className="small"><Link href="/requests">← Requests</Link></p>
@@ -34,8 +42,49 @@ export default async function RequestPage({ params, searchParams }: { params: Pr
           <div style={{ flex: "0 0 auto" }}><Link className="btn" href={`/quote?request=${r.id}${versions.length ? `&version=${versions[0].version}` : ""}`}>{versions.length ? `Edit the latest quote (v${versions[0].version})` : "Build the quote →"}</Link></div>
         </div>
         <p className="small muted" style={{ margin: "8px 0 0" }}>
-          The airports and dates stay the same for every version; departure times, flight times and passengers can change. A different routing is a new request.
+          Every version keeps its own routing: legs, times and passengers can change from one version to the next. This shows the latest.
         </p>
+      </div>
+
+      <div className="card">
+        <h3 style={{ marginTop: 0 }}>Client link</h3>
+        {!link ? (
+          <>
+            <p className="small muted" style={{ marginTop: 0 }}>A private page for the client with this request&apos;s latest quote: routing, aircraft, prices and photos. A new version reaches them through the same link.</p>
+            <form action={clientLinkSettingsAction}>
+              <input type="hidden" name="requestId" value={r.id} /><input type="hidden" name="op" value="create" />
+              <button type="submit" disabled={!versions.length}>Make the client link</button>
+              {!versions.length && <span className="small muted"> Save a quote first.</span>}
+            </form>
+          </>
+        ) : (
+          <>
+            <p className="small" style={{ marginTop: 0 }}>
+              {!link.active ? <b>Switched off: it doesn&apos;t open.</b> : expired ? <b>Expired: it doesn&apos;t open.</b> : <>Shows version {versions[0]?.version ?? "–"} (always the latest).</>}
+              {" "}{link.firstViewedAt ? <>First opened <LocalTime iso={link.firstViewedAt.toISOString()} />{link.lastViewedAt && link.lastViewedAt.getTime() !== link.firstViewedAt.getTime() ? <>, last <LocalTime iso={link.lastViewedAt.toISOString()} /></> : null}.</> : <span className="muted">Not opened yet.</span>}
+            </p>
+            {linkUrl && <input readOnly value={linkUrl} aria-label="Client link" className="small" style={{ width: "100%", marginBottom: 8 }} />}
+            {linkUrl && link.active && <ClientLinkButtons requestId={r.id} url={linkUrl} />}
+            <details style={{ marginTop: 10 }}>
+              <summary className="small">End date, switch off, new link</summary>
+              <form action={clientLinkSettingsAction} className="row" style={{ alignItems: "end", marginTop: 8 }}>
+                <input type="hidden" name="requestId" value={r.id} /><input type="hidden" name="op" value="expiry" />
+                <div style={{ maxWidth: 220 }}><label className="small">Stops working after</label><input type="date" name="expires" defaultValue={link.expiresAt ? link.expiresAt.toISOString().slice(0, 10) : ""} /></div>
+                <div style={{ flex: "0 0 auto" }}><button type="submit" className="secondary">Save end date</button></div>
+              </form>
+              <div className="row" style={{ gap: 6, marginTop: 8 }}>
+                <form action={clientLinkSettingsAction} style={{ flex: "0 0 auto" }}>
+                  <input type="hidden" name="requestId" value={r.id} /><input type="hidden" name="op" value={link.active ? "off" : "on"} />
+                  <button type="submit" className="secondary">{link.active ? "Switch the link off" : "Switch it on again"}</button>
+                </form>
+                <form action={clientLinkSettingsAction} style={{ flex: "0 0 auto" }}>
+                  <input type="hidden" name="requestId" value={r.id} /><input type="hidden" name="op" value="replace" />
+                  <button type="submit" className="secondary">Make a new link (the old one stops)</button>
+                </form>
+              </div>
+            </details>
+          </>
+        )}
       </div>
 
       <h3>Saved quotes</h3>
@@ -44,7 +93,12 @@ export default async function RequestPage({ params, searchParams }: { params: Pr
         <div key={v.id} className="card">
           <div className="people-head">
             <span><b>Version {v.version}</b> <span className="muted small">· saved <LocalTime iso={v.createdAt.toISOString()} /></span></span>
-            <Link className="btn secondary small-btn" href={`/quote?request=${r.id}&version=${v.version}`}>Open and edit</Link>
+            <span style={{ display: "flex", gap: 6 }}>
+              {pdfSupported(v.content.lang)
+                ? <a className="btn secondary small-btn" href={`/api/requests/${r.id}/pdf?version=${v.version}`} target="_blank" rel="noopener">PDF</a>
+                : <span className="small muted" title="Simplified Chinese, Korean, Thai and Arabic: send the client link">No PDF in this language yet</span>}
+              <Link className="btn secondary small-btn" href={`/quote?request=${r.id}&version=${v.version}`}>Open and edit</Link>
+            </span>
           </div>
           <ul className="small" style={{ margin: "6px 0" }}>
             {v.content.options.map((o, i) => (

@@ -1,0 +1,34 @@
+/* The client's quote page: neutral and print-friendly, so the broker's logo and colours can be slotted in later. */
+.cq { --cq-ink: #1a1f2b; --cq-muted: #6b7280; --cq-line: #e5e7eb; --cq-accent: #1f3a5f; --cq-bg: #f6f7f9;
+  max-width: 860px; margin: 0 auto; padding: 24px 16px 48px; color: var(--cq-ink); font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; line-height: 1.5; }
+html:has(.cq), body:has(.cq) { background: var(--cq-bg, #f6f7f9); }
+.cq-head { display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; padding-bottom: 16px; border-bottom: 3px solid var(--cq-accent); margin-bottom: 18px; }
+.cq-brand { font-size: 1.35rem; font-weight: 700; color: var(--cq-accent); }
+.cq-logo { display: block; max-height: 64px; max-width: 240px; margin-bottom: 4px; }
+.cq-from a { color: var(--cq-muted); text-decoration: none; }
+.cq-ref { text-align: end; }
+.cq-title { font-size: 1.15rem; font-weight: 700; }
+.cq-muted, .cq-ref em { color: var(--cq-muted); }
+.cq-text { white-space: pre-line; margin: 0 0 16px; }
+.cq-card { background: #fff; border: 1px solid var(--cq-line); border-radius: 10px; padding: 16px; margin-bottom: 16px; }
+.cq-card h2 { font-size: 1.05rem; margin: 0 0 10px; color: var(--cq-accent); }
+.cq-leg { padding: 8px 0; border-top: 1px solid var(--cq-line); }
+.cq-leg:first-child { border-top: 0; padding-top: 0; }
+.cq-route { font-weight: 600; }
+.cq-leg-facts { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 0.93rem; }
+.cq-leg-facts em { color: var(--cq-muted); font-style: normal; }
+.cq-option-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+.cq-price { font-size: 1.2rem; font-weight: 700; color: var(--cq-accent); }
+.cq-photos { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; margin: 6px 0 12px; }
+.cq-photos a { display: block; border-radius: 6px; overflow: hidden; background: var(--cq-bg); }
+.cq-photos img { width: 100%; height: 100%; object-fit: cover; display: block; aspect-ratio: 4 / 3; }
+.cq-photo-main { grid-column: 1 / -1; }
+.cq-photo-main img { aspect-ratio: 16 / 9; }
+.cq-facts { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 6px 14px; }
+.cq-fact { display: flex; flex-direction: column; font-size: 0.93rem; }
+.cq-fact span { color: var(--cq-muted); font-size: 0.82rem; }
+.cq-foot { margin-top: 24px; text-align: center; }
+.cq-btn { display: inline-block; padding: 10px 16px; border-radius: 8px; background: var(--cq-accent); color: var(--cq-on-accent, #fff); text-decoration: none; margin: 4px; }
+.cq-btn-light { background: #fff; color: var(--cq-accent); border: 1px solid var(--cq-accent); }
+@media (max-width: 560px) { .cq-photos { grid-template-columns: repeat(2, minmax(0, 1fr)); } .cq-ref { text-align: start; } }
+@media print { html:has(.cq), body:has(.cq) { background: #fff; } .cq-card { break-inside: avoid; } .cq-foot { display: none; } }

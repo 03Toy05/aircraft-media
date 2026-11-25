@@ -19,6 +19,10 @@ import * as quoteTemplates from "@/domain/quoteTemplates";
 import * as quoteShares from "@/domain/quoteShares";
 import * as quoteEmail from "@/domain/quoteEmail";
 import { photoAllowed } from "@/domain/photoAccess";
+import { brokerQuotePdf } from "@/domain/quotePdf";
+import { ensureLink } from "@/domain/quoteLinks";
+import * as branding from "@/domain/branding";
+import { siteAddress } from "@/lib/site";
 import { sendMail } from "@/lib/mail";
 import * as passwords from "@/domain/passwords";
 import * as library from "@/domain/library";
@@ -759,6 +763,8 @@ export async function exportCbosAction() {
 export async function sendQuoteEmailAction(input: {
   to: string; subject: string; text: string; rtl?: boolean; copyMe: boolean; quoteKey: string; options: number;
   photos: { id: string; name: string }[];
+  /** A saved request's quote: attach its PDF (that version), and/or add the client's link to the message. */
+  request?: { id: string; version?: number; pdf?: boolean; link?: boolean };
 }): Promise<{ ok: boolean; message: string }> {
   try {
     const s = await requireUser();
@@ -767,7 +773,7 @@ export async function sendQuoteEmailAction(input: {
     if ("error" in r) return { ok: false, message: r.error };
     const subject = String(input.subject ?? "").replace(/[\r\n]+/g, " ").trim().slice(0, 200);
     if (!subject) return { ok: false, message: "Add a subject." };
-    const text = String(input.text ?? "").slice(0, 20_000);
+    let text = String(input.text ?? "").slice(0, 20_000);
     if (!text.trim()) return { ok: false, message: "The message is empty." };
     const photos = (Array.isArray(input.photos) ? input.photos : []).slice(0, quoteEmail.MAX_PHOTOS + 1);
     if (photos.length > quoteEmail.MAX_PHOTOS) return { ok: false, message: `Attach ${quoteEmail.MAX_PHOTOS} photos at most. Untick some and try again.` };
@@ -787,6 +793,22 @@ export async function sendQuoteEmailAction(input: {
       if (bytes > quoteEmail.MAX_ATTACH_BYTES) return { ok: false, message: "The photos are too large for one email (25 MB). Untick some, or send them as a combined photo." };
       attachments.push({ filename: quoteEmail.attachmentName(String(p?.name ?? ""), f.mimeType), content: f.bytes });
     }
+    // A saved request: the PDF of that version first among the attachments, and the client's link under the message.
+    let pdfName = "";
+    if (input.request?.id && input.request.pdf) {
+      const pdf = await brokerQuotePdf(db, store, s, String(input.request.id), Number(input.request.version) || undefined);
+      if (!pdf) return { ok: false, message: "That quote has no PDF (not saved yet, or its language has no PDF yet). Untick “Attach the PDF” and send the client link instead." };
+      bytes += pdf.bytes.length;
+      if (bytes > quoteEmail.MAX_ATTACH_BYTES) return { ok: false, message: "The PDF and photos are too large for one email (25 MB). Untick some photos: the PDF already has them." };
+      attachments.unshift({ filename: pdf.filename, content: pdf.bytes });
+      pdfName = pdf.filename;
+    }
+    if (input.request?.id && input.request.link) {
+      const site = await siteAddress();
+      if (!site) return { ok: false, message: "The site's address isn't set (APP_URL), so the link can't be added." };
+      const l = await ensureLink(db, s.actor, String(input.request.id));
+      text = `${text}\n\n${site}/q/${l.token}`;
+    }
     const [me] = await db.select({ name: users.displayName }).from(users).where(eq(users.id, s.actor.id));
     const body = quoteEmail.quoteEmailBody(text, { rtl: !!input.rtl });
     await sendMail({
@@ -797,7 +819,9 @@ export async function sendQuoteEmailAction(input: {
       attachments,
     });
     await quoteShares.recordQuoteShare(db, s.actor, { quoteKey: String(input.quoteKey ?? "") || randomUUID(), how: "email", options: Number(input.options) || 1 });
-    return { ok: true, message: `Email sent to ${r.emails.join(", ")}${attachments.length ? ` with ${attachments.length} photo${attachments.length === 1 ? "" : "s"}` : ""}. Replies come to ${s.email}.` };
+    const nPhotos = attachments.length - (pdfName ? 1 : 0);
+    const what = [pdfName && `the PDF (${pdfName})`, nPhotos && `${nPhotos} photo${nPhotos === 1 ? "" : "s"}`, input.request?.link && "the client link"].filter(Boolean).join(", ");
+    return { ok: true, message: `Email sent to ${r.emails.join(", ")}${what ? ` with ${what}` : ""}. Replies come to ${s.email}.` };
   } catch (e) {
     console.error("Quote email failed", e);
     return { ok: false, message: "The email couldn't be sent. Try again in a moment, or use Copy message." };
@@ -1015,4 +1039,27 @@ export async function removeReviewPhotoAction(mediaId: string): Promise<{ ok: bo
   }
   revalidatePath("/", "layout");
   return { ok: true, message: "Removed" };
+}
+
+/** Settings: the workspace's logo and colour on its quotes (PDF and client page). */
+export async function saveBrandAction(fd: FormData) {
+  const back = (k: "error" | "ok", msg: string) => redirect(`${withParam("/settings", k, msg)}#branding`);
+  let s;
+  try {
+    s = await requireWriter();
+  } catch (e) {
+    if (e instanceof DomainError) back("error", e.message);
+    throw e;
+  }
+  const db = await getDb();
+  try {
+    if (str(fd, "removeLogo") === "1") await branding.removeBrandLogo(db, s.actor.tenantId);
+    const logo = fd.get("logo");
+    if (logo instanceof File && logo.size > 0) await branding.setBrandLogo(db, s.actor.tenantId, new Uint8Array(await logo.arrayBuffer()));
+    const color = str(fd, "color");
+    if (color) await branding.setBrandColor(db, s.actor.tenantId, color);
+  } catch (e) {
+    back("error", (e as Error).message);
+  }
+  back("ok", "Branding saved. Your PDFs and client links now use it.");
 }

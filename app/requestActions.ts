@@ -7,6 +7,8 @@ import { requireWriter } from "@/lib/session";
 import { DomainError } from "@/domain/errors";
 import { photoAllowed } from "@/domain/photoAccess";
 import * as req from "@/domain/requests";
+import { ensureLink, replaceLink, setLink } from "@/domain/quoteLinks";
+import { siteAddress } from "@/lib/site";
 
 const str = (fd: FormData, k: string) => String(fd.get(k) ?? "");
 const withParam = (path: string, k: string, v: string) => `${path}${path.includes("?") ? "&" : "?"}${k}=${encodeURIComponent(v)}`;
@@ -26,7 +28,7 @@ export async function archiveRequestAction(fd: FormData) {
   redirect(archived ? withParam("/requests", "ok", "Request archived.") : withParam(`/requests/${id}`, "ok", "Request back in the list."));
 }
 
-export type SaveResult = { ok: boolean; message: string; requestId?: string; reference?: string; version?: number; routingChanged?: boolean };
+export type SaveResult = { ok: boolean; message: string; requestId?: string; reference?: string; version?: number };
 
 /**
  * Quote page: save the quote with its routing, as the next version of its request (or the first of a new one, when
@@ -48,8 +50,56 @@ export async function saveQuoteVersionAction(requestId: string | null, legs: unk
     revalidatePath("/");
     return { ok: true, ...r, message: `Saved as ${r.reference} version ${r.version}.` };
   } catch (e) {
-    if (e instanceof req.RoutingChanged) return { ok: false, routingChanged: true, message: e.message };
     if (e instanceof DomainError || e instanceof Error) return { ok: false, message: e.message };
     return { ok: false, message: "The quote couldn't be saved. Try again." };
   }
+}
+
+// ---------------------------------------------------------------- the client's link
+
+
+/** The request's client link (made now if it has none), as a full address to send. */
+export async function clientLinkAction(requestId: string): Promise<{ ok: boolean; url?: string; message: string }> {
+  try {
+    const s = await requireWriter();
+    const site = await siteAddress();
+    if (!site) return { ok: false, message: "The site's address isn't set (APP_URL)." };
+    const l = await ensureLink(await getDb(), s.actor, requestId);
+    return { ok: true, url: `${site}/q/${l.token}`, message: "Client link ready." };
+  } catch (e) {
+    return { ok: false, message: e instanceof Error ? e.message : "The link couldn't be made." };
+  }
+}
+
+/** Request page: switch the link off or on, set or clear its end date, or replace it with a new one. */
+export async function clientLinkSettingsAction(fd: FormData) {
+  const id = str(fd, "requestId");
+  const back = `/requests/${id}`;
+  let s;
+  try {
+    s = await requireWriter();
+  } catch (e) {
+    if (e instanceof DomainError) redirect(withParam(back, "error", e.message));
+    throw e;
+  }
+  const db = await getDb();
+  const op = str(fd, "op");
+  let ok = "Saved.";
+  try {
+    if (op === "create") { await ensureLink(db, s.actor, id); ok = "Client link made. Copy it and send it to the client."; }
+    else if (op === "off") { await setLink(db, s.actor, id, { active: false }); ok = "Link switched off: it no longer opens."; }
+    else if (op === "on") { await setLink(db, s.actor, id, { active: true }); ok = "Link switched on again."; }
+    else if (op === "replace") { await replaceLink(db, s.actor, id); ok = "New link made; the old one no longer opens."; }
+    else if (op === "expiry") {
+      const d = str(fd, "expires");
+      if (d && !/^\d{4}-\d{2}-\d{2}$/.test(d)) throw new Error("The end date isn't right.");
+      // Works until the end of that day (UTC).
+      await setLink(db, s.actor, id, { expiresAt: d ? new Date(`${d}T23:59:59Z`) : null });
+      ok = d ? `The link stops working after ${d}.` : "The link has no end date.";
+    }
+  } catch (e) {
+    redirect(withParam(back, "error", (e as Error).message));
+  }
+  revalidatePath(back);
+  redirect(withParam(back, "ok", ok));
 }
