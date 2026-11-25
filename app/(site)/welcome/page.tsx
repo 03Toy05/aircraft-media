@@ -4,12 +4,12 @@ import Toy from "../../_components/Toy";
 import BrandSignature from "../../_components/BrandSignature";
 import { COPY, HTML_LANG, LANGS, LANG_NAMES, QUESTIONS, parseLang, parseQuestion, type QuestionKey, type SiteLang } from "./copy";
 
-// Preview path: kept out of search engines until the owner approves the launch (move to "/" and drop this line then).
+// The front page: shown at "/" to visitors who are not signed in (see proxy.ts), and at /welcome.
 export const metadata: Metadata = {
   title: "Aircraft Media — A little help for aviation",
   description: "Toy is the personal assistant for aviation charter brokers: aircraft photos, aircraft information and quotations in one place.",
   icons: { icon: "/toy.svg" },
-  robots: { index: false, follow: false },
+  alternates: { canonical: process.env.APP_URL ? new URL("/", process.env.APP_URL).toString() : "/" },
 };
 
 /** Where "Make Toy yours" and "Contact" go. Set NEXT_PUBLIC_CONTACT_EMAIL once the support address is confirmed; until then they open the privacy page, which says who to ask. */
