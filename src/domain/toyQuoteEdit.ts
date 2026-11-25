@@ -36,7 +36,7 @@ const FORWARD = new RegExp(`(?:\\bthe\\s+)?(?<![A-Za-z])(${YOM}|${YOR}|${CAP})(?
 const REVERSE = new RegExp(`(?<![\\d.])(\\d{1,4})\\s*-?\\s*(${YOM}|${YOR}|${CAP})(?![A-Za-z])`, "i");
 
 /** Words that only carry the sentence ("for", "change it", "please"). */
-const FILLER = /\b(?:for|of|on|the|its?|is|are|price[sd]?|cost|rate|change|changes|update|set|make|please|pls|shall|should|will|must|be|to|now|instead|also|and|then|thanks?|thank you|ok(?:ay)?|no|yes|aircraft|record|details?|quote|one)\b|請|请|幫我|帮我|改|的|嘅/gi;
+const FILLER = /\b(?:for|of|on|the|its?|is|are|price[sd]?|cost|rate|change|changes|update|set|make|please|pls|shall|should|will|must|be|to|now|instead|also|and|then|thanks?|thank you|ok(?:ay)?|no|yes|aircraft|record|details?|quote|one|can|could|would|you|add|kindly)\b|[?？]|請|请|幫我|帮我|改|的|嘅|加|可以/gi;
 
 function takeField(text: string): { field: "yom" | "yor" | "capacity"; value: number; rest: string } | null {
   const m = text.match(FORWARD);
@@ -59,6 +59,8 @@ const TEXT_LINK = "(?:\\s*(?:(?:shall|should|will|must)\\s+be|be\\s+changed\\s+t
 const LABELLED = new RegExp(`(?:^|(?<=[\\s,，.;；]))(?:the\\s+)?(?:(add(?:\\s+(?:a|an|the|to\\s+the))?\\s+(?:note|notes)|append(?:\\s+to\\s+the)?\\s+notes?)|(${WIFI_W}|${PETS_W}|${SMOKE_W}|${NOTES_W}))(?![A-Za-z])${TEXT_LINK}\\s*(.+)$`, "i");
 /** "no pets", "non-smoking", "smoking not allowed", "pet friendly", "no WIFI". */
 const NATURAL: [RegExp, (m: RegExpMatchArray) => TextEdit][] = [
+  // "add subject to owner's approval", "owner's approval required", "需機主批准": a note, which puts the sticker on the PDF.
+  [/\b(?:subject\s+to\s+)?(?:the\s+)?owner'?s?\s+approval(?:\s+(?:is\s+)?required)?\b|需(?:要)?(?:船東|船东|機主|机主|業主|业主)(?:批准|同意)/i, () => ({ field: "notes", value: "Subject to owner's approval", append: true })],
   [/\b(?:no|without)\s+(pets?|smoking|wi-?fi)\b/i, (m) => edit(kindOf(m[1]), "no")!],
   [/\bnon-?smoking\b/i, () => ({ field: "smoking", value: "no" })],
   [/\bpet[- ]friendly\b/i, () => ({ field: "pets", value: "yes" })],
@@ -79,8 +81,11 @@ function edit(field: "wifi" | "pets" | "smoking" | "notes", value: string, appen
 }
 
 /** Takes the WIFI, pets, smoking or notes change out of a line; the rest of the line still names the aircraft. */
-function takeTextEdit(line: string): { edit: TextEdit; rest: string } | null {
-  for (const [re, make] of NATURAL) {
+function takeTextEdit(line: string, isAircraft: (text: string) => boolean = () => false): { edit: TextEdit; rest: string } | null {
+  // "add a note: owner approval needed" keeps the broker's own words; the owner's-approval shortcut is for plain requests.
+  const explicitNote = /\b(?:add|append)\b[^:：]*\bnotes?\b|\bnotes?\s*[:：]|備註|备注/i.test(line);
+  for (const [i, [re, make]] of NATURAL.entries()) {
+    if (i === 0 && explicitNote) continue;
     const m = line.match(re);
     if (m) return { edit: make(m), rest: line.replace(m[0], " ") };
   }
@@ -88,9 +93,13 @@ function takeTextEdit(line: string): { edit: TextEdit; rest: string } | null {
   if (!m) return null;
   const notes = !!m[1] || kindOf(m[2]) === "notes";
   // A trailing "Change it" / "please" is the request, not part of a note.
-  const value = notes ? m[3].replace(/(?:[.。;；,，]?\s*(?:please\s+)?(?:change|update|save)\s+it|[.。;；,，]?\s*please)[.!。！]?\s*$/i, "").trim() : m[3];
+  let value = notes ? m[3].replace(/(?:[.。;；,，]?\s*(?:please\s+)?(?:change|update|save)\s+it|[.。;；,，]?\s*please)[.!。！]?\s*$/i, "").trim() : m[3];
+  // "WiFi to No on Global 7500": the aircraft named after the value belongs to the rest of the line.
+  let named = "";
+  const after = value.match(/^(.*?)\s+(?:on|for|of)\s+(?:the\s+)?(\S.*?)[.?!。？！]?\s*$/i);
+  if (after && isAircraft(after[2])) { value = after[1]; named = after[2]; }
   const e = edit(notes ? "notes" : kindOf(m[2]), value, !!m[1]);
-  return e ? { edit: e, rest: line.slice(0, m.index) } : null;
+  return e ? { edit: e, rest: `${line.slice(0, m.index)} ${named}` } : null;
 }
 
 export const validEdit = (field: "yom" | "yor" | "capacity", value: number) => field === "capacity" ? value >= 1 && value <= 500 : value >= 1950 && value <= 2100;
@@ -103,15 +112,18 @@ function clausesOf(text: string): string[] {
 const TOKEN = (i: number) => ` \u0001${i}\u0001 `;
 
 export function parseQuoteFollowUp(message: string, list: CommandAircraft[]): QuoteFollowUp | null {
-  if (!list.length || /[?？]\s*$/.test(message.trim())) return null; // a question is a lookup, not a change
+  if (!list.length) return null;
   // WIFI, pets, smoking and notes first, line by line: their values may hold commas and prices ("Yes, at USD 10/MB").
   const texts: TextEdit[] = [];
+  const isAircraft = (t: string) => matchAircraft(list, t).length === 1;
   const lines = message.split(/\r?\n/).map((line) => {
-    const t = takeTextEdit(line);
+    const t = takeTextEdit(line, isAircraft);
     if (!t) return line;
     texts.push(t.edit);
     return t.rest + TOKEN(texts.length - 1);
   });
+  // A question is a lookup, not a change; "Can you add … for G650ER?" asks for a change, so it counts.
+  if (!texts.length && /[?？]\s*$/.test(message.trim())) return null;
   const prices: Record<string, string> = {};
   const edits: FieldEdit[] = [];
   const unclear: string[] = [];
