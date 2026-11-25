@@ -34,7 +34,7 @@ const legs = [
   { from: "VHHH", to: "EGLF", date: "2026-12-12", time: "16:30", flight: 765, pax: 8 },
   { from: "EGLF", to: "VHHH", date: "2026-12-18", time: "10:00", flight: 720, pax: 8 },
 ];
-const snap = cleanSnapshot({ lang: "en", text: "x", label: "Revised price", greeting: "Dear Mr Chan, thank you for your enquiry. Please find our proposal below.", closing: "We would be delighted to arrange this trip for you. Prices are subject to availability at booking.", options, builder: { inc: { operator: true } } });
+const snap = cleanSnapshot({ lang: "en", text: "x", label: "Revised price", greeting: "Dear Mr Chan, thank you for your enquiry. Please find our proposal below.", closing: "We would be delighted to arrange this trip for you. Prices are subject to availability at booking.", options, builder: { inc: { operator: true, notes: true } } });
 const { requestId } = await saveQuoteVersion(t.db, t.actor, null, legs, snap);
 const pdf = await brokerQuotePdf(t.db, t.store, { isAdmin: true, actor: t.actor, email: "owner@example.test" }, requestId);
 fs.writeFileSync(out, pdf!.bytes);

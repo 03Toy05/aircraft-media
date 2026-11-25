@@ -304,6 +304,8 @@ export async function quotePdf(q: PdfQuote, loadPhoto: PhotoLoader): Promise<Uin
       }
     }
     if (o.extra) { y -= 4; para(o.extra, 10); }
+    // The aircraft's notes, when the broker ticked Notes on the Quote page (as in the message).
+    if (inc.notes && o.notes?.trim()) { y -= 4; para(`${w.notes}${w.colon}${o.notes.trim()}`, 10); }
   }
 
   // ---------------------------------------------------------------- footer on every page

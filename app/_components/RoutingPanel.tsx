@@ -12,10 +12,13 @@ export const emptyLeg = (from = "", pax: number | null = null): Leg => ({ from, 
  * flight time (estimated from the chosen aircraft until typed) and passengers, with the arrival and UTC times worked out.
  * Once a version is saved the airports and dates are fixed (another routing is another request).
  */
-export default function RoutingPanel({ legs, airports, onChange, onAirport, locked, estimateFrom, onNewRequest }: {
+export default function RoutingPanel({ legs, airports, onChange, onAirport, locked, estimateFrom, onNewRequest, onClear }: {
   legs: Leg[]; airports: Airports; onChange: (legs: Leg[]) => void; onAirport: (a: AirportInfo) => void;
   locked: boolean; estimateFrom: string | null; onNewRequest?: () => void;
+  /** Empties the routing for another quote (defaults to one empty leg). */
+  onClear?: () => void;
 }) {
+  const filled = legs.some((l) => l.from || l.to || l.date || l.time || l.pax != null || l.flight != null);
   const set = (i: number, patch: Partial<Leg>) => onChange(legs.map((l, j) => (j === i ? { ...l, ...patch } : l)));
   const last = legs[legs.length - 1];
   return (
@@ -62,6 +65,8 @@ export default function RoutingPanel({ legs, airports, onChange, onAirport, lock
           <div style={{ flex: "0 0 auto" }}><button type="button" className="secondary small-btn" onClick={() => onChange([...legs, emptyLeg(last?.to ?? "", last?.pax ?? null)])}>+ Add leg</button></div>
           <div style={{ flex: "0 0 auto" }}><button type="button" className="secondary small-btn" disabled={!legs[0]?.from || !last?.to}
             onClick={() => onChange([...legs, { ...emptyLeg(last.to, last.pax ?? null), to: legs[0].from, flight: last.flight ?? null, flightEst: !!last.flightEst }])}>+ Add return</button></div>
+          <div style={{ flex: "0 0 auto" }}><button type="button" className="secondary small-btn" disabled={!filled}
+            onClick={() => { if (window.confirm("Clear the routing for another quote?")) (onClear ?? (() => onChange([emptyLeg()])))(); }}>Clear routing</button></div>
         </div>
       ) : (
         <p className="small muted" style={{ margin: 0 }}>

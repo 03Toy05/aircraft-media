@@ -154,6 +154,7 @@ export default async function ClientQuote({ params, searchParams }: { params: Pr
               {slots.floorPlan && img(slots.floorPlan, "cq-slot-plan")}
             </div>
             {o.extra && <p className="cq-text">{o.extra}</p>}
+            {inc.notes && o.notes?.trim() && <p className="cq-text" style={{ whiteSpace: "pre-line" }}><b>{w.notes}</b>{w.colon}{o.notes.trim()}</p>}
           </section>
         );
       })}

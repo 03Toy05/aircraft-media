@@ -480,6 +480,16 @@ export default function QuoteBuilder({ aircraft, operators, preferred: preferred
     setTimeout(() => messageRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 50);
   };
   const shownToggles: [keyof typeof inc, string][] = [...(fullLegs.length ? [["routing", "Routing"] as [keyof typeof inc, string]] : []), ["operator", "Operator"], ["tail", "Tail"], ["base", "Base"], ["notes", "Notes"]];
+  /** Clear routing: a different trip, so the next save starts a new request (a new reference). The aircraft stay. */
+  const clearRouting = () => {
+    setLegs([emptyLeg()]); setSaved(null);
+    if (req) { setReq(null); window.history.replaceState(null, "", "/quote"); }
+    else {
+      // A routing Toy sent (?legs=…) must not come back on reload.
+      const u = new URL(window.location.href);
+      if (u.searchParams.has("legs")) { u.searchParams.delete("legs"); window.history.replaceState(null, "", u.pathname + u.search); }
+    }
+  };
   const newRequest = () => {
     if (!window.confirm("Keep this quote, but save it under a new request (a new reference) the next time you save?")) return;
     setReq(null); setSaved(null);
@@ -498,7 +508,7 @@ export default function QuoteBuilder({ aircraft, operators, preferred: preferred
         <details className="card step" open>
           <summary><h3>Routing</h3><span className="sum">{routeText || "Airports, dates, passengers"}</span></summary>
           <RoutingPanel legs={legs} airports={airportMap} onChange={setLegs} onAirport={addAirport} locked={locked}
-            estimateFrom={estimateFor?.type ?? null} />
+            estimateFrom={estimateFor?.type ?? null} onClear={clearRouting} />
           {req && <p className="small muted" style={{ margin: "6px 0 0" }}>Change any leg and save: it becomes the next version of {req.reference}. <button type="button" className="linkish" onClick={newRequest}>Start a new request instead</button></p>}
         </details>
         {restored && !opened && (
