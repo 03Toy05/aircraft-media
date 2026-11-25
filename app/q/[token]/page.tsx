@@ -122,6 +122,9 @@ export default async function ClientQuote({ params, searchParams }: { params: Pr
         </div>
       </section>
 
+      {/* The closing line after the summary, as in the PDF. */}
+      {q.quote.closing && <p className="cq-text cq-lead">{q.quote.closing}</p>}
+
       {q.quote.options.map((o, i) => {
         const slots = photoSlots(o.photos);
         const img = (p: { id: string; label: string }, cls: string) => (
@@ -155,7 +158,6 @@ export default async function ClientQuote({ params, searchParams }: { params: Pr
         );
       })}
 
-      {q.quote.closing && <p className="cq-text cq-lead">{q.quote.closing}</p>}
 
       <footer className="cq-foot">
         {pdfSupported(lang) && <a className="cq-btn cq-btn-light" href={`/q/${token}/pdf`} target="_blank" rel="noopener">PDF</a>}

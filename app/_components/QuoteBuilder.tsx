@@ -16,7 +16,7 @@ import ClientLinkButtons from "./ClientLinkButtons";
 
 /** Languages the PDF can be made in (see quotePdf.ts); the client link shows every language. */
 const PDF_LANGS: string[] = ["en", "zh-Hant", "ja", "vi", "fr", "de", "id", "ru"];
-import { QUOTE_LANGUAGES, QUOTE_LOCALE, QUOTE_SUBJECT, QUOTE_WORDS, buildQuoteParts, defaultQuoteTemplate, renumberBlock, type QuoteLanguage, type QuoteTemplate } from "@/domain/quote";
+import { QUOTE_LANGUAGES, QUOTE_LOCALE, QUOTE_SUBJECT, QUOTE_WORDS, buildQuoteParts, defaultQuoteTemplate, priceInText, renumberBlock, type QuoteLanguage, type QuoteTemplate } from "@/domain/quote";
 import { forOtherApps, parseStyled } from "@/domain/textStyle";
 import { parseQuoteCommands, type QuoteCommand } from "@/domain/quoteCommands";
 import { COMBINED_NEEDS, type WifiStatus, type YesNoStatus } from "@/domain/constants";
@@ -392,7 +392,8 @@ export default function QuoteBuilder({ aircraft, operators, preferred: preferred
         options: chosen.map((a, i) => ({
           aircraftId: a.id, type: a.type, operator: a.operator, tail: a.tail, base: a.base, yom: a.yom, yor: a.yor, capacity: a.capacity,
           wifi: a.wifi, smoking: a.smoking, pets: a.pets, notes: a.notes,
-          price: prices[a.id] ?? "", extra: extras[a.id] ?? "",
+          // A block rewritten by hand may carry the price only in its text ("Price: USD 90,000").
+          price: prices[a.id]?.trim() || (`block:${a.id}` in edits ? priceInText(blocks[i], QUOTE_WORDS[lang].price) : ""), extra: extras[a.id] ?? "",
           photos: photos.filter((x) => x.i === i).map(({ p }) => ({ id: p.url.replace(/^.*\/api\/media\//, ""), label: p.label, classification: p.classification })),
         })),
         builder: { ids, lang, inc, prices, extras, edits, flip: [...flip], app, opId, emailTo, subject, copyMe, legs: fullLegs },
@@ -683,7 +684,16 @@ export default function QuoteBuilder({ aircraft, operators, preferred: preferred
                   onAll={(on) => setPhotos(a.photos.map((p) => ({ a, p })), on)}
                 />
                 {byHand
-                  ? <p className="small muted" style={{ margin: "4px 0 0" }}>Rewritten by hand: changes to the details, price or language no longer reach this aircraft.</p>
+                  ? (
+                    <>
+                      <div className="group">
+                        <div className="group-row field"><span>Price on the PDF</span>
+                          <TextBox single dir={dir} speechLang={speech} value={prices[a.id] ?? ""} onChange={(v) => setPrices((p) => ({ ...p, [a.id]: v }))} placeholder={priceInText(blocks[i], QUOTE_WORDS[lang].price) || "USD 85,000 + tax"} ariaLabel="Price on the PDF" />
+                        </div>
+                      </div>
+                      <p className="small muted" style={{ margin: "4px 0 0" }}>Rewritten by hand: the message uses your text. The PDF and client link use the price above (left empty, the “{QUOTE_WORDS[lang].price}” line of your text).</p>
+                    </>
+                  )
                   : (
                     <div className="group">
                       <div className="group-row field"><span>Price</span>

@@ -350,3 +350,11 @@ export const OWNER_APPROVAL: Record<QuoteLanguage, string> = {
   vi: "Cần chủ máy bay chấp thuận", th: "ต้องได้รับอนุมัติจากเจ้าของ", id: "Perlu persetujuan pemilik", fr: "Accord du propriétaire requis",
   de: "Zustimmung des Eigentümers erforderlich", ru: "Требуется согласие владельца", ar: "يتطلب موافقة المالك",
 };
+
+/** The price in a block written by hand: the text after "Price:" (or "價格：", in the quote's language), without *bold* marks. */
+export function priceInText(block: string | undefined, priceWord: string): string {
+  if (!block) return "";
+  const esc = priceWord.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const m = block.match(new RegExp(`^[\\s*_~]*${esc}[\\s*_~]*[:：][\\s*_~]*(.+?)[\\s*_~]*$`, "mi"));
+  return m ? m[1].trim().slice(0, 120) : "";
+}
