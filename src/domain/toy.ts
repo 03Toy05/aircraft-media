@@ -44,7 +44,7 @@ export interface AircraftChanges { yom?: number; yor?: number; capacity?: number
 export interface AircraftEdit { aircraftId: string; label: string; change: string; set: AircraftChanges }
 
 /** The last quote Toy showed, so "For 605, price is USD 70k" can change it. */
-export interface DraftQuote { ids: string[]; prices: Record<string, string>; kinds?: Classification[]; /** The routing typed in the chat. */ legs?: Leg[] }
+export interface DraftQuote { ids: string[]; prices: Record<string, string>; kinds?: Classification[]; /** The routing typed in the chat. */ legs?: Leg[]; /** The template's own opening and closing lines. */ greeting?: string; closing?: string }
 
 export interface DraftPhoto { mediaId: string; name: string; contentVersionId: string | null; classification: Classification; note?: string }
 
@@ -221,7 +221,7 @@ export async function converse(
     // The routing typed with the request: legs with an airport we don't know are left out, and Toy says which code.
     const unknownAirports = quoteReq.unknownAirports ?? [];
     const legs = (quoteReq.legs ?? []).filter((l) => findAirport(l.from) && findAirport(l.to));
-    if (ids.length) d.quote = { ids, prices, ...(quoteReq.kinds ? { kinds: quoteReq.kinds } : {}), ...(legs.length ? { legs } : {}) };
+    if (ids.length) d.quote = { ids, prices, ...(quoteReq.kinds ? { kinds: quoteReq.kinds } : {}), ...(legs.length ? { legs } : {}), ...(quoteReq.greeting ? { greeting: quoteReq.greeting } : {}), ...(quoteReq.closing ? { closing: quoteReq.closing } : {}) };
     const nl = String.fromCharCode(10);
     const routeSay = legs.length ? [[tr(L, "Routing:"), ...legs.map((l) => `• ${legLine(L, l)}`)].join(nl)] : [];
     const airportSay = unknownAirports.length ? [tr(L, "I don't know the airport code {codes}. Check it (ICAO like VHHH or IATA like HKG), or fix it on the Quote page.", { codes: unknownAirports.join(", ") })] : [];
@@ -490,7 +490,7 @@ export async function quoteReply(db: Db, tenantId: string, d: Draft, ctx: Librar
   const L = d.lang;
   const q = d.quote!;
   const ids = await withinLibraryScope(db, scopeOf(ctx), q.ids);
-  const preview = await quotePreview(db, tenantId, ids, L, q.prices, ctx.library ? [LIBRARY_TENANT_ID] : []);
+  const preview = await quotePreview(db, tenantId, ids, L, q.prices, ctx.library ? [LIBRARY_TENANT_ID] : [], { greeting: q.greeting, closing: q.closing });
   const kinds = q.kinds;
   const kindsLine = !kinds ? null : kinds.length === 0 ? tr(L, "No photos, just the message.")
     : tr(L, "Photos ticked: {kinds}.", { kinds: kinds.map((k) => trClassification(L, k, CLASSIFICATION_LABEL[k])).join(isChinese(L) ? "、" : ", ") });
@@ -508,6 +508,8 @@ export async function quoteReply(db: Db, tenantId: string, d: Draft, ctx: Librar
   if (Object.keys(q.prices).length) p.set("prices", JSON.stringify(q.prices));
   if (kinds) p.set("photos", kinds.length ? kinds.join(",") : "none");
   if (q.legs?.length) p.set("legs", JSON.stringify(q.legs));
+  if (q.greeting) p.set("greeting", q.greeting);
+  if (q.closing) p.set("closing", q.closing);
   const href = `/quote?${p.toString().replace(/%2C/g, ",")}`;
   return { say, chips: [], ready: false, photos: preview.photos, copy: preview.text, options: preview.options, kinds, link: { href, label: tr(L, "View the quote") } };
 }

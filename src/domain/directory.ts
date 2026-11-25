@@ -80,7 +80,7 @@ export function createOrganisation(db: Db, actor: Actor, key: string, input: Cre
         .select({ id: organisations.id })
         .from(organisations)
         .where(and(eq(organisations.tenantId, actor.tenantId), eq(organisations.normalizedName, norm), eq(organisations.active, true)));
-      if (dup.length) throw conflict("DUPLICATE_ORGANISATION", `Organisation "${name}" already exists`, { id: dup[0].id });
+      if (dup.length) throw conflict("DUPLICATE_ORGANISATION", 'Organisation "{name}" already exists', { id: dup[0].id }, { name });
 
       const evidenceId = await recordManualEvidence(tx, actor);
       const [org] = await tx
@@ -119,13 +119,13 @@ export function renameOrganisation(db: Db, actor: Actor, key: string, input: { o
           .select({ id: organisations.id, name: organisations.canonicalName })
           .from(organisations)
           .where(and(eq(organisations.tenantId, actor.tenantId), eq(organisations.normalizedName, norm), eq(organisations.active, true)));
-        if (dup.length) throw conflict("DUPLICATE_ORGANISATION", `Another operator is already called "${dup[0].name}"`, { id: dup[0].id });
+        if (dup.length) throw conflict("DUPLICATE_ORGANISATION", 'Another operator is already called "{name}"', { id: dup[0].id }, { name: dup[0].name });
         const clash = await tx
           .select({ owner: organisationAliases.organisationId })
           .from(organisationAliases)
           .innerJoin(organisations, eq(organisations.id, organisationAliases.organisationId))
           .where(and(eq(organisations.tenantId, actor.tenantId), eq(organisationAliases.normalizedAlias, norm)));
-        if (clash.some((c) => c.owner !== org.id)) throw conflict("DUPLICATE_ALIAS", `"${name}" is already another name of a different operator`, {});
+        if (clash.some((c) => c.owner !== org.id)) throw conflict("DUPLICATE_ALIAS", '"{name}" is already another name of a different operator', {}, { name });
       }
       await tx.update(organisations).set({ canonicalName: name, normalizedName: norm, updatedAt: new Date() }).where(eq(organisations.id, org.id));
       // The new name no longer needs to be an alias of its own operator; the old one is kept unless told otherwise.
@@ -199,7 +199,7 @@ export function setPreferredOperators(db: Db, actor: Actor, key: string, input: 
     input,
     handler: async (tx) => {
       const ids = [...new Set(input.organisationIds.filter(Boolean))];
-      if (ids.length > MAX_PREFERRED_OPERATORS) throw invalid(`You can pick up to ${MAX_PREFERRED_OPERATORS} preferred operators`);
+      if (ids.length > MAX_PREFERRED_OPERATORS) throw invalid("You can pick up to {max} preferred operators", undefined, { max: MAX_PREFERRED_OPERATORS });
       const orgs = await tx.select().from(organisations).where(eq(organisations.tenantId, actor.tenantId));
       for (const id of ids) if (!orgs.some((o) => o.id === id && o.active)) throw notFound("Organisation");
       for (const o of orgs) {
@@ -292,7 +292,7 @@ export interface CreateAircraftTypeInput {
 }
 
 function checkCategory(c: string | null | undefined) {
-  if (c && !(AIRCRAFT_CATEGORIES as readonly string[]).includes(c)) throw invalid(`Unknown aircraft category "${c}"`);
+  if (c && !(AIRCRAFT_CATEGORIES as readonly string[]).includes(c)) throw invalid('Unknown aircraft category "{category}"', undefined, { category: c });
   return c || null;
 }
 
@@ -370,7 +370,7 @@ export function createAircraftType(db: Db, actor: Actor, key: string, input: Cre
         .select({ id: aircraftTypes.id })
         .from(aircraftTypes)
         .where(and(eq(aircraftTypes.tenantId, actor.tenantId), eq(aircraftTypes.normalizedName, norm), eq(aircraftTypes.active, true)));
-      if (dup.length) throw conflict("DUPLICATE_AIRCRAFT_TYPE", `Aircraft type "${manufacturer} ${model}" already exists`, { id: dup[0].id });
+      if (dup.length) throw conflict("DUPLICATE_AIRCRAFT_TYPE", 'Aircraft type "{manufacturer} {model}" already exists', { id: dup[0].id }, { manufacturer, model });
       const [t] = await tx
         .insert(aircraftTypes)
         .values({ tenantId: actor.tenantId, manufacturer, model, normalizedName: norm, category })
@@ -449,7 +449,7 @@ export function createAircraft(db: Db, actor: Actor, key: string, input: CreateA
           .select({ id: aircraft.id })
           .from(aircraft)
           .where(and(eq(aircraft.tenantId, actor.tenantId), eq(aircraft.aircraftTypeId, type.id), eq(aircraft.serialNumber, serial), eq(aircraft.active, true)));
-        if (dup.length) throw conflict("DUPLICATE_AIRCRAFT", `An aircraft of this type with serial ${serial} already exists`, { aircraftId: dup[0].id });
+        if (dup.length) throw conflict("DUPLICATE_AIRCRAFT", "An aircraft of this type with serial {serial} already exists", { aircraftId: dup[0].id }, { serial });
       }
       if (reg) await assertTailFree(tx, actor, reg, undefined, input.tailResolution);
 
@@ -496,8 +496,9 @@ async function assertTailFree(tx: Q, actor: Actor, registration: string, exceptA
   if (others.length && resolution !== "distinct_aircraft") {
     throw conflict(
       "TAIL_IN_USE",
-      `Tail ${registration} is currently registered to another aircraft. Confirm it is a distinct aircraft to continue.`,
+      "Tail {registration} is currently registered to another aircraft. Confirm it is a distinct aircraft to continue.",
       { aircraftIds: others.map((o) => o.aircraftId) },
+      { registration },
     );
   }
 }
@@ -561,7 +562,7 @@ async function requireAircraft(tx: Q, actor: Actor, aircraftId: string) {
 
 function validateInfo(info: InformationInput) {
   const year = (v: number | null | undefined, label: string) => {
-    if (v != null && (!Number.isInteger(v) || v < 1900 || v > 2100)) throw invalid(`${label} must be a year between 1900 and 2100`);
+    if (v != null && (!Number.isInteger(v) || v < 1900 || v > 2100)) throw invalid("{label} must be a year between 1900 and 2100", undefined, { label });
   };
   year(info.yom, "YOM");
   year(info.yor, "YOR");
@@ -626,7 +627,7 @@ export function addInformationVersion(
         .where(and(eq(aircraftInformationVersions.aircraftId, input.aircraftId), eq(aircraftInformationVersions.isCurrent, true)));
       const currentNumber = current?.versionNumber ?? 0;
       if (input.expectedVersion !== currentNumber) {
-        throw conflict("VERSION_MISMATCH", `Aircraft information changed (now version ${currentNumber}). Reload and retry.`, { currentVersion: currentNumber });
+        throw conflict("VERSION_MISMATCH", "Aircraft information changed (now version {version}). Reload and retry.", { currentVersion: currentNumber }, { version: currentNumber });
       }
       validateInfo(input.info);
       const evidenceId = await recordManualEvidence(tx, actor);

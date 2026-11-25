@@ -53,6 +53,25 @@ export const TRANSLATED = [
   "app/_components/BrandForm.tsx",
   "app/_components/QuoteTemplateEditor.tsx",
   "app/chatActions.ts",
+  "app/(app)/admin/page.tsx",
+  "app/(app)/admin/speed/page.tsx",
+  "app/(app)/library/import/page.tsx",
+  "app/(app)/library/review/page.tsx",
+  "app/_components/InviteCopy.tsx",
+  "app/api/aircraft/[id]/export/route.ts",
+  "app/privacy/page.tsx",
+  "app/terms/page.tsx",
+];
+/** Core logic whose error messages are shown translated (DomainError templates). */
+const DOMAIN = [
+  "src/domain/accounts.ts",
+  "src/domain/contacts.ts",
+  "src/domain/directory.ts",
+  "src/domain/intake.ts",
+  "src/domain/media.ts",
+  "src/domain/messengers.ts",
+  "src/domain/quoteTemplates.ts",
+  "src/lib/session.ts",
 ];
 /** Labels passed through a variable (t(label)), so the scan below can't see them. */
 const INDIRECT = [
@@ -133,6 +152,9 @@ const INDIRECT = [
   "the price, left empty for you to fill in",
   "The aircraft block must contain {aircraft}, otherwise the message would not say which aircraft it is about",
   "The seats pattern must contain {n}, for example “{n} seats”",
+  "Only the admin can import from the Google Drive folder. Upload your photos instead.",
+  "Google Drive is not connected yet (see the configuration guide).",
+  "Tick at least one photo to accept.",
 ];
 
 const root = path.resolve(__dirname, "..");
@@ -154,6 +176,15 @@ describe("screen wording in Chinese", () => {
 
   it("has Traditional Chinese for every label on a translated screen", () => {
     expect(used.filter((k) => UI_HANT[k] === undefined)).toEqual([]);
+  });
+
+  it("has Traditional Chinese for every error message the core logic shows", () => {
+    const templates = DOMAIN.flatMap((file) => {
+      const src = readFileSync(path.join(root, file), "utf8");
+      return [...src.matchAll(/(?:\binvalid\(\s*|\bconflict\(\s*"\w+",\s*|new DomainError\(\s*"\w+",\s*|\bnotFound\(\s*)"((?:[^"\\]|\\.)*)"/g)].map((m) => JSON.parse(`"${m[1]}"`));
+    });
+    expect(templates.length).toBeGreaterThan(40);
+    expect([...new Set(templates)].filter((k) => UI_HANT[k] === undefined)).toEqual([]);
   });
 
   it("keeps the same {placeholders} in Chinese", () => {

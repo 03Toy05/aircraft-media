@@ -2,7 +2,7 @@
 
 import { createContext, useContext, useMemo } from "react";
 import { useRouter } from "next/navigation";
-import { UI_LANGS, UI_LANG_COOKIE, ui, type UiLang, type UiParams } from "@/domain/uiText";
+import { UI_LANGS, UI_LANG_COOKIE, errorText, ui, type UiLang, type UiParams } from "@/domain/uiText";
 
 const LangContext = createContext<UiLang>("en");
 
@@ -13,12 +13,12 @@ export function UiLangProvider({ lang, children }: { lang: UiLang; children: Rea
 
 export const useUiLang = () => useContext(LangContext);
 
-export type T = ((en: string, params?: UiParams) => string) & { lang: UiLang };
+export type T = ((en: string, params?: UiParams) => string) & { lang: UiLang; error: (e: unknown, fallback?: string) => string };
 
 /** t(English label) in the chosen screen language. */
 export function useT(): T {
   const lang = useUiLang();
-  return useMemo(() => Object.assign((en: string, params?: UiParams) => ui(lang, en, params), { lang }), [lang]);
+  return useMemo(() => Object.assign((en: string, params?: UiParams) => ui(lang, en, params), { lang, error: (e: unknown, fallback?: string) => errorText(lang, e, fallback) }), [lang]);
 }
 
 /** Remember the screen language on this browser (a year). Toy's chat follows it too. */

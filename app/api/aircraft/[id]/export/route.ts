@@ -5,6 +5,7 @@ import { requireOwner } from "@/lib/session";
 import { buildAircraftExport, zipExport } from "@/domain/export";
 import { parseClassification } from "@/domain/constants";
 import { DomainError } from "@/domain/errors";
+import { serverT } from "@/lib/uiLang";
 
 /**
  * Owner-only export of an aircraft's card and approved photos.
@@ -14,7 +15,7 @@ import { DomainError } from "@/domain/errors";
 export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }) {
   const { actor } = await requireOwner();
   const { id } = await ctx.params;
-  if (!/^[0-9a-f-]{36}$/.test(id)) return new NextResponse("Not found", { status: 404 });
+  if (!/^[0-9a-f-]{36}$/.test(id)) return new NextResponse((await serverT())("Not found"), { status: 404 });
   const url = new URL(req.url);
   const views = (url.searchParams.get("views") ?? "").split(",").map((v) => parseClassification(v.trim())).filter((v) => v !== null);
   try {
@@ -28,7 +29,7 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
       },
     });
   } catch (e) {
-    if (e instanceof DomainError) return new NextResponse(e.message, { status: 404 });
+    if (e instanceof DomainError) return new NextResponse((await serverT()).error(e), { status: 404 });
     throw e;
   }
 }

@@ -92,7 +92,7 @@ export async function requireOwner(): Promise<Session> {
 /** For anything that adds or changes data. */
 export async function requireWriter(): Promise<Session> {
   const s = await requireUser();
-  if (s.viewingAs) throw new DomainError("READ_ONLY", `You are looking at ${s.viewingAs.email}'s workspace. Go back to your own to make changes.`);
+  if (s.viewingAs) throw new DomainError("READ_ONLY", "You are looking at {email}'s workspace. Go back to your own to make changes.", undefined, { email: s.viewingAs.email });
   if (s.readOnly) throw new DomainError("TRIAL_ENDED", "Your 14-day trial has ended, so you can look and share but not add or change anything. Ask the admin to extend it.");
   return s;
 }

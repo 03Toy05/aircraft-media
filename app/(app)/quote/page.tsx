@@ -123,6 +123,9 @@ export default async function Quote({ searchParams }: { searchParams: SP }) {
   if (!r && one(sp.legs)) { try { toyLegs = cleanLegs(JSON.parse(one(sp.legs)!), findAirport); } catch { /* ignore a broken link */ } }
   const legsShown = opened?.legs?.length ? opened.legs : r?.legs?.length ? r.legs : toyLegs;
   const airports = airportsFor(legsShown.flatMap((l) => [l.from, l.to]));
+  // From Toy: the template's own opening and closing lines, in place of the standard ones.
+  const initialEdits: Record<string, string> = {};
+  for (const k of ["greeting", "closing"] as const) { const v = one(sp[k])?.trim(); if (v && initial.length) initialEdits[k] = v.slice(0, 1000); }
   const photosParam = one(sp.photos);
   const initialKinds = photosParam === undefined ? undefined : photosParam === "none" ? [] : photosParam.split(",").filter((k) => k in CLASSIFICATION_LABEL);
   const t = await serverT();
@@ -130,8 +133,8 @@ export default async function Quote({ searchParams }: { searchParams: SP }) {
     <>
       <h1>{t("Quote")}</h1>
       <p className="muted">{t("Enter the client's routing, find the operator, tick the aircraft, then edit and send the message with the photos.")} <a href="/quote/template">{t("Change the standard wording")}</a> · <Link href="/requests">{t("Saved requests")}</Link></p>
-      <QuoteBuilder key={`${request?.id ?? ""}:${opened?.version ?? ""}:${one(sp.fresh) ?? ""}:${one(sp.legs) ?? ""}`} aircraft={options} operators={operators} preferred={preferred} initialIds={initial} initialPrices={initialPrices} initialKinds={initialKinds} templates={await getQuoteTemplates(db, actor.tenantId)}
-        request={request} airports={airports} opened={opened} fresh={one(sp.fresh) === "1"} initialLegs={toyLegs} />
+      <QuoteBuilder key={`${request?.id ?? ""}:${opened?.version ?? ""}:${one(sp.fresh) ?? ""}:${one(sp.legs) ?? ""}:${one(sp.greeting) ?? ""}:${one(sp.closing) ?? ""}`} aircraft={options} operators={operators} preferred={preferred} initialIds={initial} initialPrices={initialPrices} initialKinds={initialKinds} templates={await getQuoteTemplates(db, actor.tenantId)}
+        request={request} airports={airports} opened={opened} fresh={one(sp.fresh) === "1"} initialLegs={toyLegs} initialEdits={initialEdits} />
     </>
   );
 }

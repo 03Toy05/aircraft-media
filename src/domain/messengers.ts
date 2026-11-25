@@ -36,6 +36,6 @@ export function contactLink(appId: string, handle: string | null | undefined, te
     case "wechat": return { url: "weixin://", copyFirst: true, newTab: false };
     case "kakaotalk": return { url: "kakaotalk://", copyFirst: true, newTab: false };
     case "signal": return { url: "sgnl://", copyFirst: true, newTab: false };
-    default: throw invalid(`Unknown messenger "${appId}"`);
+    default: throw invalid('Unknown messenger "{app}"', undefined, { app: String(appId) });
   }
 }

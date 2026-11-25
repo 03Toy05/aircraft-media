@@ -60,7 +60,14 @@ export interface QuoteRequest {
   legs?: Leg[];
   /** Airport codes in the routing that we don't know. */
   unknownAirports?: string[];
+  /** The template's "Opening:" and "Closing:" lines, when filled in: they replace the standard opening and closing lines. */
+  greeting?: string;
+  closing?: string;
 }
+
+/** The quote template's own opening and closing lines ("Opening: Dear Mr Chan, …" / "開場白：…"). */
+const OPENING_LINE = /^\s*(?:opening(?:\s+line)?|greeting|開場白|开场白)\s*[:：]\s*(.*)$/i;
+const CLOSING_LINE = /^\s*(?:closing(?:\s+line)?|結尾語|结尾语|結尾|结尾)\s*[:：]\s*(.*)$/i;
 
 const CURRENCY = "USD|US\\$|HKD|HK\\$|EUR|GBP|SGD|RMB|CNY|JPY|AUD|CAD|CHF|AED|THB|€|£|¥|\\$";
 const CURRENCY_AFTER = "USD|HKD|EUR|GBP|SGD|RMB|CNY|JPY|AUD|CAD|CHF|AED|THB|美元|美金|港元|港幣|港币|人民幣|人民币|歐元|欧元";
@@ -190,7 +197,13 @@ export function parseQuoteRequest(message: string, today = new Date()): QuoteReq
   // The request ("Draft me a quote for") may come after the routing; until it does, only routing lines are allowed.
   let started = false;
   let allPax: number | null = null; // "8 pax" on a line of its own: for every leg
+  let greeting = "";
+  let closing = "";
   for (const rawLine of lines) {
+    const open = rawLine.match(OPENING_LINE);
+    if (open) { greeting = open[1].trim(); continue; }
+    const close = rawLine.match(CLOSING_LINE);
+    if (close) { closing = close[1].trim(); continue; }
     const paxLine = rawLine.match(PAX_LINE);
     if (paxLine) { allPax = Number(paxLine[1] ?? paxLine[2]); continue; }
     // The template's labelled lines: a leg ("Date: 12 Dec | From: HKG | To: LHR") or an option ("Operator: … | Aircraft: … | Price: …").
@@ -237,6 +250,8 @@ export function parseQuoteRequest(message: string, today = new Date()): QuoteReq
     ...(prices.some(Boolean) ? { prices } : {}),
     ...(kinds ? { kinds } : {}),
     ...(legs.length || unknown.length ? { legs, ...(unknown.length ? { unknownAirports: [...new Set(unknown)] } : {}) } : {}),
+    ...(greeting ? { greeting } : {}),
+    ...(closing ? { closing } : {}),
   };
 }
 

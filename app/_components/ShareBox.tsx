@@ -95,7 +95,7 @@ export function ShareBox({ aircraftId, tail, cardText, items, contact }: { aircr
       await navigator.share({ files, text: cardText, title: tail });
       setMsg(t("Shared. If the card text did not come through, use Copy card."));
     } catch (e) {
-      if ((e as Error).name !== "AbortError") setMsg((e as Error).message || t("Sharing failed"));
+      if ((e as Error).name !== "AbortError") setMsg(t.error(e, "Sharing failed"));
     } finally {
       setBusy(false);
     }

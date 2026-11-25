@@ -76,7 +76,7 @@ type Sort = "name" | "aircraft" | "recent";
  * closing line. Every box has Bold / Italic / Underline and a microphone. The Ask Toy microphone runs spoken
  * commands on this page ("add the G280, Chinese, price 40,000").
  */
-export default function QuoteBuilder({ aircraft, operators, preferred: preferredInitial, initialIds, initialPrices, initialKinds, templates, request, airports, opened, fresh, initialLegs }: {
+export default function QuoteBuilder({ aircraft, operators, preferred: preferredInitial, initialIds, initialPrices, initialKinds, templates, request, airports, opened, fresh, initialLegs, initialEdits }: {
   aircraft: QuoteAircraftOption[]; operators: QuoteOperator[]; preferred: string[]; initialIds: string[]; templates: SavedTemplates;
   /** From Toy: prices per aircraft, and the photo kinds asked for ([] = no photos). */
   initialPrices?: Record<string, string>; initialKinds?: string[];
@@ -90,6 +90,8 @@ export default function QuoteBuilder({ aircraft, operators, preferred: preferred
   fresh?: boolean;
   /** From Toy: the routing typed in the chat, for a quick quote. */
   initialLegs?: Leg[];
+  /** From Toy: the template's own opening and closing lines ({ greeting, closing }). */
+  initialEdits?: Record<string, string>;
 }) {
   const t = useT();
   // Spoken commands are set up once, so they read the current wording through this.
@@ -109,7 +111,7 @@ export default function QuoteBuilder({ aircraft, operators, preferred: preferred
   // Typed for this quote, per aircraft. They are values, not text, so they survive changing the details or the language.
   const [prices, setPrices] = useState<Record<string, string>>(initialPrices ?? {});
   const [extras, setExtras] = useState<Record<string, string>>({});
-  const [edits, setEdits] = useState<Record<string, string>>({}); // "greeting" | "closing" | "block:<aircraftId>" -> the broker's own text
+  const [edits, setEdits] = useState<Record<string, string>>(initialEdits ?? {}); // "greeting" | "closing" | "block:<aircraftId>" -> the broker's own text
   // Photos ("<aircraftId>|<photo url>") ticked or unticked by hand, against their default (singles on, combined off).
   // Toy may ask for some kinds only; an aircraft without the combined photo asked for sends its single photos.
   const [flip, setFlip] = useState<Set<string>>(() => {
@@ -365,7 +367,7 @@ export default function QuoteBuilder({ aircraft, operators, preferred: preferred
       if (option === null && files.length) setMsg(app === "other" ? t("If the app kept only the photos, tap Message only and send it to the same chat.") : t("If the message text did not come through, paste it from Copy message."));
     } catch (e) {
       if ((e as Error).name === "TypeError" || !navigator.share) { setMsg(t("This browser cannot open the share sheet. Open this page on your phone, or use Copy message.")); return; }
-      if ((e as Error).name !== "AbortError") setMsg((e as Error).message || t("Sharing failed"));
+      if ((e as Error).name !== "AbortError") setMsg(t.error(e, "Sharing failed"));
     } finally { setBusy(false); }
   }
 

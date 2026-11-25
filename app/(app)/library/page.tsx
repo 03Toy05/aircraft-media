@@ -131,12 +131,12 @@ export default async function Library({ searchParams }: { searchParams: SP }) {
       <div className="people-head" style={{ marginBottom: 10 }}>
         <p className="muted small" style={{ margin: 0 }}>
           {orgs.length === 1 ? t("The Aircraft Media library: {n} operator, {total} aircraft. Library aircraft can be quoted straight away (Quote page and Toy). Add one to your workspace to edit it or add your own photos.", { n: orgs.length, total: totalAircraft }) : t("The Aircraft Media library: {n} operators, {total} aircraft. Library aircraft can be quoted straight away (Quote page and Toy). Add one to your workspace to edit it or add your own photos.", { n: orgs.length, total: totalAircraft })}
-          {notReady > 0 && <> {notReady} aircraft without an approved photo yet are shown only to you.</>}
+          {notReady > 0 && <> {t("{n} aircraft without an approved photo yet are shown only to you.", { n: notReady })}</>}
         </p>
         {isAdmin && (
           <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-            <Link href="/library/review" className="btn secondary small-btn">Library review{waiting ? ` (${waiting})` : ""}</Link>
-            <Link href="/library/import" className="btn secondary small-btn">Import</Link>
+            <Link href="/library/review" className="btn secondary small-btn">{t("Library review")}{waiting ? ` (${waiting})` : ""}</Link>
+            <Link href="/library/import" className="btn secondary small-btn">{t("Import")}</Link>
           </div>
         )}
       </div>
@@ -153,7 +153,7 @@ export default async function Library({ searchParams }: { searchParams: SP }) {
       )}
       {shown.length === 0 && (
         <div className="card muted">
-          {orgs.length === 0 ? (isAdmin ? "The library is empty. Photos arrive in Library review once people who share with the library approve them." : t("The library is empty for now."))
+          {orgs.length === 0 ? (isAdmin ? t("The library is empty. Photos arrive in Library review once people who share with the library approve them.") : t("The library is empty for now."))
             : words.length ? t("Nothing matches that search.") : t("Everything in the library is in your workspace and nothing changed in the last {n} days.", { n: RECENT_DAYS })}
         </div>
       )}

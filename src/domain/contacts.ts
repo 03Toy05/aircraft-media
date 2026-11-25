@@ -15,7 +15,7 @@ export interface ContactInput { name: string; englishName?: string | null; app: 
 function check(input: ContactInput) {
   const name = input.name.trim();
   if (!name) throw invalid("Contact name is required");
-  if (!contactApp(input.app)) throw invalid(`Unknown messenger "${input.app}"`);
+  if (!contactApp(input.app)) throw invalid('Unknown messenger "{app}"', undefined, { app: String(input.app) });
   return { name, englishName: input.englishName?.trim() || null, handle: input.handle?.trim() || null, notes: input.notes?.trim() || null };
 }
 
@@ -59,7 +59,7 @@ export function createContact(db: Db, actor: Actor, key: string, input: ContactI
       const v = check(input);
       const norm = normalizeKey(v.name);
       const dup = await tx.select({ id: contacts.id }).from(contacts).where(and(eq(contacts.tenantId, actor.tenantId), eq(contacts.normalizedName, norm), eq(contacts.active, true)));
-      if (dup.length) throw conflict("DUPLICATE_CONTACT", `You already have a contact called "${v.name}"`, { id: dup[0].id });
+      if (dup.length) throw conflict("DUPLICATE_CONTACT", 'You already have a contact called "{name}"', { id: dup[0].id }, { name: v.name });
       const initials = initialsFor(v);
       if (!initials) throw invalid("Add the contact's English name: the Person ID (PER-…) takes its initials from it.");
       const reference = await allocatePersonReference(tx, actor.tenantId, initials);

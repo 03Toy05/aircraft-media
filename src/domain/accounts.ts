@@ -38,7 +38,7 @@ export async function inviteUser(db: Db, adminId: string, input: { email: string
   const email = normalizeEmail(input.email);
   if (!email) throw new DomainError("BAD_EMAIL", "That doesn't look like an email address.");
   const [existing] = await db.select().from(users).where(eq(users.email, email));
-  if (existing) throw new DomainError("ALREADY_INVITED", `${email} already has access.`);
+  if (existing) throw new DomainError("ALREADY_INVITED", "{email} already has access.", undefined, { email });
   const [row] = await db
     .insert(users)
     .values({

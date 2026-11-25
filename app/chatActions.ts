@@ -94,7 +94,7 @@ async function turn(fd: FormData): Promise<TurnResult> {
         photos.push(await photoFor(db, actor.tenantId, r.result.mediaId, f.name, r.replayed ? t("uploaded before") : undefined));
       }
     } catch (e) {
-      if (e instanceof DomainError) failures.push(`${f.name}: ${e.message}`);
+      if (e instanceof DomainError) failures.push(`${f.name}: ${t.error(e)}`);
       else throw e;
     }
   }
@@ -112,7 +112,7 @@ async function turn(fd: FormData): Promise<TurnResult> {
         for (const e of edits) done.push(tr(L, "Changed {name}: {change}.", { name: e.label, change: e.change }));
       } catch (e) {
         if (!(e instanceof DomainError)) throw e;
-        failures.push(`${edits[0].label}: ${e.message}`);
+        failures.push(`${edits[0].label}: ${t.error(e)}`);
       }
     }
     revalidatePath("/", "layout");

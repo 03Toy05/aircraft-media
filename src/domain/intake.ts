@@ -35,7 +35,7 @@ export async function ingestPdf(db: Db, store: FileStore, actor: Actor, input: {
   const { bytes } = input;
   const drive = input.drive;
   if (bytes.byteLength === 0) throw invalid("The file is empty");
-  if (bytes.byteLength > MAX_PDF_BYTES) throw invalid(`PDF is larger than ${MAX_PDF_BYTES / 1024 / 1024} MB`);
+  if (bytes.byteLength > MAX_PDF_BYTES) throw invalid("PDF is larger than {mb} MB", undefined, { mb: MAX_PDF_BYTES / 1024 / 1024 });
   if (new TextDecoder("latin1").decode(bytes.subarray(0, 1024)).indexOf("%PDF-") === -1) throw invalid("This file is not a PDF");
   const hash = sha256(bytes);
 

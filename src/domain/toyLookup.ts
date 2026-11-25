@@ -153,7 +153,9 @@ export async function fleetBasics(db: Db, tenantId: string) {
  * The quotation message (in your saved wording, in the chat language) and a few photos for each chosen aircraft,
  * so Toy can show "template and photos" right in the chat.
  */
-export async function quotePreview(db: Db, tenantId: string, ids: string[], lang?: ChatLang, prices: Record<string, string> = {}, alsoTenants: string[] = []): Promise<{
+export async function quotePreview(db: Db, tenantId: string, ids: string[], lang?: ChatLang, prices: Record<string, string> = {}, alsoTenants: string[] = [],
+  /** The broker's own opening and closing lines for this quote, in place of the saved wording's. */
+  own: { greeting?: string; closing?: string } = {}): Promise<{
   text: string;
   photos: { id: string; label: string; classification: Classification; option: number }[];
   /** Each option's own message (opening line on the first, closing line on the last), to send option by option. */
@@ -178,9 +180,14 @@ export async function quotePreview(db: Db, tenantId: string, ids: string[], lang
   const language = lang === "zh-Hant" || lang === "zh-Hans" ? lang : "en";
   const opts = { language, template: templates[language] ?? null, greeting: true } as const;
   const parts = buildQuoteParts(items, opts);
+  if (own.greeting) parts.greeting = own.greeting;
+  if (own.closing) parts.closing = own.closing;
   const options = items.map((it, i) => ({
     title: it.type,
     text: [i === 0 ? parts.greeting : null, parts.blocks[i], i === items.length - 1 ? parts.closing : null].filter((x): x is string => !!x).join("\n\n"),
   }));
-  return { text: buildQuote(items, opts), photos, options };
+  const text = own.greeting || own.closing
+    ? [parts.greeting, ...parts.blocks, parts.closing].filter((x): x is string => !!x && x.trim() !== "").join("\n\n")
+    : buildQuote(items, opts);
+  return { text, photos, options };
 }

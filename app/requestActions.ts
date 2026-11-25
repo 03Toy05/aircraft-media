@@ -20,7 +20,7 @@ export async function archiveRequestAction(fd: FormData) {
   try {
     s = await requireWriter();
   } catch (e) {
-    if (e instanceof DomainError) redirect(withParam(`/requests/${id}`, "error", e.message));
+    if (e instanceof DomainError) redirect(withParam(`/requests/${id}`, "error", (await serverT()).error(e)));
     throw e;
   }
   const archived = str(fd, "archived") === "1";
@@ -52,7 +52,7 @@ export async function saveQuoteVersionAction(requestId: string | null, legs: unk
     revalidatePath("/");
     return { ok: true, ...r, message: (await serverT())("Saved as {ref} version {n}.", { ref: r.reference, n: r.version }) };
   } catch (e) {
-    if (e instanceof DomainError || e instanceof Error) return { ok: false, message: e.message };
+    if (e instanceof DomainError || e instanceof Error) return { ok: false, message: (await serverT()).error(e) };
     return { ok: false, message: (await serverT())("The quote couldn't be saved. Try again.") };
   }
 }
@@ -69,7 +69,7 @@ export async function clientLinkAction(requestId: string): Promise<{ ok: boolean
     const l = await ensureLink(await getDb(), s.actor, requestId);
     return { ok: true, url: `${site}/q/${l.token}`, message: (await serverT())("Client link ready.") };
   } catch (e) {
-    return { ok: false, message: e instanceof Error ? e.message : (await serverT())("The link couldn't be made.") };
+    return { ok: false, message: e instanceof Error ? (await serverT()).error(e) : (await serverT())("The link couldn't be made.") };
   }
 }
 
@@ -81,7 +81,7 @@ export async function clientLinkSettingsAction(fd: FormData) {
   try {
     s = await requireWriter();
   } catch (e) {
-    if (e instanceof DomainError) redirect(withParam(back, "error", e.message));
+    if (e instanceof DomainError) redirect(withParam(back, "error", (await serverT()).error(e)));
     throw e;
   }
   const db = await getDb();
@@ -101,7 +101,7 @@ export async function clientLinkSettingsAction(fd: FormData) {
       ok = d ? t("The link stops working after {date}.", { date: d }) : t("The link has no end date.");
     }
   } catch (e) {
-    redirect(withParam(back, "error", (e as Error).message));
+    redirect(withParam(back, "error", t.error(e)));
   }
   revalidatePath(back);
   redirect(withParam(back, "ok", ok));

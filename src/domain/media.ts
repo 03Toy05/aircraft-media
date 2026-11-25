@@ -57,7 +57,7 @@ export interface UploadInput {
 
 export const ensureImageBytes = async (bytes: Uint8Array) => {
   if (bytes.byteLength === 0) throw invalid("The file is empty");
-  if (bytes.byteLength > MAX_UPLOAD_BYTES) throw invalid(`File is larger than ${MAX_UPLOAD_BYTES / 1024 / 1024} MB`);
+  if (bytes.byteLength > MAX_UPLOAD_BYTES) throw invalid("File is larger than {mb} MB", undefined, { mb: MAX_UPLOAD_BYTES / 1024 / 1024 });
   let meta: Awaited<ReturnType<ReturnType<typeof sharp>["metadata"]>>;
   try {
     meta = await sharp(bytes).metadata();
@@ -161,7 +161,7 @@ async function loadMedia(tx: Q, actor: Actor, mediaId: string) {
 }
 
 function checkVersion(m: { version: number }, expected: number) {
-  if (m.version !== expected) throw conflict("VERSION_MISMATCH", `This media changed (now version ${m.version}). Reload and retry.`, { currentVersion: m.version });
+  if (m.version !== expected) throw conflict("VERSION_MISMATCH", "This media changed (now version {version}). Reload and retry.", { currentVersion: m.version }, { version: m.version });
 }
 
 /** Any change to classification, association or content invalidates a previous approval. */
@@ -288,7 +288,7 @@ export function approveMedia(db: Db, actor: Actor, input: { mediaId: string; con
       checkVersion(m, input.expectedVersion);
       if (m.lifecycleState !== "active") throw conflict("MEDIA_RETIRED", "Retired media cannot be approved. Restore it first.");
       if (m.currentContentVersionId !== input.contentVersionId) throw conflict("CONTENT_CHANGED", "The photo content changed since you reviewed it.");
-      if (m.reviewState !== "needs_review") throw conflict("NOT_IN_REVIEW", `Media is ${m.reviewState}, not awaiting review.`);
+      if (m.reviewState !== "needs_review") throw conflict("NOT_IN_REVIEW", "Media is {state}, not awaiting review.", undefined, { state: m.reviewState });
       if (m.primaryClassification === "unclassified") throw invalid("Choose a classification before approving");
       if (m.associationStatus === "unresolved") throw invalid("Resolve the association (actual aircraft or representative type) before approving");
       await tx
@@ -310,7 +310,7 @@ export function rejectMedia(db: Db, actor: Actor, key: string, input: { mediaId:
     handler: async (tx) => {
       const m = await loadMedia(tx, actor, input.mediaId);
       checkVersion(m, input.expectedVersion);
-      if (m.reviewState !== "needs_review") throw conflict("NOT_IN_REVIEW", `Media is ${m.reviewState}, not awaiting review.`);
+      if (m.reviewState !== "needs_review") throw conflict("NOT_IN_REVIEW", "Media is {state}, not awaiting review.", undefined, { state: m.reviewState });
       await tx
         .update(aircraftMedia)
         .set({ reviewState: "rejected", rejectionReason: input.reason?.trim() || null, version: m.version + 1, updatedAt: new Date() })
@@ -387,7 +387,7 @@ async function cropBytes(store: FileStore, storageRef: string, storageKind: stri
   const H = meta.height ?? 0;
   const ints = [rect.x, rect.y, rect.width, rect.height].every(Number.isInteger);
   if (!ints || rect.x < 0 || rect.y < 0 || rect.width < 1 || rect.height < 1 || rect.x + rect.width > W || rect.y + rect.height > H) {
-    throw invalid(`Crop must be whole pixels inside the ${W}x${H} image`);
+    throw invalid("Crop must be whole pixels inside the {width}x{height} image", undefined, { width: W, height: H });
   }
   const out = await sharp(bytes).extract({ left: rect.x, top: rect.y, width: rect.width, height: rect.height }).toBuffer();
   const outMeta = await sharp(out).metadata();

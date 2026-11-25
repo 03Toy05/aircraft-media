@@ -23,7 +23,7 @@ export function saveQuoteTemplate(db: Db, actor: Actor, key: string, input: { la
   return runAction({
     db, actor, name: "quoteTemplate.save", idempotencyKey: key, input,
     handler: async (tx) => {
-      if (!(QUOTE_LANGUAGES as readonly string[]).includes(input.language)) throw invalid(`Unknown language "${input.language}"`);
+      if (!(QUOTE_LANGUAGES as readonly string[]).includes(input.language)) throw invalid('Unknown language "{language}"', undefined, { language: String(input.language) });
       const language = input.language as QuoteLanguage;
       const base = defaultQuoteTemplate(language);
       // Normalise line endings; keep only what differs from the default so future default improvements still reach unchanged parts.
