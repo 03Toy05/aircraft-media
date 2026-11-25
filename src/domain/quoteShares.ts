@@ -8,11 +8,11 @@ import type { Actor } from "./action";
  * quote message is copied. The phone cannot tell whether the message was then actually sent, so this counts
  * quotes shared out, not quotes delivered. Sharing one quote option by option, or again later, counts once.
  */
-export async function recordQuoteShare(db: Db, actor: Actor, input: { quoteKey: string; how: "share" | "copy"; options: number }) {
+export async function recordQuoteShare(db: Db, actor: Actor, input: { quoteKey: string; how: "share" | "copy" | "email"; options: number }) {
   const quoteKey = input.quoteKey.trim().slice(0, 100);
   if (!quoteKey) return;
   const options = Math.max(1, Math.min(50, Math.round(input.options) || 1));
-  await db.insert(quoteShares).values({ tenantId: actor.tenantId, userId: actor.id, quoteKey, how: input.how === "copy" ? "copy" : "share", options });
+  await db.insert(quoteShares).values({ tenantId: actor.tenantId, userId: actor.id, quoteKey, how: input.how === "copy" || input.how === "email" ? input.how : "share", options });
 }
 
 export interface QuoteShareStats { quotes: number; last30: number; lastAt: Date | null }

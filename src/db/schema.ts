@@ -502,7 +502,7 @@ export const quoteShares = pgTable(
     userId: uuid("user_id").notNull(),
     /** One quote: shares of the same quote (option by option, or again later) count once. */
     quoteKey: text("quote_key").notNull(),
-    /** share | copy */
+    /** share | copy | email */
     how: text("how").notNull(),
     /** How many aircraft options the quote had. */
     options: integer("options").notNull().default(1),

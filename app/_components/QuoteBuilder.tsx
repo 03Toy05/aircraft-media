@@ -6,8 +6,8 @@ import Icon from "./Icon";
 import TextBox, { Styled } from "./TextBox";
 import { copyText, fetchPhoto } from "./copyText";
 import { registerCommands, type CommandResult } from "./voice";
-import { recordQuoteShareAction, togglePreferredOperator } from "../actions";
-import { QUOTE_LANGUAGES, QUOTE_WORDS, buildQuoteParts, renumberBlock, type QuoteLanguage, type QuoteTemplate } from "@/domain/quote";
+import { recordQuoteShareAction, sendQuoteEmailAction, togglePreferredOperator } from "../actions";
+import { QUOTE_LANGUAGES, QUOTE_SUBJECT, QUOTE_WORDS, buildQuoteParts, renumberBlock, type QuoteLanguage, type QuoteTemplate } from "@/domain/quote";
 import { forOtherApps, parseStyled } from "@/domain/textStyle";
 import { parseQuoteCommands, type QuoteCommand } from "@/domain/quoteCommands";
 import { COMBINED_NEEDS, type WifiStatus, type YesNoStatus } from "@/domain/constants";
@@ -39,9 +39,9 @@ export interface QuoteOperator { id: string; name: string; region: string | null
 export type SavedTemplates = Partial<Record<QuoteLanguage, Partial<QuoteTemplate>>>;
 
 const EXT: Record<string, string> = { "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp" };
-/** Which app the quote goes through. WhatsApp reads *bold*; WeChat takes photos and text in separate sends. */
-type SendApp = "whatsapp" | "wechat" | "other";
-const SEND_APPS: [SendApp, string][] = [["whatsapp", "WhatsApp"], ["wechat", "WeChat"], ["other", "Other apps"]];
+/** Which app the quote goes through. WhatsApp reads *bold*; WeChat takes photos and text in separate sends; Email is sent by the site. */
+type SendApp = "whatsapp" | "wechat" | "email" | "other";
+const SEND_APPS: [SendApp, string][] = [["whatsapp", "WhatsApp"], ["wechat", "WeChat"], ["email", "Email"], ["other", "Other apps"]];
 /** The quote being written, kept on this device so leaving the page does not lose it. */
 const DRAFT = "quoteDraft";
 const DRAFT_DAYS = 14;
@@ -50,6 +50,8 @@ interface Draft {
   extras: Record<string, string>; edits: Record<string, string>; flip: string[]; app: SendApp; opId: string;
   /** Set at the first share, so sharing the same quote again (or option by option) counts once. */
   quoteKey?: string;
+  /** Email: who to, the subject (empty = the standard one), and whether to send the broker a copy. */
+  emailTo?: string; subject?: string; copyMe?: boolean;
 }
 const SPEECH: Partial<Record<QuoteLanguage, string>> = { en: "en-US", "zh-Hant": "zh-HK", "zh-Hans": "zh-CN", ja: "ja-JP", ko: "ko-KR", vi: "vi-VN", th: "th-TH", id: "id-ID", fr: "fr-FR", de: "de-DE", ru: "ru-RU", ar: "ar-SA" };
 type Sort = "name" | "aircraft" | "recent";
@@ -92,6 +94,9 @@ export default function QuoteBuilder({ aircraft, operators, preferred: preferred
   const [msg, setMsg] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [app, setApp] = useState<SendApp>("whatsapp");
+  const [emailTo, setEmailTo] = useState("");
+  const [subject, setSubject] = useState("");
+  const [copyMe, setCopyMe] = useState(true);
   const styleFor: "whatsapp" | "other" = app === "whatsapp" ? "whatsapp" : "other";
 
   // -- finding the operator
@@ -127,6 +132,7 @@ export default function QuoteBuilder({ aircraft, operators, preferred: preferred
       if (d && initialIds.length === 0 && Date.now() - d.savedAt < DRAFT_DAYS * 864e5 && (known.length || Object.keys(d.edits).length)) {
         setIds(known); setLang(d.lang); setInc((cur) => ({ ...cur, ...d.inc })); setPrices(d.prices); setExtras(d.extras);
         setEdits(d.edits); setFlip(new Set(d.flip)); setApp(d.app); setOpId(d.opId); setQuoteKey(d.quoteKey ?? "");
+        setEmailTo(d.emailTo ?? ""); setSubject(d.subject ?? ""); setCopyMe(d.copyMe ?? true);
         if (known.length) setSteps({ op: false, ac: true, lang: false });
         setRestored(true);
       }
@@ -136,14 +142,14 @@ export default function QuoteBuilder({ aircraft, operators, preferred: preferred
   useEffect(() => {
     if (!loaded) return;
     try {
-      const d: Draft = { savedAt: Date.now(), ids, lang, inc, prices, extras, edits, flip: [...flip], app, opId, quoteKey };
+      const d: Draft = { savedAt: Date.now(), ids, lang, inc, prices, extras, edits, flip: [...flip], app, opId, quoteKey, emailTo, subject, copyMe };
       localStorage.setItem(DRAFT, JSON.stringify(d));
     } catch { /* storage full or blocked */ }
-  }, [loaded, ids, lang, inc, prices, extras, edits, flip, app, opId, quoteKey]);
+  }, [loaded, ids, lang, inc, prices, extras, edits, flip, app, opId, quoteKey, emailTo, subject, copyMe]);
   const startOver = () => {
     if (!window.confirm("Clear this quote and start a new one?")) return;
     try { localStorage.removeItem(DRAFT); } catch { /* ignore */ }
-    setIds([]); setPrices({}); setExtras({}); setEdits({}); setFlip(new Set()); setOpId(""); setRestored(false); setMsg(null); setQuoteKey("");
+    setIds([]); setPrices({}); setExtras({}); setEdits({}); setFlip(new Set()); setOpId(""); setRestored(false); setMsg(null); setQuoteKey(""); setEmailTo(""); setSubject("");
     setSteps({ op: true, ac: true, lang: false });
   };
 
@@ -287,6 +293,22 @@ export default function QuoteBuilder({ aircraft, operators, preferred: preferred
     } catch (e) {
       if ((e as Error).name === "TypeError" || !navigator.share) { setMsg("This browser cannot open the share sheet. Open this page on your phone, or use Copy message."); return; }
       if ((e as Error).name !== "AbortError") setMsg((e as Error).message || "Sharing failed");
+    } finally { setBusy(false); }
+  }
+
+  /** Email: the site sends the whole quote with the ticked photos attached; replies go to the broker. */
+  async function sendEmail() {
+    setBusy(true); setMsg(null);
+    try {
+      const k = quoteKey || crypto.randomUUID();
+      if (!quoteKey) setQuoteKey(k);
+      const r = await sendQuoteEmailAction({
+        to: emailTo, subject: subject.trim() || QUOTE_SUBJECT[lang], text: textFor("whatsapp"), rtl: lang === "ar", copyMe, quoteKey: k, options: chosen.length,
+        photos: photos.map(({ a, i, p }) => ({ id: p.url.replace(/^.*\/api\/media\//, ""), name: `Option ${i + 1} - ${a.type} - ${p.label}${p.representative ? " (representative)" : ""}` })),
+      });
+      setMsg(r.message);
+    } catch {
+      setMsg("The email couldn't be sent. Try again in a moment, or use Copy message.");
     } finally { setBusy(false); }
   }
 
@@ -619,7 +641,19 @@ export default function QuoteBuilder({ aircraft, operators, preferred: preferred
               WeChat takes photos or a message, not both in one share. Tap Photos and send them, then Message to the same chat.
             </p>
           )}
-          {chosen.length > 1 ? (
+          {app === "email" ? (
+            <form className="login-email" onSubmit={(e) => { e.preventDefault(); void sendEmail(); }}>
+              <label htmlFor="q-to" className="small">To (the client&apos;s email; up to 5, separated by commas)</label>
+              <input id="q-to" type="text" inputMode="email" autoComplete="email" value={emailTo} onChange={(e) => setEmailTo(e.target.value)} placeholder="client@example.com" required />
+              <label htmlFor="q-subject" className="small">Subject</label>
+              <input id="q-subject" type="text" value={subject} onChange={(e) => setSubject(e.target.value)} placeholder={QUOTE_SUBJECT[lang]} maxLength={200} />
+              <label className="small" style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                <input type="checkbox" checked={copyMe} onChange={(e) => setCopyMe(e.target.checked)} /> Send me a copy
+              </label>
+              <div><button type="submit" disabled={busy || chosen.length === 0 || !text.trim() || !emailTo.trim()}><Icon name="send" />{busy ? "Sending…" : `Email the quote${photos.length ? ` with ${photos.length} photo${photos.length === 1 ? "" : "s"}` : ""}`}</button></div>
+              <p className="small muted" style={{ margin: 0 }}>Sent from Aircraft Media under your name; the client&apos;s reply comes to your own email. All options go in one email, with the ticked photos attached.</p>
+            </form>
+          ) : chosen.length > 1 ? (
             <>
               <div className="group-title">Send, one option at a time ({photos.length} photo{photos.length === 1 ? "" : "s"} ticked in total)</div>
               <div className="option-sends">

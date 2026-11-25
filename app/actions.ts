@@ -17,6 +17,9 @@ import * as dir from "@/domain/directory";
 import * as contacts from "@/domain/contacts";
 import * as quoteTemplates from "@/domain/quoteTemplates";
 import * as quoteShares from "@/domain/quoteShares";
+import * as quoteEmail from "@/domain/quoteEmail";
+import { photoAllowed } from "@/domain/photoAccess";
+import { sendMail } from "@/lib/mail";
 import * as passwords from "@/domain/passwords";
 import * as library from "@/domain/library";
 import { readPackFiles, startPackImport } from "@/domain/libraryUpload";
@@ -26,7 +29,7 @@ import * as settings from "@/domain/settings";
 import { applyChatProposal } from "@/domain/chat";
 import { makeCombinedPhoto } from "@/domain/combinedPhoto";
 import { and, eq } from "drizzle-orm";
-import { aircraft as aircraftTable, aircraftMedia as mediaTable } from "@/db/schema";
+import { aircraft as aircraftTable, aircraftMedia as mediaTable, users } from "@/db/schema";
 import { CLASSIFICATIONS, type Classification, type OrgRole, type RightsStatus, type WifiStatus, type YesNoStatus } from "@/domain/constants";
 import { signOut } from "@/auth";
 
@@ -749,6 +752,58 @@ export async function exportCbosAction() {
  * A quote was handed to another app (share sheet completed) or its message copied. Counted for the Users page.
  * Not counted while the admin is looking at someone else's workspace. Never fails the share.
  */
+/**
+ * Quote page: email the quote to the client from the site's own address, with the ticked photos attached. Replies go
+ * to the broker, who can get a copy. Only photos this person may see are attached; a few emails a day at most.
+ */
+export async function sendQuoteEmailAction(input: {
+  to: string; subject: string; text: string; rtl?: boolean; copyMe: boolean; quoteKey: string; options: number;
+  photos: { id: string; name: string }[];
+}): Promise<{ ok: boolean; message: string }> {
+  try {
+    const s = await requireUser();
+    if (s.viewingAs) return { ok: false, message: "You are looking at someone else's workspace, so nothing is sent from here." };
+    const r = quoteEmail.parseRecipients(String(input.to ?? ""));
+    if ("error" in r) return { ok: false, message: r.error };
+    const subject = String(input.subject ?? "").replace(/[\r\n]+/g, " ").trim().slice(0, 200);
+    if (!subject) return { ok: false, message: "Add a subject." };
+    const text = String(input.text ?? "").slice(0, 20_000);
+    if (!text.trim()) return { ok: false, message: "The message is empty." };
+    const photos = (Array.isArray(input.photos) ? input.photos : []).slice(0, quoteEmail.MAX_PHOTOS + 1);
+    if (photos.length > quoteEmail.MAX_PHOTOS) return { ok: false, message: `Attach ${quoteEmail.MAX_PHOTOS} photos at most. Untick some and try again.` };
+    const db = await getDb();
+    if ((await quoteEmail.emailsToday(db, s.actor.id)) >= quoteEmail.MAX_EMAILS_PER_DAY) {
+      return { ok: false, message: `You have sent ${quoteEmail.MAX_EMAILS_PER_DAY} quote emails in the last 24 hours, the most allowed. Use Copy message or Share for now.` };
+    }
+    const store = getFileStore();
+    const attachments: { filename: string; content: Uint8Array }[] = [];
+    let bytes = 0;
+    for (const p of photos) {
+      const id = String(p?.id ?? "");
+      if (!(await photoAllowed(db, s, id))) return { ok: false, message: "One of the photos is no longer available to you. Untick it and try again." };
+      const f = await media.readContentBytes(db, store, id).catch(() => null);
+      if (!f) return { ok: false, message: "One of the photos couldn't be read from storage. Untick it and try again." };
+      bytes += f.bytes.length;
+      if (bytes > quoteEmail.MAX_ATTACH_BYTES) return { ok: false, message: "The photos are too large for one email (25 MB). Untick some, or send them as a combined photo." };
+      attachments.push({ filename: quoteEmail.attachmentName(String(p?.name ?? ""), f.mimeType), content: f.bytes });
+    }
+    const [me] = await db.select({ name: users.displayName }).from(users).where(eq(users.id, s.actor.id));
+    const body = quoteEmail.quoteEmailBody(text, { rtl: !!input.rtl });
+    await sendMail({
+      to: r.emails, subject, text: body.text, html: body.html,
+      from: quoteEmail.quoteFrom(me?.name ?? s.email.split("@")[0]),
+      replyTo: s.email,
+      bcc: input.copyMe ? [s.email] : undefined,
+      attachments,
+    });
+    await quoteShares.recordQuoteShare(db, s.actor, { quoteKey: String(input.quoteKey ?? "") || randomUUID(), how: "email", options: Number(input.options) || 1 });
+    return { ok: true, message: `Email sent to ${r.emails.join(", ")}${attachments.length ? ` with ${attachments.length} photo${attachments.length === 1 ? "" : "s"}` : ""}. Replies come to ${s.email}.` };
+  } catch (e) {
+    console.error("Quote email failed", e);
+    return { ok: false, message: "The email couldn't be sent. Try again in a moment, or use Copy message." };
+  }
+}
+
 export async function recordQuoteShareAction(input: { quoteKey: string; how: "share" | "copy"; options: number }): Promise<void> {
   try {
     const s = await requireUser();

@@ -38,6 +38,12 @@ export interface QuoteWords {
 export const QUOTE_LANGUAGES = ["en", "zh-Hant", "zh-Hans", "ja", "ko", "vi", "th", "id", "fr", "de", "ru", "ar"] as const;
 export type QuoteLanguage = (typeof QUOTE_LANGUAGES)[number];
 
+/** The default subject of a quote email, in the quote's language. */
+export const QUOTE_SUBJECT: Record<QuoteLanguage, string> = {
+  en: "Aircraft options", "zh-Hant": "飛機選項", "zh-Hans": "飞机选项", ja: "航空機のご提案", ko: "항공기 옵션", vi: "Các lựa chọn máy bay",
+  th: "ตัวเลือกเครื่องบิน", id: "Pilihan pesawat", fr: "Options d'avion", de: "Flugzeugoptionen", ru: "Варианты самолётов", ar: "خيارات الطائرات",
+};
+
 export const QUOTE_WORDS: Record<QuoteLanguage, QuoteWords> = {
   en: {
     name: "English", hello: "Hello, here are the aircraft options:", thanks: "Please let me know if you would like more details or photos.",
