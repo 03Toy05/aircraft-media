@@ -1,5 +1,5 @@
 # Toy Design Rulebook
-Version 1.2 | 25 November 2026 | Approved design direction
+Version 1.3 | 25 November 2026 | Approved design direction
 
 ## TOY-01 — Identity and purpose
 Toy is the personal aircraft media assistant of Aircraft Media (aircraftmedia.my), the founder's first creation developed with the help of AI. The product itself does not use generative AI for Toy's commands at launch. Toy is the interface, not merely a decorative mascot. It helps aviation charter brokers and does not replace their judgment.
@@ -41,7 +41,7 @@ Use white for the response surface. Use existing application typography where su
 | Greeting | Curved happy eyes, smile, head tilted about 8° (top leaning left), one short bounce | Toy says hello: the public site's opening screen, returning to the start, the video introduction |
 | Ready | Open eyes, smile, upright | Idle / available |
 | Listening | Taller eyes, optional side waves | Actual voice capture active. Spoken commands are suspended for now, so Listening is not shown until they return |
-| Working | Horizontal eyes, three dots | Actual request pending |
+| Working | Ready face (open eyes, smile) with wings out, lifted slightly | Actual request pending |
 | Completed | Curved happy eyes, smile, upright, one short bounce | Confirmed successful result |
 | Needs help | Slight tilt the other way (about 6°), small round mouth | Missing input, ambiguity or failure requiring attention |
 | Goodbye | Curved happy eyes, smile, upright, one short bounce | Explicit farewell / video ending |
@@ -82,7 +82,7 @@ Toy stays the original yellow rounded block (TOY-02), with two approved aviation
 | Greeting | Public home opening screen, video intro | Website: one-time arrival along a fading dotted path, wings retract, then the greeting tilt (TOY-04). Decorative only; makes no task claim |
 | Listening | Voice capture actually active (suspended for now) | Taller eyes, side waves, grounded |
 | Takeoff | An existing request was accepted and is pending | Wings extend, rises and tilts; 420 ms at most |
-| Working | The same request is still pending | Airborne with the trail, two gentle banks, then still |
+| Working | The same request is still pending | Airborne with the trail, ready face, two gentle banks, then still; the readable status beside Toy says it is working |
 | Landing | The backend confirmed success | Descends with happy eyes; 360 ms at most |
 | Completed | The success result is shown | Wings retract, one short bounce |
 | Needs help | Failure, rejection or missing input | Grounded, wings retracted, slight lean, with a readable explanation beside it |
@@ -96,5 +96,6 @@ Toy stays the original yellow rounded block (TOY-02), with two approved aviation
 | Version | Date | Changes (approved by the owner) |
 |---|---|---|
 | 1.0 | 24 November 2026 | First approved direction. |
+| 1.3 | 25 November 2026 | Working now shows the ready face with wings out instead of flat eyes and three dots (TOY-04, TOY-11). |
 | 1.2 | 25 November 2026 | TOY-11 Aviation identity added: retractable wings (the one accessory exception to TOY-02) and flight movements with solid ground, dashed runway and dotted flight path; Takeoff and Landing transitions (TOY-04). |
 | 1.1 | 25 November 2026 | Toy is the Aircraft Media logo (TOY-01). Soft shadow defined for larger placements; aircraft and other accessories considered and declined (TOY-02). New Greeting state; head tilt reserved for Greeting; Completed and Goodbye stay upright with one bounce; Needs help leans the other way (TOY-04). Spoken commands suspended for now; Listening not shown and voice not advertised (TOY-04, TOY-05, TOY-06). "No AI claims" replaced by "AI claims must be accurate" (TOY-06). Component reference added (TOY-07). Public site Greeting/Ready behaviour (TOY-08). |

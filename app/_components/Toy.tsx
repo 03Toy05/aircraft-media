@@ -79,11 +79,6 @@ export default function Toy({ state = "ready", size = 96, label, waves = false, 
                   <path d="M28 46 Q34 32 40 46" />
                   <path d="M60 46 Q66 32 72 46" />
                 </g>
-              ) : state === "working" ? (
-                <>
-                  <rect x="26" y="38" width="18" height="8" rx="4" />
-                  <rect x="56" y="38" width="18" height="8" rx="4" />
-                </>
               ) : state === "listening" ? (
                 <>
                   <rect x="30" y="25" width="8" height="26" rx="4" />
@@ -96,13 +91,8 @@ export default function Toy({ state = "ready", size = 96, label, waves = false, 
                 </>
               )}
             </g>
-            {state === "working" ? (
-              <g fill={INK}>
-                <circle cx="40" cy="66" r="3" />
-                <circle cx="50" cy="66" r="3" />
-                <circle cx="60" cy="66" r="3" />
-              </g>
-            ) : state === "needsHelp" ? (
+            {/* Working keeps the ready face; the wings and the lift say Toy is on it (TOY-04, TOY-11). */}
+            {state === "needsHelp" ? (
               <circle cx="50" cy="66" r="4" stroke={INK} strokeWidth="3" fill="none" />
             ) : (
               <path d="M40 63 Q50 73 60 63" stroke={INK} strokeWidth="3" fill="none" strokeLinecap="round" />
