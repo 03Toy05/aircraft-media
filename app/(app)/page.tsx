@@ -5,6 +5,7 @@ import { aircraftMedia } from "@/db/schema";
 import { requireOwner } from "@/lib/session";
 import ChatClient from "../_components/ChatClient";
 import Icon from "../_components/Icon";
+import { listRequests } from "@/domain/requests";
 
 export default async function Dashboard() {
   const { actor } = await requireOwner();
@@ -21,6 +22,7 @@ export default async function Dashboard() {
     .where(and(eq(aircraftMedia.tenantId, actor.tenantId), eq(aircraftMedia.reviewState, "approved"), eq(aircraftMedia.lifecycleState, "active")))
     .orderBy(desc(aircraftMedia.updatedAt))
     .limit(4);
+  const requests = (await listRequests(db, actor.tenantId)).slice(0, 5);
 
   return (
     <div className="dash">
@@ -33,11 +35,25 @@ export default async function Dashboard() {
           <div className="qa" style={{ display: "grid", gap: 8 }}>
             <Link className="btn" href="/review"><Icon name="review" />Review photos{needsReview > 0 ? ` (${needsReview})` : ""}</Link>
             <Link className="btn" href="/intake"><Icon name="upload" />Upload photos</Link>
-            <Link className="btn" href="/quote"><Icon name="quote" />Quote for a client</Link>
+            <Link className="btn" href="/quote?fresh=1"><Icon name="quote" />New quote</Link>
             <Link className="btn" href="/fleet?add=aircraft#add-aircraft"><Icon name="plane" />Add aircraft</Link>
             <Link className="btn" href="/fleet?add=operator#add-operator"><Icon name="operator" />Add operator</Link>
             <Link className="btn secondary" style={{ color: "var(--accent)", background: "transparent" }} href="/fleet"><Icon name="list" />View operators &amp; aircraft</Link>
           </div>
+        </div>
+        <div className="card">
+          <h3>Recent requests</h3>
+          {requests.length === 0 ? <p className="muted small" style={{ margin: 0 }}>None yet. Enter a routing at the top of a quote and save it.</p> : (
+            <>
+              {requests.map((r) => (
+                <Link key={r.id} href={`/requests/${r.id}`} className="dash-request">
+                  <b>{r.reference}</b> <span className="muted small">{r.label}</span>
+                  <span className="muted small"> · {r.versions ? `v${r.versions}` : "no quote yet"}</span>
+                </Link>
+              ))}
+              <p className="small" style={{ marginBottom: 0 }}><Link href="/requests"><Icon name="list" />All requests</Link></p>
+            </>
+          )}
         </div>
         <div className="card">
           <h3>Recently approved</h3>

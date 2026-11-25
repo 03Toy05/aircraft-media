@@ -34,6 +34,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         <Link href="/review"><Icon name="review" />Review</Link>
         <Link href="/fleet"><Icon name="plane" />Operators &amp; aircraft</Link>
         <Link href="/quote"><Icon name="quote" />Quote</Link>
+        <Link href="/requests"><Icon name="list" />Requests</Link>
         <Link href="/contacts"><Icon name="contacts" />Contacts</Link>
         <Link href="/settings"><Icon name="settings" />Settings</Link>
         {libraryOn && <Link href="/library"><Icon name="plane" />Library</Link>}

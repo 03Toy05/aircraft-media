@@ -33,10 +33,23 @@ export interface QuoteWords {
   price: string;
   notes: string;
   colon: string; // ":" or the full-width "："
+  /** The routing line of a quote made for a request, and its passenger count. */
+  routing: string;
+  pax: (n: number) => string;
+  /** Departure, arrival, "local time", and a flight time (12h 45m). */
+  dep: string;
+  arr: string;
+  lt: string;
+  duration: (h: number, m: number) => string;
 }
 
 export const QUOTE_LANGUAGES = ["en", "zh-Hant", "zh-Hans", "ja", "ko", "vi", "th", "id", "fr", "de", "ru", "ar"] as const;
 export type QuoteLanguage = (typeof QUOTE_LANGUAGES)[number];
+
+/** How dates are written in each quote language. */
+export const QUOTE_LOCALE: Record<QuoteLanguage, string> = {
+  en: "en-GB", "zh-Hant": "zh-HK", "zh-Hans": "zh-CN", ja: "ja-JP", ko: "ko-KR", vi: "vi-VN", th: "th-TH", id: "id-ID", fr: "fr-FR", de: "de-DE", ru: "ru-RU", ar: "ar",
+};
 
 /** The default subject of a quote email, in the quote's language. */
 export const QUOTE_SUBJECT: Record<QuoteLanguage, string> = {
@@ -50,70 +63,70 @@ export const QUOTE_WORDS: Record<QuoteLanguage, QuoteWords> = {
     aircraft: "Aircraft", operator: "Operator", tail: "Tail number", base: "Base", yom: "Manufacture", yor: "Refurbished",
     capacity: "Capacity", seats: (n) => `${n} seat${n === 1 ? "" : "s"}`, wifi: "WIFI", wifiYes: "Yes", wifiNo: "No", wifiTbc: "TBC",
     smoking: "Smoking", pets: "Pets", cleaningFee: "Cleaning fee", allowed: "Allowed", notAllowed: "Not allowed",
-    price: "Price", notes: "Notes", colon: ": ",
+    price: "Price", notes: "Notes", colon: ": ", routing: "Routing", pax: (n) => `${n} pax`, dep: "Dep", arr: "Arr", lt: "LT", duration: (h, m) => `${h}h ${String(m).padStart(2, "0")}m`,
   },
   "zh-Hant": {
     name: "繁體中文", hello: "您好，以下是飛機選項：", thanks: "如需更多資料或照片，請隨時告訴我。",
     aircraft: "飛機", operator: "營運商", tail: "機尾編號", base: "基地", yom: "出廠年份", yor: "翻新年份",
     capacity: "載客量", seats: (n) => `${n} 座`, wifi: "WIFI", wifiYes: "有", wifiNo: "無", wifiTbc: "待確認",
     smoking: "吸煙", pets: "寵物", cleaningFee: "清潔費", allowed: "可以", notAllowed: "不可以",
-    price: "價格", notes: "備註", colon: "：",
+    price: "價格", notes: "備註", colon: "：", routing: "航程", pax: (n) => `${n} 位乘客`, dep: "出發", arr: "抵達", lt: "當地時間", duration: (h, m) => `${h}小時${m}分`,
   },
   "zh-Hans": {
     name: "简体中文", hello: "您好，以下是飞机选项：", thanks: "如需更多资料或照片，请随时告诉我。",
     aircraft: "飞机", operator: "运营商", tail: "机尾编号", base: "基地", yom: "出厂年份", yor: "翻新年份",
     capacity: "载客量", seats: (n) => `${n} 座`, wifi: "WIFI", wifiYes: "有", wifiNo: "无", wifiTbc: "待确认",
     smoking: "吸烟", pets: "宠物", cleaningFee: "清洁费", allowed: "可以", notAllowed: "不可以",
-    price: "价格", notes: "备注", colon: "：",
+    price: "价格", notes: "备注", colon: "：", routing: "航程", pax: (n) => `${n} 位乘客`, dep: "出发", arr: "抵达", lt: "当地时间", duration: (h, m) => `${h}小时${m}分`,
   },
   ja: {
     name: "日本語", hello: "お世話になっております。機体のご案内です。", thanks: "詳細や写真が必要でしたらお知らせください。",
     aircraft: "機体", operator: "運航会社", tail: "登録番号", base: "拠点", yom: "製造年", yor: "改装年",
     capacity: "座席数", seats: (n) => `${n}席`, wifi: "WIFI", wifiYes: "あり", wifiNo: "なし", wifiTbc: "確認中",
     smoking: "喫煙", pets: "ペット", cleaningFee: "清掃料", allowed: "可", notAllowed: "不可",
-    price: "価格", notes: "備考", colon: "：",
+    price: "価格", notes: "備考", colon: "：", routing: "行程", pax: (n) => `${n}名`, dep: "出発", arr: "到着", lt: "現地時間", duration: (h, m) => `${h}時間${m}分`,
   },
   ko: {
     name: "한국어", hello: "안녕하세요, 항공기 옵션을 안내드립니다.", thanks: "자세한 정보나 사진이 필요하시면 말씀해 주세요.",
     aircraft: "항공기", operator: "운항사", tail: "등록번호", base: "기지", yom: "제조 연도", yor: "개조 연도",
     capacity: "좌석 수", seats: (n) => `${n}석`, wifi: "WIFI", wifiYes: "있음", wifiNo: "없음", wifiTbc: "확인 중",
     smoking: "흡연", pets: "반려동물", cleaningFee: "청소비", allowed: "가능", notAllowed: "불가",
-    price: "가격", notes: "비고", colon: ": ",
+    price: "가격", notes: "비고", colon: ": ", routing: "일정", pax: (n) => `${n}명`, dep: "출발", arr: "도착", lt: "현지 시간", duration: (h, m) => `${h}시간 ${m}분`,
   },
   vi: {
     name: "Tiếng Việt", hello: "Xin chào, dưới đây là các lựa chọn máy bay:", thanks: "Vui lòng cho tôi biết nếu bạn cần thêm thông tin hoặc hình ảnh.",
     aircraft: "Máy bay", operator: "Nhà khai thác", tail: "Số đăng ký", base: "Căn cứ", yom: "Năm sản xuất", yor: "Năm tân trang",
     capacity: "Sức chứa", seats: (n) => `${n} chỗ`, wifi: "WIFI", wifiYes: "Có", wifiNo: "Không", wifiTbc: "Chưa xác nhận",
     smoking: "Hút thuốc", pets: "Thú cưng", cleaningFee: "Phí vệ sinh", allowed: "Được phép", notAllowed: "Không được phép",
-    price: "Giá", notes: "Ghi chú", colon: ": ",
+    price: "Giá", notes: "Ghi chú", colon: ": ", routing: "Hành trình", pax: (n) => `${n} khách`, dep: "Khởi hành", arr: "Đến", lt: "giờ địa phương", duration: (h, m) => `${h} giờ ${m} phút`,
   },
   th: {
     name: "ไทย", hello: "สวัสดีครับ/ค่ะ นี่คือตัวเลือกเครื่องบิน:", thanks: "หากต้องการข้อมูลหรือรูปภาพเพิ่มเติม โปรดแจ้งได้เลย",
     aircraft: "เครื่องบิน", operator: "ผู้ให้บริการ", tail: "ทะเบียนเครื่อง", base: "ฐานประจำ", yom: "ปีที่ผลิต", yor: "ปีที่ปรับปรุง",
     capacity: "ความจุ", seats: (n) => `${n} ที่นั่ง`, wifi: "WIFI", wifiYes: "มี", wifiNo: "ไม่มี", wifiTbc: "รอยืนยัน",
     smoking: "การสูบบุหรี่", pets: "สัตว์เลี้ยง", cleaningFee: "ค่าทำความสะอาด", allowed: "อนุญาต", notAllowed: "ไม่อนุญาต",
-    price: "ราคา", notes: "หมายเหตุ", colon: ": ",
+    price: "ราคา", notes: "หมายเหตุ", colon: ": ", routing: "เส้นทางบิน", pax: (n) => `${n} ท่าน`, dep: "ออก", arr: "ถึง", lt: "เวลาท้องถิ่น", duration: (h, m) => `${h} ชม. ${m} นาที`,
   },
   id: {
     name: "Bahasa Indonesia", hello: "Halo, berikut pilihan pesawat:", thanks: "Beri tahu saya jika Anda memerlukan detail atau foto tambahan.",
     aircraft: "Pesawat", operator: "Operator", tail: "Nomor registrasi", base: "Pangkalan", yom: "Tahun Produksi", yor: "Tahun Renovasi",
     capacity: "Kapasitas", seats: (n) => `${n} kursi`, wifi: "WIFI", wifiYes: "Ya", wifiNo: "Tidak", wifiTbc: "Menunggu konfirmasi",
     smoking: "Merokok", pets: "Hewan peliharaan", cleaningFee: "Biaya pembersihan", allowed: "Diizinkan", notAllowed: "Tidak diizinkan",
-    price: "Harga", notes: "Catatan", colon: ": ",
+    price: "Harga", notes: "Catatan", colon: ": ", routing: "Rute", pax: (n) => `${n} penumpang`, dep: "Berangkat", arr: "Tiba", lt: "waktu setempat", duration: (h, m) => `${h} j ${m} m`,
   },
   fr: {
     name: "Français", hello: "Bonjour, voici les options d'avions :", thanks: "N'hésitez pas à me demander plus de détails ou des photos.",
     aircraft: "Appareil", operator: "Opérateur", tail: "Immatriculation", base: "Base", yom: "Année de fabrication", yor: "Année de rénovation",
     capacity: "Capacité", seats: (n) => `${n} place${n === 1 ? "" : "s"}`, wifi: "WIFI", wifiYes: "Oui", wifiNo: "Non", wifiTbc: "À confirmer",
     smoking: "Fumeur", pets: "Animaux", cleaningFee: "Frais de nettoyage", allowed: "Autorisé", notAllowed: "Non autorisé",
-    price: "Prix", notes: "Remarques", colon: " : ",
+    price: "Prix", notes: "Remarques", colon: " : ", routing: "Itinéraire", pax: (n) => `${n} passager${n === 1 ? "" : "s"}`, dep: "Départ", arr: "Arrivée", lt: "heure locale", duration: (h, m) => `${h} h ${String(m).padStart(2, "0")}`,
   },
   de: {
     name: "Deutsch", hello: "Guten Tag, hier sind die Flugzeugoptionen:", thanks: "Gerne sende ich Ihnen weitere Details oder Fotos.",
     aircraft: "Flugzeug", operator: "Betreiber", tail: "Kennzeichen", base: "Heimatbasis", yom: "Baujahr", yor: "Renovierungsjahr",
     capacity: "Kapazität", seats: (n) => `${n} ${n === 1 ? "Sitz" : "Sitze"}`, wifi: "WIFI", wifiYes: "Ja", wifiNo: "Nein", wifiTbc: "Noch zu bestätigen",
     smoking: "Rauchen", pets: "Haustiere", cleaningFee: "Reinigungsgebühr", allowed: "Erlaubt", notAllowed: "Nicht erlaubt",
-    price: "Preis", notes: "Hinweise", colon: ": ",
+    price: "Preis", notes: "Hinweise", colon: ": ", routing: "Route", pax: (n) => `${n} Passagier${n === 1 ? "" : "e"}`, dep: "Abflug", arr: "Ankunft", lt: "Ortszeit", duration: (h, m) => `${h} Std. ${m} Min.`,
   },
   ru: {
     name: "Русский", hello: "Здравствуйте, вот варианты самолётов:", thanks: "Сообщите, если нужны дополнительные сведения или фотографии.",
@@ -122,14 +135,14 @@ export const QUOTE_WORDS: Record<QuoteLanguage, QuoteWords> = {
     seats: (n) => `${n} ${n % 10 === 1 && n % 100 !== 11 ? "место" : [2, 3, 4].includes(n % 10) && ![12, 13, 14].includes(n % 100) ? "места" : "мест"}`,
     wifi: "WIFI", wifiYes: "Да", wifiNo: "Нет", wifiTbc: "Уточняется",
     smoking: "Курение", pets: "Животные", cleaningFee: "Плата за уборку", allowed: "Разрешено", notAllowed: "Запрещено",
-    price: "Цена", notes: "Примечания", colon: ": ",
+    price: "Цена", notes: "Примечания", colon: ": ", routing: "Маршрут", pax: (n) => `${n} пасс.`, dep: "Вылет", arr: "Прилёт", lt: "местное время", duration: (h, m) => `${h} ч ${m} мин`,
   },
   ar: {
     name: "العربية", hello: "مرحباً، إليكم خيارات الطائرات:", thanks: "يرجى إبلاغي إن كنتم ترغبون في مزيد من التفاصيل أو الصور.",
     aircraft: "الطائرة", operator: "المشغّل", tail: "رقم التسجيل", base: "القاعدة", yom: "سنة الصنع", yor: "سنة التجديد",
     capacity: "السعة", seats: (n) => `${n} مقعد`, wifi: "WIFI", wifiYes: "نعم", wifiNo: "لا", wifiTbc: "قيد التأكيد",
     smoking: "التدخين", pets: "الحيوانات الأليفة", cleaningFee: "رسوم التنظيف", allowed: "مسموح", notAllowed: "غير مسموح",
-    price: "السعر", notes: "ملاحظات", colon: ": ",
+    price: "السعر", notes: "ملاحظات", colon: ": ", routing: "المسار", pax: (n) => `${n} ركاب`, dep: "المغادرة", arr: "الوصول", lt: "التوقيت المحلي", duration: (h, m) => `${h} س ${m} د`,
   },
 };
 
@@ -185,6 +198,10 @@ export interface QuoteTemplate {
   tbc: string;
   /** Pattern for the seat count, e.g. "{n} seats". Empty = the language's own plural rules. */
   seats: string;
+  /** The heading above a request's routing ("Routing"). */
+  routing: string;
+  /** Times in the routing: "utc" = local and UTC, "local" = local only. */
+  times: string;
 }
 
 export const TEMPLATE_PLACEHOLDERS = [
@@ -230,6 +247,8 @@ export function defaultQuoteTemplate(language: QuoteLanguage): QuoteTemplate {
     no: w.wifiNo,
     tbc: w.wifiTbc,
     seats: "",
+    routing: w.routing,
+    times: "utc",
   };
 }
 
@@ -243,6 +262,7 @@ export function validateQuoteTemplate(t: Partial<QuoteTemplate>): string | null 
   for (const m of (t.block ?? "").matchAll(/\{([^{}]*)\}/g)) if (!known.has(m[1])) return `{${m[1]}} is not a field. Use: ${[...known].map((k) => `{${k}}`).join(", ")}`;
   if (t.block !== undefined && !t.block.includes("{aircraft}")) return "The aircraft block must contain {aircraft}, otherwise the message would not say which aircraft it is about";
   if (t.seats && !t.seats.includes("{n}")) return "The seats pattern must contain {n}, for example “{n} seats”";
+  if (t.times !== undefined && t.times !== "utc" && t.times !== "local") return "Times must be “local and UTC” or “local only”";
   return null;
 }
 

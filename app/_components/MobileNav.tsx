@@ -36,6 +36,7 @@ export default function MobileNav({ email, signOut, isAdmin = false, library = f
       {open && (
         <div className="sheet" role="dialog" aria-label="More">
           <Link href="/review"><Icon name="review" />Review photos</Link>
+          <Link href="/requests"><Icon name="list" />Requests</Link>
           <Link href="/contacts"><Icon name="contacts" />Contacts</Link>
           <Link href="/photos"><Icon name="photos" />Approved photos</Link>
           <Link href="/intake"><Icon name="upload" />Upload photos</Link>

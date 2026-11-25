@@ -44,6 +44,15 @@ export default function QuoteTemplateEditor({ language, defaults, saved, submitK
         </div>
         <label>Seats wording (optional, use {"{n}"} for the number, for example “{"{n}"} seats”)</label>
         <input dir={dir} name="seats" value={t.seats} onChange={set("seats")} placeholder="Leave empty for the standard wording" />
+        <div className="grid g2">
+          <div><label>Routing heading (quotes made for a request)</label><input dir={dir} name="routing" value={t.routing} onChange={set("routing")} /></div>
+          <div><label>Times in the routing</label>
+            <select name="times" value={t.times} onChange={(e) => setT({ ...t, times: e.target.value })}>
+              <option value="utc">Local and UTC: Dep 16:30 LT (08:30 UTC)</option>
+              <option value="local">Local only: Dep 16:30 LT</option>
+            </select>
+          </div>
+        </div>
         {problem && <div className="flash err" style={{ marginTop: 8 }}>{problem}</div>}
         <p className="row" style={{ alignItems: "center", marginTop: 12 }}>
           <span style={{ flex: "0 0 auto" }}><button type="submit" disabled={!!problem}>Save wording</button></span>

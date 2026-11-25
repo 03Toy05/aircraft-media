@@ -269,7 +269,7 @@ export async function saveQuoteTemplateAction(fd: FormData) {
   await run(`/quote/template?lang=${encodeURIComponent(language)}`, "Template saved", () =>
     quoteTemplates.saveQuoteTemplate(db, actor, key(fd), {
       language,
-      template: { greeting: raw("greeting"), block: raw("block"), closing: raw("closing"), yes: raw("yes"), no: raw("no"), tbc: raw("tbc"), seats: raw("seats") },
+      template: { greeting: raw("greeting"), block: raw("block"), closing: raw("closing"), yes: raw("yes"), no: raw("no"), tbc: raw("tbc"), seats: raw("seats"), routing: raw("routing"), times: raw("times") },
     }),
   );
 }

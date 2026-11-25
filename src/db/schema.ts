@@ -618,3 +618,39 @@ export const signInLinks = pgTable(
   },
   (t) => [uniqueIndex("sign_in_links_token_uq").on(t.tokenHash), index("sign_in_links_email_idx").on(t.email, t.createdAt)],
 );
+
+/**
+ * A request from a client, identified by its routing (and a reference like AM-2611-042). Quote versions live under it,
+ * later the itinerary too. No client details are kept: Aircraft Media generates documents, it is not a CRM.
+ */
+export interface RequestLeg { from: string; to: string; date?: string | null; time?: string | null; flight?: number | null; flightEst?: boolean; pax?: number | null }
+export const requests = pgTable(
+  "requests",
+  {
+    id: pk(),
+    tenantId: uuid("tenant_id").notNull(),
+    reference: text("reference").notNull(),
+    legs: jsonb("legs").$type<RequestLeg[]>().notNull().default([]),
+    notes: text("notes"),
+    archived: boolean("archived").notNull().default(false),
+    createdBy: uuid("created_by").notNull(),
+    createdAt: created(),
+    updatedAt: updated(),
+  },
+  (t) => [uniqueIndex("requests_reference_uq").on(t.tenantId, t.reference), index("requests_tenant_idx").on(t.tenantId, t.updatedAt)],
+);
+
+/** One saved quote for a request: v1, v2… Never changed after saving; editing saves the next version. */
+export const quoteVersions = pgTable(
+  "quote_versions",
+  {
+    id: pk(),
+    tenantId: uuid("tenant_id").notNull(),
+    requestId: uuid("request_id").notNull().references(() => requests.id),
+    version: integer("version").notNull(),
+    content: jsonb("content").$type<Record<string, unknown>>().notNull(),
+    createdBy: uuid("created_by").notNull(),
+    createdAt: created(),
+  },
+  (t) => [uniqueIndex("quote_versions_uq").on(t.requestId, t.version)],
+);

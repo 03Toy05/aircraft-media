@@ -486,3 +486,20 @@ ul.history li:last-child { border-bottom: 0; }
 .legal h2 { font-size: 1.1rem; margin: 22px 0 6px; }
 .legal ul { padding-left: 20px; }
 .legal li { margin: 4px 0; }
+
+/* Requests: the routing legs, the list, and saving a quote as a version. */
+.routing { display: flex; flex-direction: column; gap: 10px; }
+.routing .leg { border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; }
+.routing .leg-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }
+.routing .leg-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px 10px; align-items: end; }
+.routing .leg-grid label { display: flex; flex-direction: column; gap: 2px; margin: 0; }
+.request-row { display: flex; flex-direction: column; gap: 2px; text-decoration: none; color: inherit; margin-bottom: 8px; }
+.request-row:hover { border-color: var(--accent, #2563eb); }
+.request-note { display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.save-version { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 10px 0 2px; padding: 8px 10px; border: 1px dashed var(--line); border-radius: 8px; }
+
+/* Routing panel: times under each leg; requests on the dashboard. */
+.routing .leg-times { margin: 6px 0 0; }
+.routing input[aria-invalid] { border-color: var(--warn, #b45309); }
+.dash-request { display: block; padding: 6px 0; border-bottom: 1px solid var(--line); text-decoration: none; color: inherit; }
+.dash-request:last-of-type { border-bottom: 0; }

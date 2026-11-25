@@ -7,7 +7,12 @@ import TextBox, { Styled } from "./TextBox";
 import { copyText, fetchPhoto } from "./copyText";
 import { registerCommands, type CommandResult } from "./voice";
 import { recordQuoteShareAction, sendQuoteEmailAction, togglePreferredOperator } from "../actions";
-import { QUOTE_LANGUAGES, QUOTE_SUBJECT, QUOTE_WORDS, buildQuoteParts, renumberBlock, type QuoteLanguage, type QuoteTemplate } from "@/domain/quote";
+import { saveQuoteVersionAction, type SaveResult } from "../requestActions";
+import { routeLabel, routingLines, type AirportInfo, type Airports, type Leg } from "@/domain/routing";
+import { estimateMinutes } from "@/domain/flightTime";
+import type { AircraftCategory } from "@/domain/constants";
+import RoutingPanel, { emptyLeg } from "./RoutingPanel";
+import { QUOTE_LANGUAGES, QUOTE_LOCALE, QUOTE_SUBJECT, QUOTE_WORDS, buildQuoteParts, defaultQuoteTemplate, renumberBlock, type QuoteLanguage, type QuoteTemplate } from "@/domain/quote";
 import { forOtherApps, parseStyled } from "@/domain/textStyle";
 import { parseQuoteCommands, type QuoteCommand } from "@/domain/quoteCommands";
 import { COMBINED_NEEDS, type WifiStatus, type YesNoStatus } from "@/domain/constants";
@@ -32,6 +37,8 @@ export interface QuoteAircraftOption {
   cleaningFee: string | null;
   notes: string | null;
   photos: ShareItem[];
+  /** The aircraft's size, for the flight-time estimate. */
+  category?: AircraftCategory | null;
   /** From the shared platform library, not the broker's own workspace. */
   library?: boolean;
 }
@@ -52,6 +59,8 @@ interface Draft {
   quoteKey?: string;
   /** Email: who to, the subject (empty = the standard one), and whether to send the broker a copy. */
   emailTo?: string; subject?: string; copyMe?: boolean;
+  /** The routing typed at the top, and the airports it names. */
+  legs?: Leg[]; airports?: Airports;
 }
 const SPEECH: Partial<Record<QuoteLanguage, string>> = { en: "en-US", "zh-Hant": "zh-HK", "zh-Hans": "zh-CN", ja: "ja-JP", ko: "ko-KR", vi: "vi-VN", th: "th-TH", id: "id-ID", fr: "fr-FR", de: "de-DE", ru: "ru-RU", ar: "ar-SA" };
 type Sort = "name" | "aircraft" | "recent";
@@ -62,14 +71,29 @@ type Sort = "name" | "aircraft" | "recent";
  * closing line. Every box has Bold / Italic / Underline and a microphone. The Ask Toy microphone runs spoken
  * commands on this page ("add the G280, Chinese, price 40,000").
  */
-export default function QuoteBuilder({ aircraft, operators, preferred: preferredInitial, initialIds, initialPrices, initialKinds, templates }: {
+export default function QuoteBuilder({ aircraft, operators, preferred: preferredInitial, initialIds, initialPrices, initialKinds, templates, request, airports, opened, fresh }: {
   aircraft: QuoteAircraftOption[]; operators: QuoteOperator[]; preferred: string[]; initialIds: string[]; templates: SavedTemplates;
   /** From Toy: prices per aircraft, and the photo kinds asked for ([] = no photos). */
   initialPrices?: Record<string, string>; initialKinds?: string[];
+  /** A quote for a saved request: its routing, and whether a version exists (then its airports and dates are fixed). */
+  request?: { id: string; reference: string; legs: Leg[]; locked: boolean };
+  /** The airports named in the routing (more are looked up as the broker types). */
+  airports?: Airports;
+  /** A saved version reopened to edit (saving makes the next one). */
+  opened?: { version: number; builder: Record<string, unknown>; legs?: Leg[] };
+  /** Start empty instead of from the draft. */
+  fresh?: boolean;
 }) {
+  // -- the routing (top of the page) and the request it is saved under
+  const [req, setReq] = useState<{ id: string; reference: string } | null>(request ? { id: request.id, reference: request.reference } : null);
+  const [locked, setLocked] = useState(!!request?.locked);
+  const [legs, setLegs] = useState<Leg[]>(opened?.legs?.length ? opened.legs : request?.legs.length ? request.legs : [emptyLeg()]);
+  const [airportMap, setAirportMap] = useState<Airports>(airports ?? {});
+  const addAirport = (a: AirportInfo) => setAirportMap((m) => (m[a.icao] ? m : { ...m, [a.icao]: a }));
+  const draftKey = req ? `${DRAFT}:${req.id}` : DRAFT;
   const [ids, setIds] = useState<string[]>(initialIds);
   const [lang, setLang] = useState<QuoteLanguage>("en");
-  const [inc, setInc] = useState({ operator: false, tail: false, base: false, notes: false, greeting: true, closing: true });
+  const [inc, setInc] = useState({ operator: false, tail: false, base: false, notes: false, greeting: true, closing: true, routing: true });
   // Typed for this quote, per aircraft. They are values, not text, so they survive changing the details or the language.
   const [prices, setPrices] = useState<Record<string, string>>(initialPrices ?? {});
   const [extras, setExtras] = useState<Record<string, string>>({});
@@ -127,30 +151,41 @@ export default function QuoteBuilder({ aircraft, operators, preferred: preferred
   const [quoteKey, setQuoteKey] = useState("");
   useEffect(() => {
     try {
-      const d = JSON.parse(localStorage.getItem(DRAFT) ?? "null") as Draft | null;
-      const known = d ? d.ids.filter((id) => aircraft.some((a) => a.id === id)) : [];
-      if (d && initialIds.length === 0 && Date.now() - d.savedAt < DRAFT_DAYS * 864e5 && (known.length || Object.keys(d.edits).length)) {
+      if (fresh) localStorage.removeItem(draftKey);
+      // A reopened version comes back exactly as saved; otherwise this quote's draft on this device.
+      const d = (opened ? { savedAt: Date.now(), ...opened.builder } : fresh ? null : JSON.parse(localStorage.getItem(draftKey) ?? "null")) as Draft | null;
+      const known = d && Array.isArray(d.ids) ? d.ids.filter((id) => aircraft.some((a) => a.id === id)) : [];
+      if (d && initialIds.length === 0 && (opened || Date.now() - d.savedAt < DRAFT_DAYS * 864e5) && (known.length || Object.keys(d.edits ?? {}).length)) {
         setIds(known); setLang(d.lang); setInc((cur) => ({ ...cur, ...d.inc })); setPrices(d.prices); setExtras(d.extras);
         setEdits(d.edits); setFlip(new Set(d.flip)); setApp(d.app); setOpId(d.opId); setQuoteKey(d.quoteKey ?? "");
         setEmailTo(d.emailTo ?? ""); setSubject(d.subject ?? ""); setCopyMe(d.copyMe ?? true);
+        // A quick quote's routing comes back with its draft (a request's comes from the request or the version).
+        if (!request && !opened && Array.isArray(d.legs) && d.legs.length) { setLegs(d.legs); setAirportMap((m) => ({ ...(d.airports ?? {}), ...m })); }
         if (known.length) setSteps({ op: false, ac: true, lang: false });
         setRestored(true);
       }
     } catch { /* no storage: the page starts empty */ }
+    try {
+      const s = JSON.parse(sessionStorage.getItem("quoteSaved") ?? "null") as SaveResult | null;
+      sessionStorage.removeItem("quoteSaved");
+      if (s?.ok && s.requestId === request?.id && s.version === opened?.version) setSaved(s);
+    } catch { /* ignore */ }
     setLoaded(true);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (!loaded) return;
     try {
-      const d: Draft = { savedAt: Date.now(), ids, lang, inc, prices, extras, edits, flip: [...flip], app, opId, quoteKey, emailTo, subject, copyMe };
-      localStorage.setItem(DRAFT, JSON.stringify(d));
+      const d: Draft = { savedAt: Date.now(), ids, lang, inc, prices, extras, edits, flip: [...flip], app, opId, quoteKey, emailTo, subject, copyMe, legs, airports: airportMap };
+      localStorage.setItem(draftKey, JSON.stringify(d));
     } catch { /* storage full or blocked */ }
-  }, [loaded, ids, lang, inc, prices, extras, edits, flip, app, opId, quoteKey, emailTo, subject, copyMe]);
+  }, [loaded, ids, lang, inc, prices, extras, edits, flip, app, opId, quoteKey, emailTo, subject, copyMe, legs, airportMap, draftKey]);
   const startOver = () => {
     if (!window.confirm("Clear this quote and start a new one?")) return;
-    try { localStorage.removeItem(DRAFT); } catch { /* ignore */ }
+    try { localStorage.removeItem(draftKey); } catch { /* ignore */ }
     setIds([]); setPrices({}); setExtras({}); setEdits({}); setFlip(new Set()); setOpId(""); setRestored(false); setMsg(null); setQuoteKey(""); setEmailTo(""); setSubject("");
     setSteps({ op: true, ac: true, lang: false });
+    if (req) { setReq(null); setLocked(false); window.history.replaceState(null, "", "/quote"); }
+    setLegs([emptyLeg()]); setSaved(null);
   };
 
   const opById = useMemo(() => new Map(operators.map((o) => [o.id, o])), [operators]);
@@ -177,6 +212,22 @@ export default function QuoteBuilder({ aircraft, operators, preferred: preferred
 
   // -- the message
   const chosen = useMemo(() => ids.map((id) => aircraft.find((a) => a.id === id)).filter((a): a is QuoteAircraftOption => !!a), [ids, aircraft]);
+  // Flight times follow the first aircraft's size until the broker types the operator's figure.
+  const estimateFor = chosen[0] ?? null;
+  useEffect(() => {
+    setLegs((cur) => {
+      let changed = false;
+      const next = cur.map((l) => {
+        const a = airportMap[l.from], b = airportMap[l.to];
+        if (!a || !b || (l.flight != null && !l.flightEst)) return l;
+        const m = estimateMinutes(a, b, estimateFor?.category ?? null);
+        if (l.flight === m && l.flightEst) return l;
+        changed = true;
+        return { ...l, flight: m, flightEst: true };
+      });
+      return changed ? next : cur;
+    });
+  }, [legs, airportMap, estimateFor?.category]); // eslint-disable-line react-hooks/exhaustive-deps
   const parts = useMemo(
     () => buildQuoteParts(
       chosen.map((a) => ({ ...a, price: prices[a.id] ?? "", extra: extras[a.id] ?? "" })),
@@ -191,7 +242,14 @@ export default function QuoteBuilder({ aircraft, operators, preferred: preferred
     const own = edits[`block:${a.id}`];
     return own === undefined ? parts.blocks[i] : renumberBlock(own, { language: lang, template: templates[lang] ?? null }, i + 1, chosen.length);
   });
-  const text = [greeting, ...blocks, closing].filter((x): x is string => !!x && x.trim() !== "").join("\n\n");
+  // The routing, under the opening line: legs with both airports, in the broker's wording for this language.
+  const fullLegs = legs.filter((l) => l.from && l.to && airportMap[l.from] && airportMap[l.to]);
+  const tpl = { ...defaultQuoteTemplate(lang), ...(templates[lang] ?? {}) };
+  const routing = inc.routing && fullLegs.length
+    ? routingLines(fullLegs, airportMap, { ...QUOTE_WORDS[lang], routing: tpl.routing || QUOTE_WORDS[lang].routing }, QUOTE_LOCALE[lang], { utc: tpl.times !== "local" })
+    : null;
+  const routeText = fullLegs.length ? routeLabel(fullLegs, airportMap) : "";
+  const text = [greeting, routing, ...blocks, closing].filter((x): x is string => !!x && x.trim() !== "").join("\n\n");
   const styled = parseStyled(text).some((s) => s.bold || s.italic || s.strike || s.underline);
   /** The message as the chosen app needs it: WhatsApp reads *bold* and _italic_; other apps get Unicode letters. */
   const textFor = (mode: "whatsapp" | "other") => (mode === "whatsapp" ? text : forOtherApps(text));
@@ -266,7 +324,7 @@ export default function QuoteBuilder({ aircraft, operators, preferred: preferred
 
   /** One option's message: its own block, with the opening line on the first option and the closing line on the last. */
   const optionText = (i: number, mode: "whatsapp" | "other") => {
-    const t = [i === 0 ? greeting : null, blocks[i], i === chosen.length - 1 ? closing : null].filter((x): x is string => !!x && x.trim() !== "").join("\n\n");
+    const t = [i === 0 ? greeting : null, i === 0 ? routing : null, blocks[i], i === chosen.length - 1 ? closing : null].filter((x): x is string => !!x && x.trim() !== "").join("\n\n");
     return mode === "whatsapp" ? t : forOtherApps(t);
   };
   /**
@@ -303,12 +361,44 @@ export default function QuoteBuilder({ aircraft, operators, preferred: preferred
       const k = quoteKey || crypto.randomUUID();
       if (!quoteKey) setQuoteKey(k);
       const r = await sendQuoteEmailAction({
-        to: emailTo, subject: subject.trim() || QUOTE_SUBJECT[lang], text: textFor("whatsapp"), rtl: lang === "ar", copyMe, quoteKey: k, options: chosen.length,
+        to: emailTo, subject: subject.trim() || (routeText ? `${QUOTE_SUBJECT[lang]} – ${routeText}` : QUOTE_SUBJECT[lang]), text: textFor("whatsapp"), rtl: lang === "ar", copyMe, quoteKey: k, options: chosen.length,
         photos: photos.map(({ a, i, p }) => ({ id: p.url.replace(/^.*\/api\/media\//, ""), name: `Option ${i + 1} - ${a.type} - ${p.label}${p.representative ? " (representative)" : ""}` })),
       });
       setMsg(r.message);
     } catch {
       setMsg("The email couldn't be sent. Try again in a moment, or use Copy message.");
+    } finally { setBusy(false); }
+  }
+
+  // -- saving the quote (with its routing) as the next version of its request, or the first of a new one
+  const [saved, setSaved] = useState<SaveResult | null>(null);
+  async function saveVersion(asNew = false) {
+    setBusy(true); setSaved(null);
+    try {
+      const snapshot = {
+        lang, text: textFor("whatsapp"), legs: fullLegs,
+        options: chosen.map((a, i) => ({
+          aircraftId: a.id, type: a.type, operator: a.operator, tail: a.tail, base: a.base, yom: a.yom, yor: a.yor, capacity: a.capacity,
+          price: prices[a.id] ?? "", extra: extras[a.id] ?? "",
+          photos: photos.filter((x) => x.i === i).map(({ p }) => ({ id: p.url.replace(/^.*\/api\/media\//, ""), label: p.label, classification: p.classification })),
+        })),
+        builder: { ids, lang, inc, prices, extras, edits, flip: [...flip], app, opId, emailTo, subject, copyMe, legs: fullLegs },
+      };
+      const r = await saveQuoteVersionAction(asNew ? null : req?.id ?? null, fullLegs, snapshot);
+      setSaved(r);
+      // Saving refreshes the page into the new version; the confirmation is shown again after that.
+      if (r.ok) { try { sessionStorage.setItem("quoteSaved", JSON.stringify(r)); } catch { /* ignore */ } }
+      if (r.ok && r.requestId && r.reference) {
+        // From now on this quote belongs to that request: its airports and dates are fixed.
+        if (!req || req.id !== r.requestId) {
+          try { localStorage.removeItem(draftKey); } catch { /* ignore */ }
+        }
+        setReq({ id: r.requestId, reference: r.reference });
+        setLocked(true);
+        window.history.replaceState(null, "", `/quote?request=${r.requestId}&version=${r.version}`);
+      }
+    } catch {
+      setSaved({ ok: false, message: "The quote couldn't be saved. Try again." });
     } finally { setBusy(false); }
   }
 
@@ -374,12 +464,28 @@ export default function QuoteBuilder({ aircraft, operators, preferred: preferred
     setSteps({ op: false, ac: false, lang: false });
     setTimeout(() => messageRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 50);
   };
-  const shownToggles: [keyof typeof inc, string][] = [["operator", "Operator"], ["tail", "Tail"], ["base", "Base"], ["notes", "Notes"]];
+  const shownToggles: [keyof typeof inc, string][] = [...(fullLegs.length ? [["routing", "Routing"] as [keyof typeof inc, string]] : []), ["operator", "Operator"], ["tail", "Tail"], ["base", "Base"], ["notes", "Notes"]];
+  const newRequest = () => {
+    if (!window.confirm("Keep this quote, but save it under a new request with different airports or dates?")) return;
+    setReq(null); setLocked(false); setSaved(null);
+    window.history.replaceState(null, "", "/quote");
+  };
 
   return (
     <div className="grid g2" style={{ alignItems: "start" }}>
       <div>
-        {restored && (
+        {req && (
+          <div className="draft-note small request-note">
+            <span><b>{req.reference}</b>{routeText ? ` · ${routeText}` : ""}{opened && opened.version ? ` · from version ${opened.version}` : ""}</span>
+            <a href={`/requests/${req.id}`}>Open request</a>
+          </div>
+        )}
+        <details className="card step" open>
+          <summary><h3>Routing</h3><span className="sum">{routeText || "Airports, dates, passengers"}</span></summary>
+          <RoutingPanel legs={legs} airports={airportMap} onChange={setLegs} onAirport={addAirport} locked={locked}
+            estimateFrom={estimateFor?.type ?? null} onNewRequest={req ? newRequest : undefined} />
+        </details>
+        {restored && !opened && (
           <div className="draft-note small">
             <span>Your last quote is back, as you left it.</span>
             <button type="button" className="linkish" onClick={startOver}>Start a new one</button>
@@ -590,6 +696,19 @@ export default function QuoteBuilder({ aircraft, operators, preferred: preferred
               <pre className="cardtext" dir={dir}><Styled text={text} /></pre>
             </details>
           )}
+          {chosen.length > 0 && fullLegs.length > 0 && (
+            <div className="save-version">
+              <button type="button" onClick={() => saveVersion()} disabled={busy || !text.trim()}>{busy ? "Saving…" : req ? "Save as next version" : "Save as request"}</button>
+              {saved ? (
+                <span className="small" role="status">
+                  {saved.message} {saved.ok && saved.requestId && <a href={`/requests/${saved.requestId}`}>See all versions</a>}
+                  {saved.routingChanged && <> <button type="button" className="linkish" onClick={() => saveVersion(true)}>Save as a new request</button></>}
+                </span>
+              ) : (
+                <span className="small muted">{req ? `Keeps it under ${req.reference}; change times or passengers and save again for the next version.` : "Gives this routing a reference and keeps this quote as version 1."}</span>
+              )}
+            </div>
+          )}
           <div className="row" style={{ marginTop: 8 }}>
             <div style={{ flex: "0 0 auto" }}><button type="button" className="secondary" onClick={() => copy()} disabled={!text.trim()}><Icon name="copy" />Copy message</button></div>
             {anyEdits && <div style={{ flex: "0 0 auto" }}><button type="button" className="secondary" onClick={() => setEdits({})}>Reset all edits</button></div>}
@@ -646,7 +765,7 @@ export default function QuoteBuilder({ aircraft, operators, preferred: preferred
               <label htmlFor="q-to" className="small">To (the client&apos;s email; up to 5, separated by commas)</label>
               <input id="q-to" type="text" inputMode="email" autoComplete="email" value={emailTo} onChange={(e) => setEmailTo(e.target.value)} placeholder="client@example.com" required />
               <label htmlFor="q-subject" className="small">Subject</label>
-              <input id="q-subject" type="text" value={subject} onChange={(e) => setSubject(e.target.value)} placeholder={QUOTE_SUBJECT[lang]} maxLength={200} />
+              <input id="q-subject" type="text" value={subject} onChange={(e) => setSubject(e.target.value)} placeholder={routeText ? `${QUOTE_SUBJECT[lang]} – ${routeText}` : QUOTE_SUBJECT[lang]} maxLength={200} />
               <label className="small" style={{ display: "flex", gap: 8, alignItems: "center" }}>
                 <input type="checkbox" checked={copyMe} onChange={(e) => setCopyMe(e.target.checked)} /> Send me a copy
               </label>

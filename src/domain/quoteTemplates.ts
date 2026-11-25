@@ -7,7 +7,7 @@ import { QUOTE_LANGUAGES, defaultQuoteTemplate, validateQuoteTemplate, type Quot
 
 type Q = Db | Tx;
 
-const FIELDS: (keyof QuoteTemplate)[] = ["greeting", "block", "closing", "yes", "no", "tbc", "seats"];
+const FIELDS: (keyof QuoteTemplate)[] = ["greeting", "block", "closing", "yes", "no", "tbc", "seats", "routing", "times"];
 
 /** The owner's saved wording per language (only the parts that differ from the default). */
 export async function getQuoteTemplates(db: Q, tenantId: string): Promise<Partial<Record<QuoteLanguage, Partial<QuoteTemplate>>>> {
