@@ -76,3 +76,22 @@ describe("Several aircraft with operators and prices", () => {
     expect(parseQuoteRequest(zh, today)).toEqual({ what: ["Phenix Jet Global 7500"], prices: ["USD 248,000"], legs: [{ from: "VHHH", to: "EGLL", date: "2026-12-12", time: "16:30", pax: 8 }] });
   });
 });
+
+describe("The routing before the request (a broker's real message)", () => {
+  it("reads the legs, the pax line for every leg, then the aircraft and prices", () => {
+    const msg = "21/Dec HKG-PEK ETD 1200L\n23/Dec PEK-CTS ETD 1200L\n27/Dec CTS-HKG ETD 1900L\n8 pax\n\nDraft me quote for\nVistaJet CL605 USD 115k\nQatar Executive G650ER USD 250k";
+    expect(parseQuoteRequest(msg, today)).toEqual({
+      what: ["VistaJet CL605", "Qatar Executive G650ER"],
+      prices: ["USD 115k", "USD 250k"],
+      legs: [
+        { from: "VHHH", to: "ZBAA", date: "2026-12-21", time: "12:00", pax: 8 },
+        { from: "ZBAA", to: "RJCC", date: "2026-12-23", time: "12:00", pax: 8 },
+        { from: "RJCC", to: "VHHH", date: "2026-12-27", time: "19:00", pax: 8 },
+      ],
+    });
+  });
+  it("is not a quote without a request, and the add-aircraft template stays an aircraft", () => {
+    expect(parseQuoteRequest("HKG-LHR 12 Dec\n8 pax", today)).toBeNull();
+    expect(parseQuoteRequest("Operator: Tag Aviation\nAircraft type: G650", today)).toBeNull();
+  });
+});

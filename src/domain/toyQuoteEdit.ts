@@ -29,7 +29,7 @@ export interface QuoteFollowUp {
 
 const YOM = "yom|year of manufacture|year built|manufactured|出廠年份|出厂年份|製造年份|制造年份|出廠|出厂";
 const YOR = "yor|year of refurb(?:ishment)?|refurb(?:ished|ishment)?|翻新年份|改裝年份|改装年份|翻新";
-const CAP = "capacity|seats?|pax|passengers?|載客量|载客量|座位數|座位数|座位";
+const CAP = "capacity|seats?|載客量|载客量|座位數|座位数|座位";
 const FIELD_OF = (w: string): "yom" | "yor" | "capacity" => new RegExp(`^(?:${YOM})$`, "i").test(w) ? "yom" : new RegExp(`^(?:${YOR})$`, "i").test(w) ? "yor" : "capacity";
 const LINK = "(?:\\s*(?:(?:shall|should|will|must|has to|needs to)\\s+be|be\\s+changed\\s+to|changed\\s+to|is|are|to|=|:|：|as|be|at|in|為|为|係|改為|改为|改成|改做))?";
 const FORWARD = new RegExp(`(?:\\bthe\\s+)?(?<![A-Za-z])(${YOM}|${YOR}|${CAP})(?![A-Za-z])${LINK}\\s*(\\d{1,4})(?!\\d)`, "i");

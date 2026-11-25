@@ -53,8 +53,9 @@ function takeDate(s: string, today: Date): { date: string | null; rest: string }
     okYear(y) ? [validDate(fullYear(y!), mo, d) ? iso(fullYear(y!), mo, d) : null, m[0]] : [withYear(mo, d, today), yearText ? m[0].slice(0, m[0].lastIndexOf(yearText)) : m[0]];
   const tries: [RegExp, (m: RegExpMatchArray) => [string | null, string]][] = [
     [/\b(\d{4})-(\d{1,2})-(\d{1,2})\b/, (m) => [validDate(+m[1], +m[2], +m[3]) ? iso(+m[1], +m[2], +m[3]) : null, m[0]]],
-    [new RegExp(String.raw`\b(\d{1,2})${ORD}\s*${MON}(?:,?\s*(\d{4}))?`, "i"), (m) => dm(m, MONTHS.indexOf(m[2].toLowerCase()) + 1, +m[1], m[3], m[3])],
-    [new RegExp(String.raw`\b${MON}\s*(\d{1,2})${ORD}(?:,?\s*(\d{4}))?\b`, "i"), (m) => dm(m, MONTHS.indexOf(m[1].toLowerCase()) + 1, +m[2], m[3], m[3])],
+    // "12 Dec", "21/Dec", "21-Dec-2026", "Dec 12", "Dec/12"
+    [new RegExp(String.raw`\b(\d{1,2})${ORD}\s*[/.\-]?\s*${MON}(?:\s*[,/.\-]?\s*(\d{4}))?`, "i"), (m) => dm(m, MONTHS.indexOf(m[2].toLowerCase()) + 1, +m[1], m[3], m[3])],
+    [new RegExp(String.raw`\b${MON}\s*[/.\-]?\s*(\d{1,2})${ORD}(?:\s*[,/.\-]?\s*(\d{4}))?\b`, "i"), (m) => dm(m, MONTHS.indexOf(m[1].toLowerCase()) + 1, +m[2], m[3], m[3])],
     [/(?:(\d{4})年)?(\d{1,2})月(\d{1,2})[日號号]?/, (m) => (m[1] ? [validDate(+m[1], +m[2], +m[3]) ? iso(+m[1], +m[2], +m[3]) : null, m[0]] : [withYear(+m[2], +m[3], today), m[0]])],
     [/(?<![\d:])(\d{1,2})[/.](\d{1,2})(?:[/.](\d{2}|\d{4}))?(?![\d:])/, (m) => (m[3] ? [validDate(fullYear(m[3]), +m[2], +m[1]) ? iso(fullYear(m[3]), +m[2], +m[1]) : null, m[0]] : [withYear(+m[2], +m[1], today), m[0]])],
     [/\b(today|tomorrow)\b|今日|今天|明天|聽日|听日/i, (m) => {

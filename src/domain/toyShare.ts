@@ -160,6 +160,9 @@ function readLabelled(line: string): Labelled | null {
   return { operator: f.operator, aircraft: f.aircraft, price: f.price };
 }
 
+/** "8 pax" / "Pax: 8" / "8人" on a line of its own. */
+const PAX_LINE = /^\s*(?:(\d{1,3})\s*(?:pax|passengers?|people|persons?|ppl|guests?|人|位|名)|(?:pax|passengers?|乘客|人數|人数)\s*[:：x×]?\s*(\d{1,3}))\s*[.。]?\s*$/i;
+
 const MONEY_ALL = new RegExp(MONEY.source, "gi");
 /** "Phenix Jet G7500 USD 248k, Tag G650ER USD 230k": one line per aircraft when a line carries several prices. */
 function splitPricedLine(line: string): string[] {
@@ -184,12 +187,18 @@ export function parseQuoteRequest(message: string, today = new Date()): QuoteReq
   const legs: Leg[] = [];
   const unknown: string[] = [];
   let pendingOperator: string | null = null; // "Operator: X" on its own line, the aircraft on the next
-  for (const [n, rawLine] of lines.entries()) {
+  // The request ("Draft me a quote for") may come after the routing; until it does, only routing lines are allowed.
+  let started = false;
+  let allPax: number | null = null; // "8 pax" on a line of its own: for every leg
+  for (const rawLine of lines) {
+    const paxLine = rawLine.match(PAX_LINE);
+    if (paxLine) { allPax = Number(paxLine[1] ?? paxLine[2]); continue; }
     // The template's labelled lines: a leg ("Date: 12 Dec | From: HKG | To: LHR") or an option ("Operator: … | Aircraft: … | Price: …").
     let raw = rawLine;
-    const lab = n > 0 ? readLabelled(rawLine) : null;
+    const lab = readLabelled(rawLine);
     if (lab?.blank) continue;
     if (lab?.route) raw = lab.route;
+    else if (lab && !started) return null; // "Operator: …" before any request: the add-an-aircraft template, not a quote
     else if (lab && (lab.operator || lab.aircraft)) {
       if (!lab.aircraft) { pendingOperator = lab.operator ?? null; if (lab.price) pending = lab.price; continue; }
       what.push([lab.operator ?? pendingOperator ?? "", lab.aircraft].filter(Boolean).join(" "));
@@ -205,11 +214,12 @@ export function parseQuoteRequest(message: string, today = new Date()): QuoteReq
     if (route) {
       legs.push(...route.legs);
       unknown.push(...route.unknown);
-      if (n > 0) continue;
-      p.rest = route.rest;
+      if (started || !parseOneQuoteLine(route.rest)) continue; // a routing line on its own
+      p.rest = route.rest; // the request with the routing beside it
     }
-    const head = n === 0 ? parseOneQuoteLine(p.rest) : null;
-    if (n === 0 && !head) return null;
+    const head = started ? null : parseOneQuoteLine(p.rest);
+    if (!started && !head) return null;
+    started = true;
     const names = (head ? head.what : aircraftOnly(p.rest)).filter((x) => !COUNT_ONLY.test(x) && !POLITE.test(x));
     if (names.length) {
       for (const x of names) { what.push(x); prices.push(p.price ?? pending ?? ""); }
@@ -220,6 +230,8 @@ export function parseQuoteRequest(message: string, today = new Date()): QuoteReq
       else pending = p.price;
     }
   }
+  if (!started) return null;
+  if (allPax != null) for (const l of legs) if (l.pax == null) l.pax = allPax;
   return {
     what,
     ...(prices.some(Boolean) ? { prices } : {}),
