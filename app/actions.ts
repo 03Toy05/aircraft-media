@@ -1,6 +1,7 @@
 "use server";
 
 import { randomUUID } from "node:crypto";
+import { serverT } from "@/lib/uiLang";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { getDb } from "@/db/client";
@@ -646,7 +647,7 @@ export async function togglePreferredOperator(organisationId: string): Promise<{
   const db = await getDb();
   const cur = await dir.getPreferredOperators(db, actor.tenantId);
   const next = cur.includes(organisationId) ? cur.filter((x) => x !== organisationId) : [...cur, organisationId];
-  if (next.length > dir.MAX_PREFERRED_OPERATORS) return { ids: cur, error: `You already have ${dir.MAX_PREFERRED_OPERATORS} preferred operators. Remove one first (tap its star).` };
+  if (next.length > dir.MAX_PREFERRED_OPERATORS) return { ids: cur, error: (await serverT())("You already have {n} preferred operators. Remove one first (tap its star).", { n: dir.MAX_PREFERRED_OPERATORS }) };
   try {
     await dir.setPreferredOperators(db, actor, randomUUID(), { organisationIds: next });
   } catch (e) {
@@ -766,46 +767,47 @@ export async function sendQuoteEmailAction(input: {
   /** A saved request's quote: attach its PDF (that version), and/or add the client's link to the message. */
   request?: { id: string; version?: number; pdf?: boolean; link?: boolean };
 }): Promise<{ ok: boolean; message: string }> {
+  const t = await serverT();
   try {
     const s = await requireUser();
-    if (s.viewingAs) return { ok: false, message: "You are looking at someone else's workspace, so nothing is sent from here." };
+    if (s.viewingAs) return { ok: false, message: t("You are looking at someone else's workspace, so nothing is sent from here.") };
     const r = quoteEmail.parseRecipients(String(input.to ?? ""));
     if ("error" in r) return { ok: false, message: r.error };
     const subject = String(input.subject ?? "").replace(/[\r\n]+/g, " ").trim().slice(0, 200);
-    if (!subject) return { ok: false, message: "Add a subject." };
+    if (!subject) return { ok: false, message: t("Add a subject.") };
     let text = String(input.text ?? "").slice(0, 20_000);
-    if (!text.trim()) return { ok: false, message: "The message is empty." };
+    if (!text.trim()) return { ok: false, message: t("The message is empty.") };
     const photos = (Array.isArray(input.photos) ? input.photos : []).slice(0, quoteEmail.MAX_PHOTOS + 1);
-    if (photos.length > quoteEmail.MAX_PHOTOS) return { ok: false, message: `Attach ${quoteEmail.MAX_PHOTOS} photos at most. Untick some and try again.` };
+    if (photos.length > quoteEmail.MAX_PHOTOS) return { ok: false, message: t("Attach {n} photos at most. Untick some and try again.", { n: quoteEmail.MAX_PHOTOS }) };
     const db = await getDb();
     if ((await quoteEmail.emailsToday(db, s.actor.id)) >= quoteEmail.MAX_EMAILS_PER_DAY) {
-      return { ok: false, message: `You have sent ${quoteEmail.MAX_EMAILS_PER_DAY} quote emails in the last 24 hours, the most allowed. Use Copy message or Share for now.` };
+      return { ok: false, message: t("You have sent {n} quote emails in the last 24 hours, the most allowed. Use Copy message or Share for now.", { n: quoteEmail.MAX_EMAILS_PER_DAY }) };
     }
     const store = getFileStore();
     const attachments: { filename: string; content: Uint8Array }[] = [];
     let bytes = 0;
     for (const p of photos) {
       const id = String(p?.id ?? "");
-      if (!(await photoAllowed(db, s, id))) return { ok: false, message: "One of the photos is no longer available to you. Untick it and try again." };
+      if (!(await photoAllowed(db, s, id))) return { ok: false, message: t("One of the photos is no longer available to you. Untick it and try again.") };
       const f = await media.readContentBytes(db, store, id).catch(() => null);
-      if (!f) return { ok: false, message: "One of the photos couldn't be read from storage. Untick it and try again." };
+      if (!f) return { ok: false, message: t("One of the photos couldn't be read from storage. Untick it and try again.") };
       bytes += f.bytes.length;
-      if (bytes > quoteEmail.MAX_ATTACH_BYTES) return { ok: false, message: "The photos are too large for one email (25 MB). Untick some, or send them as a combined photo." };
+      if (bytes > quoteEmail.MAX_ATTACH_BYTES) return { ok: false, message: t("The photos are too large for one email (25 MB). Untick some, or send them as a combined photo.") };
       attachments.push({ filename: quoteEmail.attachmentName(String(p?.name ?? ""), f.mimeType), content: f.bytes });
     }
     // A saved request: the PDF of that version first among the attachments, and the client's link under the message.
     let pdfName = "";
     if (input.request?.id && input.request.pdf) {
       const pdf = await brokerQuotePdf(db, store, s, String(input.request.id), Number(input.request.version) || undefined);
-      if (!pdf) return { ok: false, message: "That quote has no PDF (not saved yet, or its language has no PDF yet). Untick “Attach the PDF” and send the client link instead." };
+      if (!pdf) return { ok: false, message: t("That quote has no PDF (not saved yet, or its language has no PDF yet). Untick “Attach the PDF” and send the client link instead.") };
       bytes += pdf.bytes.length;
-      if (bytes > quoteEmail.MAX_ATTACH_BYTES) return { ok: false, message: "The PDF and photos are too large for one email (25 MB). Untick some photos: the PDF already has them." };
+      if (bytes > quoteEmail.MAX_ATTACH_BYTES) return { ok: false, message: t("The PDF and photos are too large for one email (25 MB). Untick some photos: the PDF already has them.") };
       attachments.unshift({ filename: pdf.filename, content: pdf.bytes });
       pdfName = pdf.filename;
     }
     if (input.request?.id && input.request.link) {
       const site = await siteAddress();
-      if (!site) return { ok: false, message: "The site's address isn't set (APP_URL), so the link can't be added." };
+      if (!site) return { ok: false, message: t("The site's address isn't set (APP_URL), so the link can't be added.") };
       const l = await ensureLink(db, s.actor, String(input.request.id));
       text = `${text}\n\n${site}/q/${l.token}`;
     }
@@ -820,11 +822,12 @@ export async function sendQuoteEmailAction(input: {
     });
     await quoteShares.recordQuoteShare(db, s.actor, { quoteKey: String(input.quoteKey ?? "") || randomUUID(), how: "email", options: Number(input.options) || 1 });
     const nPhotos = attachments.length - (pdfName ? 1 : 0);
-    const what = [pdfName && `the PDF (${pdfName})`, nPhotos && `${nPhotos} photo${nPhotos === 1 ? "" : "s"}`, input.request?.link && "the client link"].filter(Boolean).join(", ");
-    return { ok: true, message: `Email sent to ${r.emails.join(", ")}${what ? ` with ${what}` : ""}. Replies come to ${s.email}.` };
+    const what = [pdfName && t("the PDF ({name})", { name: pdfName }), nPhotos && (nPhotos === 1 ? t("{n} photo", { n: 1 }) : t("{n} photos", { n: nPhotos })), input.request?.link && t("the client link")].filter(Boolean).join(", ");
+    const to = r.emails.join(", ");
+    return { ok: true, message: what ? t("Email sent to {to} with {what}. Replies come to {me}.", { to, what, me: s.email }) : t("Email sent to {to}. Replies come to {me}.", { to, me: s.email }) };
   } catch (e) {
     console.error("Quote email failed", e);
-    return { ok: false, message: "The email couldn't be sent. Try again in a moment, or use Copy message." };
+    return { ok: false, message: t("The email couldn't be sent. Try again in a moment, or use Copy message.") };
   }
 }
 

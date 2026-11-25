@@ -15,6 +15,7 @@ import { getRequest, listVersions } from "@/domain/requests";
 import { airportsFor, findAirport } from "@/domain/airports";
 import { cleanLegs, type Leg } from "@/domain/routing";
 import Link from "next/link";
+import { serverT } from "@/lib/uiLang";
 
 /** Build a quotation message for a client: pick aircraft, pick a language, edit the text, then copy or share it with the photos. */
 export default async function Quote({ searchParams }: { searchParams: SP }) {
@@ -124,10 +125,11 @@ export default async function Quote({ searchParams }: { searchParams: SP }) {
   const airports = airportsFor(legsShown.flatMap((l) => [l.from, l.to]));
   const photosParam = one(sp.photos);
   const initialKinds = photosParam === undefined ? undefined : photosParam === "none" ? [] : photosParam.split(",").filter((k) => k in CLASSIFICATION_LABEL);
+  const t = await serverT();
   return (
     <>
-      <h1>Quote</h1>
-      <p className="muted">Enter the client&apos;s routing, find the operator, tick the aircraft, then edit and send the message with the photos. <a href="/quote/template">Change the standard wording</a> · <Link href="/requests">Saved requests</Link></p>
+      <h1>{t("Quote")}</h1>
+      <p className="muted">{t("Enter the client's routing, find the operator, tick the aircraft, then edit and send the message with the photos.")} <a href="/quote/template">{t("Change the standard wording")}</a> · <Link href="/requests">{t("Saved requests")}</Link></p>
       <QuoteBuilder key={`${request?.id ?? ""}:${opened?.version ?? ""}:${one(sp.fresh) ?? ""}:${one(sp.legs) ?? ""}`} aircraft={options} operators={operators} preferred={preferred} initialIds={initial} initialPrices={initialPrices} initialKinds={initialKinds} templates={await getQuoteTemplates(db, actor.tenantId)}
         request={request} airports={airports} opened={opened} fresh={one(sp.fresh) === "1"} initialLegs={toyLegs} />
     </>

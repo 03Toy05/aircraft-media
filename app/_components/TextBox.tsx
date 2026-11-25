@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import Icon from "./Icon";
 import { getRecognition, listen } from "./voice";
+import { useT } from "./uiLang";
 import { clearStyles, parseStyled, toggleMark, toggleUnderline, type Edit } from "@/domain/textStyle";
 
 /**
@@ -17,6 +18,7 @@ export default function TextBox({ value, onChange, rows = 2, dir, placeholder, s
   styles?: boolean;
   ariaLabel?: string; speechLang?: string;
 }) {
+  const t = useT();
   const ref = useRef<HTMLTextAreaElement & HTMLInputElement>(null);
   const [active, setActive] = useState(false);
   const [listening, setListening] = useState(false);
@@ -66,22 +68,22 @@ export default function TextBox({ value, onChange, rows = 2, dir, placeholder, s
     <div className="textbox" ref={wrapRef}>
       {single ? <input {...common} /> : <textarea {...common} rows={rows} />}
       {(show || listening) && (
-        <div className="fmt-bar" role="toolbar" aria-label="Text style">
+        <div className="fmt-bar" role="toolbar" aria-label={t("Text style")}>
           {styles && (
             <>
-              <button type="button" onPointerDown={keep} onMouseDown={keep} onClick={() => apply((t, s, e) => toggleMark(t, s, e, "bold"))} title="Bold (*text*)" aria-label="Bold"><b>B</b></button>
-              <button type="button" onPointerDown={keep} onMouseDown={keep} onClick={() => apply((t, s, e) => toggleMark(t, s, e, "italic"))} title="Italic (_text_)" aria-label="Italic"><i>I</i></button>
-              <button type="button" onPointerDown={keep} onMouseDown={keep} onClick={() => apply(toggleUnderline)} title="Underline" aria-label="Underline"><u>U</u></button>
-              <button type="button" onPointerDown={keep} onMouseDown={keep} onClick={() => apply((t, s, e) => toggleMark(t, s, e, "strike"))} title="Strikethrough (~text~)" aria-label="Strikethrough"><s>S</s></button>
-              <button type="button" onPointerDown={keep} onMouseDown={keep} onClick={() => apply(clearStyles)} title="Remove styles from the selection (or the whole box)" aria-label="Remove styles">Tx</button>
+              <button type="button" onPointerDown={keep} onMouseDown={keep} onClick={() => apply((t, s, e) => toggleMark(t, s, e, "bold"))} title={t("Bold (*text*)")} aria-label={t("Bold")}><b>B</b></button>
+              <button type="button" onPointerDown={keep} onMouseDown={keep} onClick={() => apply((t, s, e) => toggleMark(t, s, e, "italic"))} title={t("Italic (_text_)")} aria-label={t("Italic")}><i>I</i></button>
+              <button type="button" onPointerDown={keep} onMouseDown={keep} onClick={() => apply(toggleUnderline)} title={t("Underline")} aria-label={t("Underline")}><u>U</u></button>
+              <button type="button" onPointerDown={keep} onMouseDown={keep} onClick={() => apply((t, s, e) => toggleMark(t, s, e, "strike"))} title={t("Strikethrough (~text~)")} aria-label={t("Strikethrough")}><s>S</s></button>
+              <button type="button" onPointerDown={keep} onMouseDown={keep} onClick={() => apply(clearStyles)} title={t("Remove styles from the selection (or the whole box)")} aria-label={t("Remove styles")}>Tx</button>
             </>
           )}
           {canListen && (
-            <button type="button" className={listening ? "on" : undefined} onPointerDown={keep} onMouseDown={keep} onClick={mic} aria-pressed={listening} aria-label={listening ? "Stop dictating" : "Dictate"} title={listening ? "Stop" : "Speak to type here"}>
-              <Icon name="mic" size={16} />{listening ? "Stop" : ""}
+            <button type="button" className={listening ? "on" : undefined} onPointerDown={keep} onMouseDown={keep} onClick={mic} aria-pressed={listening} aria-label={listening ? t("Stop dictating") : t("Dictate")} title={listening ? t("Stop") : t("Speak to type here")}>
+              <Icon name="mic" size={16} />{listening ? t("Stop") : ""}
             </button>
           )}
-          {styles && <span className="fmt-hint small muted">Select words, then tap a style. Tap again to remove it.</span>}
+          {styles && <span className="fmt-hint small muted">{t("Select words, then tap a style. Tap again to remove it.")}</span>}
         </div>
       )}
       {note && <p className="small" style={{ color: "var(--warn)", margin: "4px 0 0" }}>{note}</p>}

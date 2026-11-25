@@ -1,6 +1,8 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { rememberUiLang, uiLangChosen, useUiLang } from "./uiLang";
 import { useEffect, useRef, useState, useTransition } from "react";
 import { toyTurnAction, type TurnResult } from "../chatActions";
 import { recordQuoteShareAction } from "../actions";
@@ -287,7 +289,9 @@ export default function ChatClient() {
   const [speak, setSpeak] = useState(false);
   const [autoSend, setAutoSend] = useState(false);
   const [voice, setVoice] = useState("en-US");
-  const [chatLang, setChatLang] = useState<ChatLang>("en");
+  // Toy speaks the site's language (EN / 繁 / 简 in the top bar, or the switch here: they are the same setting).
+  const chatLang: ChatLang = useUiLang();
+  const router = useRouter();
   const ui = uiFor(chatLang);
   const chatLangRef = useRef<ChatLang>("en");
   chatLangRef.current = chatLang;
@@ -300,17 +304,20 @@ export default function ChatClient() {
   // Remember the chosen language on this device.
   useEffect(() => {
     try {
+      // Toy's language picked before the site had one: it becomes the site's language.
       const saved = parseChatLang(window.localStorage.getItem("toyLang") ?? window.localStorage.getItem("chocksLang"));
-      if (saved !== "en") { setChatLang(saved); setVoice(saved === "zh-Hans" ? "zh-CN" : "zh-HK"); }
+      if (!uiLangChosen() && saved !== "en") { rememberUiLang(saved); router.refresh(); }
     } catch { /* storage blocked: stay in English */ }
     // A voice language chosen on purpose wins over the one that follows the chat language.
     const v = savedVoice();
     if (v) setVoice(v);
-  }, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  // The microphone follows the language, unless a voice language was chosen on purpose.
+  useEffect(() => { if (!savedVoice()) setVoice(chatLang === "zh-Hans" ? "zh-CN" : chatLang === "zh-Hant" ? "zh-HK" : "en-US"); }, [chatLang]);
   const changeChatLang = (l: ChatLang) => {
-    setChatLang(l);
-    if (!savedVoice()) setVoice(l === "zh-Hans" ? "zh-CN" : l === "zh-Hant" ? "zh-HK" : "en-US");
-    try { window.localStorage.setItem("toyLang", l); } catch { /* ignore */ }
+    if (l === chatLang) return;
+    rememberUiLang(l);
+    router.refresh();
   };
   const chooseVoice = (v: string) => {
     if (listening) stopListening(false);

@@ -9,6 +9,7 @@ import { photoAllowed } from "@/domain/photoAccess";
 import * as req from "@/domain/requests";
 import { ensureLink, replaceLink, setLink } from "@/domain/quoteLinks";
 import { siteAddress } from "@/lib/site";
+import { serverT } from "@/lib/uiLang";
 
 const str = (fd: FormData, k: string) => String(fd.get(k) ?? "");
 const withParam = (path: string, k: string, v: string) => `${path}${path.includes("?") ? "&" : "?"}${k}=${encodeURIComponent(v)}`;
@@ -41,17 +42,17 @@ export async function saveQuoteVersionAction(requestId: string | null, legs: unk
     const snap = req.cleanSnapshot(snapshot);
     for (const o of snap.options) {
       for (const p of o.photos) {
-        if (!(await photoAllowed(db, s, p.id))) return { ok: false, message: "One of the photos is no longer available to you. Untick it and save again." };
+        if (!(await photoAllowed(db, s, p.id))) return { ok: false, message: (await serverT())("One of the photos is no longer available to you. Untick it and save again.") };
       }
     }
     const r = await req.saveQuoteVersion(db, s.actor, requestId, legs, snap);
     revalidatePath(`/requests/${r.requestId}`);
     revalidatePath("/requests");
     revalidatePath("/");
-    return { ok: true, ...r, message: `Saved as ${r.reference} version ${r.version}.` };
+    return { ok: true, ...r, message: (await serverT())("Saved as {ref} version {n}.", { ref: r.reference, n: r.version }) };
   } catch (e) {
     if (e instanceof DomainError || e instanceof Error) return { ok: false, message: e.message };
-    return { ok: false, message: "The quote couldn't be saved. Try again." };
+    return { ok: false, message: (await serverT())("The quote couldn't be saved. Try again.") };
   }
 }
 
@@ -63,11 +64,11 @@ export async function clientLinkAction(requestId: string): Promise<{ ok: boolean
   try {
     const s = await requireWriter();
     const site = await siteAddress();
-    if (!site) return { ok: false, message: "The site's address isn't set (APP_URL)." };
+    if (!site) return { ok: false, message: (await serverT())("The site's address isn't set (APP_URL).") };
     const l = await ensureLink(await getDb(), s.actor, requestId);
-    return { ok: true, url: `${site}/q/${l.token}`, message: "Client link ready." };
+    return { ok: true, url: `${site}/q/${l.token}`, message: (await serverT())("Client link ready.") };
   } catch (e) {
-    return { ok: false, message: e instanceof Error ? e.message : "The link couldn't be made." };
+    return { ok: false, message: e instanceof Error ? e.message : (await serverT())("The link couldn't be made.") };
   }
 }
 

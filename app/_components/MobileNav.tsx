@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import Icon from "./Icon";
 import { getRecognition } from "./voice";
+import { LangSwitch, useT } from "./uiLang";
 
 const TABS = [
   { href: "/", label: "Toy", icon: "home", match: (p: string) => p === "/" },
@@ -18,6 +19,7 @@ const TABS = [
  */
 export default function MobileNav({ email, signOut, isAdmin = false, library = false }: { email: string; signOut: () => Promise<void>; isAdmin?: boolean; library?: boolean }) {
   const path = usePathname() ?? "/";
+  const t = useT();
   const [open, setOpen] = useState(false);
   useEffect(() => setOpen(false), [path]); // close the sheet after going somewhere
   const [canTalk, setCanTalk] = useState(false);
@@ -32,39 +34,40 @@ export default function MobileNav({ email, signOut, isAdmin = false, library = f
 
   return (
     <>
-      {open && <button type="button" className="sheet-backdrop" aria-label="Close menu" onClick={() => setOpen(false)} />}
+      {open && <button type="button" className="sheet-backdrop" aria-label={t("Close menu")} onClick={() => setOpen(false)} />}
       {open && (
-        <div className="sheet" role="dialog" aria-label="More">
-          <Link href="/review"><Icon name="review" />Review photos</Link>
-          <Link href="/requests"><Icon name="list" />Requests</Link>
-          <Link href="/contacts"><Icon name="contacts" />Contacts</Link>
-          <Link href="/photos"><Icon name="photos" />Approved photos</Link>
-          <Link href="/intake"><Icon name="upload" />Upload photos</Link>
-          <Link href="/settings"><Icon name="settings" />Settings</Link>
-          {library && <Link href="/library"><Icon name="plane" />Library</Link>}
-          {isAdmin && <Link href="/admin"><Icon name="contacts" />Users</Link>}
+        <div className="sheet" role="dialog" aria-label={t("More")}>
+          <Link href="/review"><Icon name="review" />{t("Review photos")}</Link>
+          <Link href="/requests"><Icon name="list" />{t("Requests")}</Link>
+          <Link href="/contacts"><Icon name="contacts" />{t("Contacts")}</Link>
+          <Link href="/photos"><Icon name="photos" />{t("Approved photos")}</Link>
+          <Link href="/intake"><Icon name="upload" />{t("Upload photos")}</Link>
+          <Link href="/settings"><Icon name="settings" />{t("Settings")}</Link>
+          {library && <Link href="/library"><Icon name="plane" />{t("Library")}</Link>}
+          {isAdmin && <Link href="/admin"><Icon name="contacts" />{t("Users")}</Link>}
+          <div style={{ margin: "6px 0" }}><LangSwitch /></div>
           <p className="small muted" style={{ margin: "6px 0" }}>{email}</p>
-          <form action={signOut}><button type="submit" className="secondary"><Icon name="signout" />Sign out</button></form>
+          <form action={signOut}><button type="submit" className="secondary"><Icon name="signout" />{t("Sign out")}</button></form>
         </div>
       )}
-      <nav className="bottom-nav" aria-label="Main">
-        {TABS.map((t, i) => (
-          <span key={t.href} style={{ display: "contents" }}>
+      <nav className="bottom-nav" aria-label={t("Main")}>
+        {TABS.map((tab, i) => (
+          <span key={tab.href} style={{ display: "contents" }}>
             {i === 2 && (canTalk ? (
               // The Ask Toy microphone: VoiceCommand (or Toy's own message box on the Toy page) listens for this.
-              <button type="button" className={`mic-tab${talking ? " on" : ""}`} onClick={() => window.dispatchEvent(new Event("toy:mic"))} aria-label={talking ? "Stop listening" : "Ask Toy by voice"} aria-pressed={talking}>
+              <button type="button" className={`mic-tab${talking ? " on" : ""}`} onClick={() => window.dispatchEvent(new Event("toy:mic"))} aria-label={talking ? t("Stop listening") : t("Ask Toy by voice")} aria-pressed={talking}>
                 <span className="mic-dot"><Icon name="mic" size={22} /></span>
               </button>
             ) : (
-              <Link href="/review" className={path.startsWith("/review") ? "on" : undefined}><Icon name="review" size={22} /><span>Review</span></Link>
+              <Link href="/review" className={path.startsWith("/review") ? "on" : undefined}><Icon name="review" size={22} /><span>{t("Review")}</span></Link>
             ))}
-            <Link href={t.href} className={t.match(path) ? "on" : undefined} aria-current={t.match(path) ? "page" : undefined}>
-              <Icon name={t.icon} size={22} /><span>{t.label}</span>
+            <Link href={tab.href} className={tab.match(path) ? "on" : undefined} aria-current={tab.match(path) ? "page" : undefined}>
+              <Icon name={tab.icon} size={22} /><span>{tab.label === "Toy" ? "Toy" : t(tab.label)}</span>
             </Link>
           </span>
         ))}
         <button type="button" className={`${open || moreActive ? "on" : ""}`} onClick={() => setOpen((v) => !v)} aria-expanded={open}>
-          <Icon name="menu" size={22} /><span>More</span>
+          <Icon name="menu" size={22} /><span>{t("More")}</span>
         </button>
       </nav>
     </>
