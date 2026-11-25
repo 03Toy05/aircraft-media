@@ -11,6 +11,7 @@ import { prepareShareAction, type SharePayload } from "../shareActions";
 import { ShareBox } from "./ShareBox";
 import { copyText, fetchPhoto } from "./copyText";
 import Icon from "./Icon";
+import Toy, { TOY_LANDING_MS, TOY_TAKEOFF_MS, type ToyState } from "./Toy";
 import { CHAT_LANGUAGES, parseChatLang, toHans, trClassification, type ChatLang } from "@/domain/toyText";
 import { VOICE_ON, savedVoice, saveVoice } from "./voice";
 
@@ -48,7 +49,7 @@ const UI_EN = {
 };
 type UI = typeof UI_EN;
 const UI_HANT: UI = {
-  hi: "你好，我是 Toy。",
+  hi: "我是Toy",
   intro: "有什麼可以幫你？",
   doQuote: "草擬報價", doAdd: "新增飛機或相片", doFind: "搜尋飛機",
   addHint: "填上你知道的資料（其餘留空），有相片可一併附上，然後按傳送。確認前不會儲存任何內容。",
@@ -240,6 +241,30 @@ export default function ChatClient() {
   const [files, setFiles] = useState<File[]>([]);
   const [draft, setDraft] = useState<string>("");
   const [pending, start] = useTransition();
+
+  // Toy's face follows the real request (TOY-11): takeoff when a message is accepted, working while it is pending,
+  // landing on a confirmed result, needsHelp on a failure. The timers only change the drawing; results never wait for them.
+  const [toyState, setToyState] = useState<ToyState>("ready");
+  const toyTimer = useRef<number | undefined>(undefined);
+  const toyTurn = useRef(0);
+  useEffect(() => () => window.clearTimeout(toyTimer.current), []);
+  const calm = () => typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+  const liftOff = () => {
+    const turnNo = ++toyTurn.current;
+    window.clearTimeout(toyTimer.current);
+    if (calm()) { setToyState("working"); return turnNo; }
+    setToyState("takeoff");
+    toyTimer.current = window.setTimeout(() => { if (toyTurn.current === turnNo) setToyState("working"); }, TOY_TAKEOFF_MS);
+    return turnNo;
+  };
+  const settleToy = (turnNo: number, outcome: "success" | "needsHelp" | "ready") => {
+    if (toyTurn.current !== turnNo) return; // a newer message owns Toy now
+    window.clearTimeout(toyTimer.current);
+    if (outcome !== "success") { setToyState(outcome); return; }
+    if (calm()) { setToyState("completed"); return; }
+    setToyState("landing");
+    toyTimer.current = window.setTimeout(() => { if (toyTurn.current === turnNo) setToyState("completed"); }, TOY_LANDING_MS);
+  };
   const fileRef = useRef<HTMLInputElement>(null);
   const boxRef = useRef<HTMLTextAreaElement>(null);
   const [adding, setAdding] = useState(false);
@@ -311,6 +336,7 @@ export default function ChatClient() {
     if (!t.trim() && files.length === 0) return;
     if (pending || sendingRef.current) return;
     sendingRef.current = true;
+    const toyNo = liftOff();
     const fd = new FormData();
     fd.set("text", t);
     fd.set("draft", draft);
@@ -331,11 +357,16 @@ export default function ChatClient() {
         report({ kind: "toy", name: kind, ms: performance.now() - asked, serverMs: r.serverMs });
       } catch {
         setMsgs((m) => [...m, { id: crypto.randomUUID(), role: "toy", say: [ui.sorry], chips: [], draft: JSON.parse(draft || "null") ?? ({ photos: [] } as unknown as Draft), failures: [] }]);
+        settleToy(toyNo, "needsHelp");
         return;
       }
       setDraft(JSON.stringify(r.draft));
       const reply: Msg = { id: crypto.randomUUID(), role: "toy", say: r.reply.say, chips: r.reply.chips, draft: r.draft, done: r.reply.done, aircraftId: r.applied?.aircraftId, failures: r.failures, share: r.reply.share, link: r.reply.link, photos: r.reply.photos, copy: r.reply.copy, options: r.reply.options, kinds: r.reply.kinds };
       setMsgs((m) => [...m, reply]);
+      // Success = the backend saved something or handed back a finished result. Not found or a failure = Toy needs help.
+      // A plain follow-up question is neither: Toy is ready for the answer.
+      const confirmed = !!(r.applied || r.reply.done || r.reply.options?.length || r.reply.photos?.length || r.reply.share || r.reply.link);
+      settleToy(toyNo, r.failures.length > 0 || r.reply.notFound ? "needsHelp" : confirmed ? "success" : "ready");
       try {
         if (!r.draft.quote) window.sessionStorage.removeItem(QUOTE_KEY);
         else if (r.reply.options?.length) window.sessionStorage.setItem(QUOTE_KEY, JSON.stringify({ quote: r.draft.quote, msg: { ...reply, chips: [] } }));
@@ -445,7 +476,10 @@ export default function ChatClient() {
     <div>
       <div className="card" style={{ marginBottom: 12 }}>
         <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "start" }}>
-          <p style={{ margin: 0 }}><b>{ui.hi}</b><br />{ui.intro}</p>
+          <div style={{ display: "flex", gap: 12, alignItems: "center", minWidth: 0 }}>
+            <Toy state={toyState} size={44} className="chat-toy" />
+            <p style={{ margin: 0 }}><b>{ui.hi}</b><br />{ui.intro}</p>
+          </div>
           <span className="seg" role="radiogroup" aria-label={ui.language}>
             {CHAT_LANGUAGES.map((l) => (
               <button key={l.id} type="button" role="radio" aria-checked={chatLang === l.id} className={chatLang === l.id ? "on" : ""} onClick={() => changeChatLang(l.id)}>{l.id === "en" ? "EN" : l.id === "zh-Hant" ? "繁" : "简"}</button>

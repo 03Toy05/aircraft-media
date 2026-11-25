@@ -1,0 +1,61 @@
+/* Toy's motion (TOY-04, TOY-11): subtle, CSS only, each move plays once; all of it is off for people who ask for reduced motion. */
+.toy { display: block; overflow: visible; flex: none; }
+.toy-eyes { transform-box: fill-box; transform-origin: center; }
+/* An occasional blink while idle; nothing else moves on its own. */
+.toy[data-state="ready"] .toy-eyes { animation: toy-blink 7s infinite; }
+@keyframes toy-blink { 0%, 94%, 100% { transform: scaleY(1); } 97% { transform: scaleY(0.1); } }
+
+/* The head turns about the block's centre; a change of expression eases the tilt in. */
+.toy-head { transform-origin: 50px 50px; transition: transform 0.2s ease-out; }
+
+/* Retractable wings: behind the block, folded away on the ground, out in flight. */
+.toy-wing { fill: #E4B66C; stroke: #C99B55; stroke-width: 1.2; opacity: 0; transform: scaleX(0); transition: transform 180ms ease-out, opacity 180ms ease-out; }
+.toy-wing-left { transform-origin: 20px 65px; }
+.toy-wing-right { transform-origin: 80px 65px; }
+.toy:is([data-state="takeoff"], [data-state="working"], [data-state="landing"], [data-state="goodbye"]) .toy-wing { opacity: 1; transform: scaleX(1); }
+
+/* One short bounce on arrival and on a confirmed result; the shadow stays on the ground. */
+.toy[data-state="completed"] .toy-bob { animation: toy-bounce 280ms ease-out 1; }
+.toy[data-state="greeting"]:not([data-scene]) .toy-bob { animation: toy-bounce 0.45s ease-out 1; }
+@keyframes toy-bounce { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-6px); } }
+
+/* Compact block (chat): a small lift while a request is in the air. */
+.toy:not([data-scene])[data-state="takeoff"] .toy-position { animation: toy-c-takeoff 420ms ease-out both; }
+.toy:not([data-scene])[data-state="working"] .toy-position { transform: translateY(-6px); }
+.toy:not([data-scene])[data-state="working"] .toy-head { animation: toy-bank 650ms ease-in-out 2 alternate; }
+.toy:not([data-scene])[data-state="landing"] .toy-position { animation: toy-c-land 360ms ease-out both; }
+.toy:not([data-scene])[data-state="goodbye"] .toy-position { animation: toy-c-depart 850ms ease-in both; }
+@keyframes toy-c-takeoff { from { transform: translateY(0) rotate(0deg); } to { transform: translateY(-6px) rotate(-10deg); } }
+@keyframes toy-c-land { from { transform: translateY(-6px); } to { transform: translateY(0); } }
+@keyframes toy-c-depart { from { transform: translate(0, 0); opacity: 1; } to { transform: translate(40px, -40px) rotate(-15deg); opacity: 0; } }
+
+/* Full scene (public home, demo): solid ground, dashed runway, dotted flight path. */
+.toy-ground { stroke: #D8D8CE; stroke-width: 1.5; fill: none; }
+.toy-runway { stroke: #D8D8CE; stroke-width: 2; stroke-dasharray: 16 10; fill: none; }
+.toy-trail { stroke: #ADC5B8; stroke-width: 2; stroke-dasharray: 5 6; stroke-linecap: round; fill: none; animation: toy-trail-in 350ms ease-out both; }
+.toy[data-state="greeting"] .toy-trail { opacity: 0; animation: toy-trail-fade 1.4s ease-out both; }
+@keyframes toy-trail-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes toy-trail-fade { 0%, 40% { opacity: 1; } 100% { opacity: 0; } }
+.toy-scene-shadow { fill: #E3DFD4; transform-origin: 160px 166px; transition: transform 200ms, opacity 200ms; }
+.toy:is([data-state="takeoff"], [data-state="working"], [data-state="goodbye"]) .toy-scene-shadow { transform: scaleX(0.65); opacity: 0.55; }
+.toy[data-scene] .toy-position { transform: translate(110px, 70px); }
+.toy[data-scene][data-state="greeting"] .toy-position { animation: toy-arrive 700ms ease-out both; }
+.toy[data-scene][data-state="greeting"] .toy-wing { animation: toy-wings-fold 700ms ease-out both; }
+.toy[data-scene][data-state="greeting"] .toy-bob { animation: toy-bounce 280ms ease-out 700ms 1; }
+.toy[data-scene][data-state="takeoff"] .toy-position { animation: toy-takeoff 420ms ease-out both; }
+.toy[data-scene][data-state="working"] .toy-position { transform: translate(150px, 25px); }
+.toy[data-scene][data-state="working"] .toy-head { animation: toy-bank 650ms ease-in-out 2 alternate; }
+.toy[data-scene][data-state="landing"] .toy-position { animation: toy-land 360ms ease-out both; }
+.toy[data-scene][data-state="goodbye"] .toy-position { animation: toy-depart 850ms ease-in both; }
+@keyframes toy-arrive { from { transform: translate(20px, -10px) rotate(-10deg); } to { transform: translate(110px, 70px); } }
+@keyframes toy-wings-fold { 0%, 75% { opacity: 1; transform: scaleX(1); } 100% { opacity: 0; transform: scaleX(0); } }
+@keyframes toy-takeoff { from { transform: translate(110px, 70px) rotate(0deg); } to { transform: translate(150px, 25px) rotate(-10deg); } }
+@keyframes toy-bank { from { transform: rotate(-10deg); } to { transform: rotate(5deg) translateY(-4px); } }
+@keyframes toy-land { from { transform: translate(150px, 25px); } to { transform: translate(110px, 70px); } }
+@keyframes toy-depart { from { transform: translate(110px, 70px); opacity: 1; } to { transform: translate(245px, -35px) rotate(-15deg); opacity: 0; } }
+
+@media (prefers-reduced-motion: reduce) {
+  .toy, .toy * { animation: none !important; transition: none !important; }
+  .toy[data-scene]:is([data-state="takeoff"], [data-state="working"]) .toy-position { transform: translate(150px, 25px); }
+  .toy:not([data-scene]):is([data-state="takeoff"], [data-state="working"]) .toy-position { transform: translateY(-6px); }
+}
