@@ -82,7 +82,7 @@ export interface Draft {
 export interface Chip { label: string; send: string }
 /** A photo Toy shows with a quote: which option (aircraft, from 0) it belongs to and what view it is. */
 export interface ToyPhoto { id: string; label: string; classification?: Classification; option?: number }
-export interface ToyReply { say: string[]; chips: Chip[]; ready: boolean; done?: boolean; link?: { href: string; label: string }; photos?: ToyPhoto[]; copy?: string; options?: { title: string; text: string }[]; /** Photo kinds the broker asked for ([] = none). */ kinds?: Classification[]; share?: { aircraftId: string; contactId: string } }
+export interface ToyReply { say: string[]; chips: Chip[]; ready: boolean; done?: boolean; link?: { href: string; label: string }; photos?: ToyPhoto[]; copy?: string; options?: { title: string; text: string }[]; /** Photo kinds the broker asked for ([] = none). */ kinds?: Classification[]; share?: { aircraftId: string; contactId: string }; /** Toy couldn't find what was asked for: the chat shows Toy needing help (TOY-04), not a success. */ notFound?: boolean }
 
 export function emptyDraft(submitKey: string): Draft {
   return {
@@ -219,7 +219,7 @@ export async function converse(
     if (ids.length) d.quote = { ids, prices, ...(quoteReq.kinds ? { kinds: quoteReq.kinds } : {}) };
     const reply: ToyReply = ids.length
       ? await quoteReply(db, tenantId, d, ctx, [[tr(L, priced ? "Your quote is ready, prices included, for:" : "Your quote is ready for:"), ...names.map((n) => `• ${n}`)].join(String.fromCharCode(10))], priced)
-      : { say: [quoteReq.what.length ? tr(L, "I couldn't find {names}.", { names: missing.join(isChinese(L) ? "、" : " or ") }) : tr(L, "Open the Quote page to choose the aircraft.")], chips: [], ready: false, link: { href: "/quote", label: tr(L, "Open the quote") } };
+      : { say: [quoteReq.what.length ? tr(L, "I couldn't find {names}.", { names: missing.join(isChinese(L) ? "、" : " or ") }) : tr(L, "Open the Quote page to choose the aircraft.")], chips: [], ready: false, link: { href: "/quote", label: tr(L, "Open the quote") }, notFound: quoteReq.what.length > 0 };
     if (ids.length && missing.length) reply.say.push(tr(L, "I couldn't find: {names}.", { names: missing.join(", ") }));
     return { draft: d, reply, confirm: false };
   }
@@ -289,7 +289,7 @@ export async function converse(
         ? { say: f.say, chips: [], ready: false, link: f.link }
         : answer
           ? { say: answer.say, chips: [], ready: false, link: answer.link, photos: answer.photos }
-          : { say: [tr(L, "I couldn't match that to an operator or tail number you have. Try the operator's name or a tail number, for example “what does Capa Jet have?”.")], chips: [], ready: false },
+          : { say: [tr(L, "I couldn't match that to an operator or tail number you have. Try the operator's name or a tail number, for example “what does Capa Jet have?”.")], chips: [], ready: false, notFound: true },
       confirm: false,
     };
   }
@@ -305,10 +305,10 @@ export async function converse(
   if (shareReq) {
     const people = await findContacts(db, tenantId, shareReq.who);
     if (people.length === 0) {
-      return { draft: d, reply: { say: [tr(L, "I don't have a contact called “{who}”. Add them on the Contacts page first, with the messenger they prefer, then ask me again.", { who: shareReq.who })], chips: [], ready: false }, confirm: false };
+      return { draft: d, reply: { say: [tr(L, "I don't have a contact called “{who}”. Add them on the Contacts page first, with the messenger they prefer, then ask me again.", { who: shareReq.who })], chips: [], ready: false, notFound: true }, confirm: false };
     }
     const planes = await findAircraftsForShare(db, tenantId, shareReq.what);
-    if (planes.length === 0) return { draft: d, reply: { say: [tr(L, "I couldn't find an aircraft matching “{what}”. Try the tail number, the operator or the aircraft type.", { what: shareReq.what })], chips: [], ready: false }, confirm: false };
+    if (planes.length === 0) return { draft: d, reply: { say: [tr(L, "I couldn't find an aircraft matching “{what}”. Try the tail number, the operator or the aircraft type.", { what: shareReq.what })], chips: [], ready: false, notFound: true }, confirm: false };
     if (planes.length > 1) {
       const options = planes.slice(0, 6).map((a) => ({ id: a.id, name: a.label }));
       d.asked = { kind: "share_aircraft", options, contactId: people[0].id };
