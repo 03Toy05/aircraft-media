@@ -75,7 +75,7 @@ type Sort = "name" | "aircraft" | "recent";
  * closing line. Every box has Bold / Italic / Underline and a microphone. The Ask Toy microphone runs spoken
  * commands on this page ("add the G280, Chinese, price 40,000").
  */
-export default function QuoteBuilder({ aircraft, operators, preferred: preferredInitial, initialIds, initialPrices, initialKinds, templates, request, airports, opened, fresh }: {
+export default function QuoteBuilder({ aircraft, operators, preferred: preferredInitial, initialIds, initialPrices, initialKinds, templates, request, airports, opened, fresh, initialLegs }: {
   aircraft: QuoteAircraftOption[]; operators: QuoteOperator[]; preferred: string[]; initialIds: string[]; templates: SavedTemplates;
   /** From Toy: prices per aircraft, and the photo kinds asked for ([] = no photos). */
   initialPrices?: Record<string, string>; initialKinds?: string[];
@@ -87,12 +87,14 @@ export default function QuoteBuilder({ aircraft, operators, preferred: preferred
   opened?: { version: number; builder: Record<string, unknown>; legs?: Leg[] };
   /** Start empty instead of from the draft. */
   fresh?: boolean;
+  /** From Toy: the routing typed in the chat, for a quick quote. */
+  initialLegs?: Leg[];
 }) {
   // -- the routing (top of the page) and the request it is saved under
   const [req, setReq] = useState<{ id: string; reference: string } | null>(request ? { id: request.id, reference: request.reference } : null);
   // Every version may add, remove or change legs (the request keeps one reference).
   const locked = false;
-  const [legs, setLegs] = useState<Leg[]>(opened?.legs?.length ? opened.legs : request?.legs.length ? request.legs : [emptyLeg()]);
+  const [legs, setLegs] = useState<Leg[]>(opened?.legs?.length ? opened.legs : request?.legs.length ? request.legs : initialLegs?.length ? initialLegs : [emptyLeg()]);
   const [airportMap, setAirportMap] = useState<Airports>(airports ?? {});
   const addAirport = (a: AirportInfo) => setAirportMap((m) => (m[a.icao] ? m : { ...m, [a.icao]: a }));
   const draftKey = req ? `${DRAFT}:${req.id}` : DRAFT;
@@ -168,7 +170,7 @@ export default function QuoteBuilder({ aircraft, operators, preferred: preferred
         setEdits(d.edits); setFlip(new Set(d.flip)); setApp(d.app); setOpId(d.opId); setQuoteKey(d.quoteKey ?? "");
         setEmailTo(d.emailTo ?? ""); setSubject(d.subject ?? ""); setCopyMe(d.copyMe ?? true);
         // A quick quote's routing comes back with its draft (a request's comes from the request or the version).
-        if (!request && !opened && Array.isArray(d.legs) && d.legs.length) { setLegs(d.legs); setAirportMap((m) => ({ ...(d.airports ?? {}), ...m })); }
+        if (!request && !opened && !initialLegs?.length && Array.isArray(d.legs) && d.legs.length) { setLegs(d.legs); setAirportMap((m) => ({ ...(d.airports ?? {}), ...m })); }
         if (known.length) setSteps({ op: false, ac: true, lang: false });
         setRestored(true);
       }

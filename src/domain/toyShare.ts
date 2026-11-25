@@ -2,6 +2,8 @@ import type { Db } from "../db/client";
 import { getAircraftNames, operatorAliasesByName } from "./catalogue";
 import { normalizeKey, type Classification } from "./constants";
 import { mentions } from "./toyLookup";
+import { parseRoutingLine } from "./toyRouting";
+import type { Leg } from "./routing";
 
 /** "send the G280 photos to Mr Chan" -> { what: "G280", who: "Mr Chan" }. Single-line messages only. */
 export function parseShareRequest(message: string): { what: string; who: string } | null {
@@ -54,6 +56,10 @@ export interface QuoteRequest {
   prices?: string[];
   /** The photo kinds asked for ("with EXT and cabin photos"); [] for "no photos". Only present when asked. */
   kinds?: Classification[];
+  /** The routing typed with the request ("HKG-LHR 12 Dec 1630 8 pax"), leg by leg. Only present when given. */
+  legs?: Leg[];
+  /** Airport codes in the routing that we don't know. */
+  unknownAirports?: string[];
 }
 
 const CURRENCY = "USD|US\\$|HKD|HK\\$|EUR|GBP|SGD|RMB|CNY|JPY|AUD|CAD|CHF|AED|THB|€|£|¥|\\$";
@@ -123,17 +129,27 @@ function aircraftOnly(line: string): string[] {
  * Each line may carry an aircraft, a price (for that aircraft, or for the one above when the line has only a price)
  * and the photo kinds wanted. The first line must ask for a quote.
  */
-export function parseQuoteRequest(message: string): QuoteRequest | null {
+export function parseQuoteRequest(message: string, today = new Date()): QuoteRequest | null {
   const lines = message.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
   if (!lines.length) return null;
   const what: string[] = [];
   const prices: string[] = [];
   let kinds: Classification[] | null = null;
   let pending: string | null = null; // a price typed before its aircraft
+  const legs: Leg[] = [];
+  const unknown: string[] = [];
   for (const [n, raw] of lines.entries()) {
     const k = takeKinds(raw);
     if (k.kinds) kinds = [...new Set([...(kinds ?? []), ...k.kinds])];
     const p = takePrice(k.rest);
+    // A routing line ("HKG-LHR 12 Dec 1630 8 pax") is legs, not an aircraft. On the first line it may sit beside the request.
+    const route = parseRoutingLine(p.rest, today);
+    if (route) {
+      legs.push(...route.legs);
+      unknown.push(...route.unknown);
+      if (n > 0) continue;
+      p.rest = route.rest;
+    }
     const head = n === 0 ? parseOneQuoteLine(p.rest) : null;
     if (n === 0 && !head) return null;
     const names = (head ? head.what : aircraftOnly(p.rest)).filter((x) => !COUNT_ONLY.test(x) && !POLITE.test(x));
@@ -150,6 +166,7 @@ export function parseQuoteRequest(message: string): QuoteRequest | null {
     what,
     ...(prices.some(Boolean) ? { prices } : {}),
     ...(kinds ? { kinds } : {}),
+    ...(legs.length || unknown.length ? { legs, ...(unknown.length ? { unknownAirports: [...new Set(unknown)] } : {}) } : {}),
   };
 }
 
@@ -161,7 +178,7 @@ function parseOneQuoteLine(message: string): { what: string[] } | null {
   const m = message.trim().replace(/[.!?。！？]+$/, "").replace(/\s{2,}/g, " ").replace(/\s+,/g, ",").replace(/(?:^|\s)[,，]+\s*$/, "").trim();
   // Chinese: "給我 CapacJet 的 G550 和 Tag 的 G650ER 的模板和相片", "幫我整 CapaJet G550 嘅報價"
   if (/報價|报价|模板|範本|范本|訊息|信息|消息|資料卡|资料卡/.test(m) && /[\u3400-\u9fff]/.test(m)) {
-    const lead = m.replace(/^(?:請|请)?(?:幫我|帮我|給我|给我|俾我|我要|我想要|我需要|我想|傳給我|传给我)?\s*(?:生成|整|做|準備|准备|預備|预备)?\s*(?:一份|一個|一个)?/, "");
+    const lead = m.replace(/^(?:請|请)?(?:幫我|帮我|給我|给我|俾我|我要|我想要|我需要|我想|傳給我|传给我)?\s*(?:生成|草擬|草拟|起草|擬定|拟定|擬|拟|整|做|準備|准备|預備|预备)?\s*(?:一份|一個|一个)?/, "");
     const subject = lead.replace(/(?:的|嘅)?\s*(?:(?:報價|报价|模板|範本|范本|訊息|信息|消息|資料卡|资料卡|相片|照片|圖片|图片)\s*(?:,|，|和|及|同|與|与|跟|、|以及)?\s*)+$/, "").trim();
     if (!subject) return { what: [] };
     if (/發給|发给|傳給|传给|發送給|发送给|分享給|分享给/.test(subject)) return null;

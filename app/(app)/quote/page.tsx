@@ -12,7 +12,8 @@ import { CLASSIFICATION_LABEL } from "@/domain/constants";
 import QuoteBuilder, { type QuoteAircraftOption, type QuoteOperator } from "../../_components/QuoteBuilder";
 import { one, type SP } from "../../_components/ui";
 import { getRequest, listVersions } from "@/domain/requests";
-import { airportsFor } from "@/domain/airports";
+import { airportsFor, findAirport } from "@/domain/airports";
+import { cleanLegs, type Leg } from "@/domain/routing";
 import Link from "next/link";
 
 /** Build a quotation message for a client: pick aircraft, pick a language, edit the text, then copy or share it with the photos. */
@@ -116,7 +117,10 @@ export default async function Quote({ searchParams }: { searchParams: SP }) {
   const request = r ? { id: r.id, reference: r.reference, legs: r.legs, locked: versions.length > 0 } : undefined;
   const v = r && one(sp.version) ? versions.find((x) => x.version === Number(one(sp.version))) ?? null : null;
   const opened = v ? { version: v.version, builder: v.content.builder, legs: v.content.legs } : undefined;
-  const legsShown = opened?.legs?.length ? opened.legs : r?.legs ?? [];
+  // From Toy: the routing typed in the chat (?legs=[{from,to,date,time,pax}]), for a quick quote that has no request yet.
+  let toyLegs: Leg[] = [];
+  if (!r && one(sp.legs)) { try { toyLegs = cleanLegs(JSON.parse(one(sp.legs)!), findAirport); } catch { /* ignore a broken link */ } }
+  const legsShown = opened?.legs?.length ? opened.legs : r?.legs?.length ? r.legs : toyLegs;
   const airports = airportsFor(legsShown.flatMap((l) => [l.from, l.to]));
   const photosParam = one(sp.photos);
   const initialKinds = photosParam === undefined ? undefined : photosParam === "none" ? [] : photosParam.split(",").filter((k) => k in CLASSIFICATION_LABEL);
@@ -124,8 +128,8 @@ export default async function Quote({ searchParams }: { searchParams: SP }) {
     <>
       <h1>Quote</h1>
       <p className="muted">Enter the client&apos;s routing, find the operator, tick the aircraft, then edit and send the message with the photos. <a href="/quote/template">Change the standard wording</a> · <Link href="/requests">Saved requests</Link></p>
-      <QuoteBuilder key={`${request?.id ?? ""}:${opened?.version ?? ""}:${one(sp.fresh) ?? ""}`} aircraft={options} operators={operators} preferred={preferred} initialIds={initial} initialPrices={initialPrices} initialKinds={initialKinds} templates={await getQuoteTemplates(db, actor.tenantId)}
-        request={request} airports={airports} opened={opened} fresh={one(sp.fresh) === "1"} />
+      <QuoteBuilder key={`${request?.id ?? ""}:${opened?.version ?? ""}:${one(sp.fresh) ?? ""}:${one(sp.legs) ?? ""}`} aircraft={options} operators={operators} preferred={preferred} initialIds={initial} initialPrices={initialPrices} initialKinds={initialKinds} templates={await getQuoteTemplates(db, actor.tenantId)}
+        request={request} airports={airports} opened={opened} fresh={one(sp.fresh) === "1"} initialLegs={toyLegs} />
     </>
   );
 }

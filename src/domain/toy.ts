@@ -13,6 +13,8 @@ import { LIBRARY_TENANT_ID, scopeHasAircraft, withinLibraryScope, type LibrarySc
 type LibraryCtx = { library?: boolean | LibraryScope | null };
 const scopeOf = (ctx: LibraryCtx): LibraryScope | null => (ctx.library === true ? { all: true } : ctx.library || null);
 import { operatorAliasesByName } from "./catalogue";
+import { findAirport } from "./airports";
+import type { Leg } from "./routing";
 import { parseFleetQuery } from "./fleetQuery";
 import { findContacts } from "./contacts";
 import { parseQuoteFollowUp, validEdit, type EditField, type FieldEdit } from "./toyQuoteEdit";
@@ -42,7 +44,7 @@ export interface AircraftChanges { yom?: number; yor?: number; capacity?: number
 export interface AircraftEdit { aircraftId: string; label: string; change: string; set: AircraftChanges }
 
 /** The last quote Toy showed, so "For 605, price is USD 70k" can change it. */
-export interface DraftQuote { ids: string[]; prices: Record<string, string>; kinds?: Classification[] }
+export interface DraftQuote { ids: string[]; prices: Record<string, string>; kinds?: Classification[]; /** The routing typed in the chat. */ legs?: Leg[] }
 
 export interface DraftPhoto { mediaId: string; name: string; contentVersionId: string | null; classification: Classification; note?: string }
 
@@ -216,10 +218,21 @@ export async function converse(
     }
     if (asked) d.asked = asked;
     const priced = Object.keys(prices).length > 0;
-    if (ids.length) d.quote = { ids, prices, ...(quoteReq.kinds ? { kinds: quoteReq.kinds } : {}) };
+    // The routing typed with the request: legs with an airport we don't know are left out, and Toy says which code.
+    const unknownAirports = quoteReq.unknownAirports ?? [];
+    const legs = (quoteReq.legs ?? []).filter((l) => findAirport(l.from) && findAirport(l.to));
+    if (ids.length) d.quote = { ids, prices, ...(quoteReq.kinds ? { kinds: quoteReq.kinds } : {}), ...(legs.length ? { legs } : {}) };
+    const nl = String.fromCharCode(10);
+    const routeSay = legs.length ? [[tr(L, "Routing:"), ...legs.map((l) => `• ${legLine(L, l)}`)].join(nl)] : [];
+    const airportSay = unknownAirports.length ? [tr(L, "I don't know the airport code {codes}. Check it (ICAO like VHHH or IATA like HKG), or fix it on the Quote page.", { codes: unknownAirports.join(", ") })] : [];
     const reply: ToyReply = ids.length
-      ? await quoteReply(db, tenantId, d, ctx, [[tr(L, priced ? "Your quote is ready, prices included, for:" : "Your quote is ready for:"), ...names.map((n) => `• ${n}`)].join(String.fromCharCode(10))], priced)
-      : { say: [quoteReq.what.length ? tr(L, "I couldn't find {names}.", { names: missing.join(isChinese(L) ? "、" : " or ") }) : tr(L, "Open the Quote page to choose the aircraft.")], chips: [], ready: false, link: { href: "/quote", label: tr(L, "Open the quote") }, notFound: quoteReq.what.length > 0 };
+      ? await quoteReply(db, tenantId, d, ctx, [[tr(L, priced ? "Your quote is ready, prices included, for:" : "Your quote is ready for:"), ...names.map((n) => `• ${n}`)].join(nl), ...routeSay, ...airportSay], priced)
+      : {
+          say: [quoteReq.what.length ? tr(L, "I couldn't find {names}.", { names: missing.join(isChinese(L) ? "、" : " or ") }) : tr(L, "Open the Quote page to choose the aircraft."), ...routeSay, ...airportSay],
+          chips: [], ready: false,
+          link: { href: legs.length ? `/quote?legs=${encodeURIComponent(JSON.stringify(legs))}` : "/quote", label: tr(L, "Open the quote") },
+          notFound: quoteReq.what.length > 0,
+        };
     if (ids.length && missing.length) reply.say.push(tr(L, "I couldn't find: {names}.", { names: missing.join(", ") }));
     return { draft: d, reply, confirm: false };
   }
@@ -465,6 +478,13 @@ function recordChange(L: ChatLang | undefined, card: NonNullable<Awaited<ReturnT
   }
 }
 
+/** One leg as Toy reads it back: "12 Dec 2026 · HKG → LHR · 16:30 · 8 pax" (no date yet: "date to add"). */
+function legLine(L: ChatLang | undefined, l: Leg): string {
+  const code = (c: string) => findAirport(c)?.iata || c;
+  const date = l.date ? new Date(`${l.date}T00:00:00Z`).toLocaleDateString(isChinese(L) ? "zh-HK" : "en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" }) : tr(L, "date to add");
+  return [date, `${code(l.from)} → ${code(l.to)}`, l.time ?? "", l.pax ? tr(L, "{n} pax", { n: l.pax }) : ""].filter(Boolean).join(" · ");
+}
+
 /** The quote in the draft as a Toy reply: the message, the photos to send and a link to the Quote page. */
 export async function quoteReply(db: Db, tenantId: string, d: Draft, ctx: LibraryCtx, lead: string[], priced: boolean): Promise<ToyReply> {
   const L = d.lang;
@@ -487,6 +507,7 @@ export async function quoteReply(db: Db, tenantId: string, d: Draft, ctx: Librar
   p.set("ids", q.ids.join(","));
   if (Object.keys(q.prices).length) p.set("prices", JSON.stringify(q.prices));
   if (kinds) p.set("photos", kinds.length ? kinds.join(",") : "none");
+  if (q.legs?.length) p.set("legs", JSON.stringify(q.legs));
   const href = `/quote?${p.toString().replace(/%2C/g, ",")}`;
   return { say, chips: [], ready: false, photos: preview.photos, copy: preview.text, options: preview.options, kinds, link: { href, label: tr(L, "View the quote") } };
 }
