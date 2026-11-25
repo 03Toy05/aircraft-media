@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import SearchSelect from "./SearchSelect";
+import { useT } from "./uiLang";
 
 export interface PickerOperator { id: string; name: string }
 export interface PickerAircraft { id: string; label: string; aircraftTypeId: string; typeLabel: string; operatorId: string | null }
@@ -23,6 +24,7 @@ export default function AircraftPicker({
   /** Keeps element ids unique when several pickers share a page. */
   idPrefix?: string;
 }) {
+  const t = useT();
   const [operator, setOperator] = useState(defaults.operator);
   const [ac, setAc] = useState(defaults.aircraft);
   const [type, setType] = useState(defaults.type);
@@ -51,28 +53,28 @@ export default function AircraftPicker({
 
   return (
     <>
-      <label htmlFor={id("operator")}>Operator</label>
+      <label htmlFor={id("operator")}>{t("Operator")}</label>
       <SearchSelect id={id("operator")} name="operator" value={operator} onChange={(v) => { touched.current.operator = true; setOperator(v); }}
-        emptyLabel="No operator" placeholder="Type an operator name"
-        options={[...(newOperatorName ? [{ value: "new", label: `Create new operator: ${newOperatorName}` }] : []), ...operators.map((o) => ({ value: o.id, label: o.name }))]} />
+        emptyLabel={t("No operator")} placeholder={t("Type an operator name")}
+        options={[...(newOperatorName ? [{ value: "new", label: t("Create new operator: {name}", { name: newOperatorName }) }] : []), ...operators.map((o) => ({ value: o.id, label: o.name }))]} />
       <input type="hidden" name="newOperatorName" value={newOperatorName} />
-      <label htmlFor={id("aircraft")}>Aircraft</label>
-      <SearchSelect id={id("aircraft")} name="aircraft" value={ac} onChange={pickAircraft} placeholder="Type a tail or model"
+      <label htmlFor={id("aircraft")}>{t("Aircraft")}</label>
+      <SearchSelect id={id("aircraft")} name="aircraft" value={ac} onChange={pickAircraft} placeholder={t("Type a tail or model")}
         options={[
-          { value: "new", label: "Create a new aircraft" },
-          ...sorted.map((a) => ({ value: a.id, label: `Use existing: ${a.label}` })),
-          { value: "none", label: "No aircraft (photo represents the aircraft type)" },
+          { value: "new", label: t("Create a new aircraft") },
+          ...sorted.map((a) => ({ value: a.id, label: t("Use existing: {name}", { name: a.label }) })),
+          { value: "none", label: t("No aircraft (photo represents the aircraft type)") },
         ]} />
-      <label htmlFor={id("type")}>Aircraft type</label>
+      <label htmlFor={id("type")}>{t("Aircraft type")}</label>
       {chosen ? (
         <>
           <input type="hidden" name="aircraftTypeId" value={chosen.aircraftTypeId} />
-          <p id={id("type")} className="type-fixed">{chosen.typeLabel} <span className="muted small">(this aircraft&apos;s type)</span></p>
+          <p id={id("type")} className="type-fixed">{chosen.typeLabel} <span className="muted small">{t("(this aircraft's type)")}</span></p>
         </>
       ) : (
         <SearchSelect id={id("type")} name="aircraftTypeId" value={type} onChange={(v) => { touched.current.type = true; setType(v); }}
-          emptyLabel="Not chosen" placeholder="Type a model, e.g. G650"
-          options={typeGroups.flatMap((g) => g.items.map((t) => ({ value: t.id, label: t.label, group: g.label })))} />
+          emptyLabel={t("Not chosen")} placeholder={t("Type a model, e.g. G650")}
+          options={typeGroups.flatMap((g) => g.items.map((ty) => ({ value: ty.id, label: ty.label, group: t(g.label) })))} />
       )}
     </>
   );

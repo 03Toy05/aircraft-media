@@ -26,7 +26,8 @@ export async function archiveRequestAction(fd: FormData) {
   const archived = str(fd, "archived") === "1";
   await req.setArchived(await getDb(), s.actor, id, archived);
   revalidatePath("/requests");
-  redirect(archived ? withParam("/requests", "ok", "Request archived.") : withParam(`/requests/${id}`, "ok", "Request back in the list."));
+  const t = await serverT();
+  redirect(archived ? withParam("/requests", "ok", t("Request archived.")) : withParam(`/requests/${id}`, "ok", t("Request back in the list.")));
 }
 
 export type SaveResult = { ok: boolean; message: string; requestId?: string; reference?: string; version?: number };
@@ -85,18 +86,19 @@ export async function clientLinkSettingsAction(fd: FormData) {
   }
   const db = await getDb();
   const op = str(fd, "op");
-  let ok = "Saved.";
+  const t = await serverT();
+  let ok = t("Saved.");
   try {
-    if (op === "create") { await ensureLink(db, s.actor, id); ok = "Client link made. Copy it and send it to the client."; }
-    else if (op === "off") { await setLink(db, s.actor, id, { active: false }); ok = "Link switched off: it no longer opens."; }
-    else if (op === "on") { await setLink(db, s.actor, id, { active: true }); ok = "Link switched on again."; }
-    else if (op === "replace") { await replaceLink(db, s.actor, id); ok = "New link made; the old one no longer opens."; }
+    if (op === "create") { await ensureLink(db, s.actor, id); ok = t("Client link made. Copy it and send it to the client."); }
+    else if (op === "off") { await setLink(db, s.actor, id, { active: false }); ok = t("Link switched off: it no longer opens."); }
+    else if (op === "on") { await setLink(db, s.actor, id, { active: true }); ok = t("Link switched on again."); }
+    else if (op === "replace") { await replaceLink(db, s.actor, id); ok = t("New link made; the old one no longer opens."); }
     else if (op === "expiry") {
       const d = str(fd, "expires");
-      if (d && !/^\d{4}-\d{2}-\d{2}$/.test(d)) throw new Error("The end date isn't right.");
+      if (d && !/^\d{4}-\d{2}-\d{2}$/.test(d)) throw new Error(t("The end date isn't right."));
       // Works until the end of that day (UTC).
       await setLink(db, s.actor, id, { expiresAt: d ? new Date(`${d}T23:59:59Z`) : null });
-      ok = d ? `The link stops working after ${d}.` : "The link has no end date.";
+      ok = d ? t("The link stops working after {date}.", { date: d }) : t("The link has no end date.");
     }
   } catch (e) {
     redirect(withParam(back, "error", (e as Error).message));

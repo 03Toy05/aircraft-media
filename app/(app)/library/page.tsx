@@ -14,6 +14,7 @@ import { addFromLibraryAction } from "../../actions";
 import { Flash, one, type SP } from "../../_components/ui";
 import { AutoRefresh } from "../../_components/AutoRefresh";
 import { PendingButton } from "../../_components/PendingButton";
+import { serverT } from "@/lib/uiLang";
 
 const WIFI: Record<string, string | null> = { yes: "WIFI", no: "No WIFI", tbc: "WIFI TBC", unknown: null };
 /** Aircraft already in the workspace are hidden unless they changed this recently (or a search or "Show all" asks). */
@@ -27,14 +28,15 @@ const DAY = 24 * 60 * 60 * 1000;
  */
 export default async function Library({ searchParams }: { searchParams: SP }) {
   const sp = await searchParams;
+  const t = await serverT();
   const session = await requireOwner();
   const db = await getDb();
   const scope = await libraryScope(db, session);
   if (!scope) {
     return (
       <>
-        <h1>Library</h1>
-        <div className="card muted">The Aircraft Media library is not shared with you yet. Ask the admin to turn it on for you.</div>
+        <h1>{t("Library")}</h1>
+        <div className="card muted">{t("The Aircraft Media library is not shared with you yet. Ask the admin to turn it on for you.")}</div>
       </>
     );
   }
@@ -101,34 +103,34 @@ export default async function Library({ searchParams }: { searchParams: SP }) {
     for (let r = queue.shift(); r; r = queue.shift()) {
       const [c, photos] = await Promise.all([getAircraftCard(db, r.aircraftId), getLineup(db, { aircraftId: r.aircraftId, aircraftTypeId: r.aircraftTypeId })]);
       const facts = [
-        c?.yom != null && `YOM ${c.yom}`, c?.yor != null && `YOR ${c.yor}`, c?.capacity != null && `${c.capacity} seats`,
-        c && WIFI[c.wifi], c?.smoking === "yes" ? "Smoking" : c?.smoking === "no" ? "No smoking" : null,
-        c?.pets === "yes" ? "Pets" : c?.pets === "no" ? "No pets" : null, r.base && `Base: ${r.base}`,
+        c?.yom != null && `YOM ${c.yom}`, c?.yor != null && `YOR ${c.yor}`, c?.capacity != null && t("{n} seats", { n: c.capacity }),
+        c && WIFI[c.wifi] && t(WIFI[c.wifi]!), c?.smoking === "yes" ? t("Smoking") : c?.smoking === "no" ? t("No smoking") : null,
+        c?.pets === "yes" ? t("Pets") : c?.pets === "no" ? t("No pets") : null, r.base && t("Base: {base}", { base: r.base }),
       ].filter(Boolean).join(" · ");
       details.set(r.aircraftId, { facts, photos });
     }
   };
   await Promise.all(Array.from({ length: 4 }, load));
   const ago = (id: string) => {
-    const t = updated.get(id);
-    if (!t) return null;
-    const d = Math.floor((Date.now() - t) / DAY);
-    return d <= 0 ? "Updated today" : d === 1 ? "Updated yesterday" : `Updated ${d} days ago`;
+    const ms = updated.get(id);
+    if (!ms) return null;
+    const d = Math.floor((Date.now() - ms) / DAY);
+    return d <= 0 ? t("Updated today") : d === 1 ? t("Updated yesterday") : t("Updated {n} days ago", { n: d });
   };
 
   return (
     <>
-      <h1>Library</h1>
+      <h1>{t("Library")}</h1>
       <Flash error={one(sp.error)} ok={adding.size ? undefined : one(sp.ok)} />
       {adding.size > 0 && (
         <div className="card small">
           <AutoRefresh />
-          Adding {adding.size} aircraft to your workspace with their photos (about half a minute each). You can leave this page; they keep arriving.
+          {t("Adding {n} aircraft to your workspace with their photos (about half a minute each). You can leave this page; they keep arriving.", { n: adding.size })}
         </div>
       )}
       <div className="people-head" style={{ marginBottom: 10 }}>
         <p className="muted small" style={{ margin: 0 }}>
-          The Aircraft Media library: {orgs.length} operator{orgs.length === 1 ? "" : "s"}, {totalAircraft} aircraft. Library aircraft can be quoted straight away (Quote page and Toy). Add one to your workspace to edit it or add your own photos.
+          {orgs.length === 1 ? t("The Aircraft Media library: {n} operator, {total} aircraft. Library aircraft can be quoted straight away (Quote page and Toy). Add one to your workspace to edit it or add your own photos.", { n: orgs.length, total: totalAircraft }) : t("The Aircraft Media library: {n} operators, {total} aircraft. Library aircraft can be quoted straight away (Quote page and Toy). Add one to your workspace to edit it or add your own photos.", { n: orgs.length, total: totalAircraft })}
           {notReady > 0 && <> {notReady} aircraft without an approved photo yet are shown only to you.</>}
         </p>
         {isAdmin && (
@@ -139,20 +141,20 @@ export default async function Library({ searchParams }: { searchParams: SP }) {
         )}
       </div>
       <form className="row" style={{ marginBottom: 10 }}>
-        <div><input name="q" defaultValue={one(sp.q) ?? ""} placeholder="Search operator, region, type or tail" aria-label="Search the library" /></div>
-        <div style={{ flex: "0 0 auto" }}><button type="submit" className="secondary">Search</button></div>
+        <div><input name="q" defaultValue={one(sp.q) ?? ""} placeholder={t("Search operator, region, type or tail")} aria-label={t("Search the library")} /></div>
+        <div style={{ flex: "0 0 auto" }}><button type="submit" className="secondary">{t("Search")}</button></div>
       </form>
       {!words.length && orgs.length > 0 && (
         <p className="small muted" style={{ margin: "0 0 10px" }}>
           {showAll
-            ? <>Showing all {totalAircraft} aircraft. <Link href="/library">Show only new and recent</Link></>
-            : <>Showing {shownCount} aircraft not in your workspace yet or updated in the last {RECENT_DAYS} days.{hidden > 0 && <> {hidden} more are hidden: search for them, or <Link href="/library?all=1">show all</Link>.</>}</>}
+            ? <>{t("Showing all {n} aircraft.", { n: totalAircraft })} <Link href="/library">{t("Show only new and recent")}</Link></>
+            : <>{t("Showing {n} aircraft not in your workspace yet or updated in the last {days} days.", { n: shownCount, days: RECENT_DAYS })}{hidden > 0 && <> {t("{n} more are hidden: search for them, or", { n: hidden })} <Link href="/library?all=1">{t("show all")}</Link>{t(".")}</>}</>}
         </p>
       )}
       {shown.length === 0 && (
         <div className="card muted">
-          {orgs.length === 0 ? (isAdmin ? "The library is empty. Photos arrive in Library review once people who share with the library approve them." : "The library is empty for now.")
-            : words.length ? "Nothing matches that search." : `Everything in the library is in your workspace and nothing changed in the last ${RECENT_DAYS} days.`}
+          {orgs.length === 0 ? (isAdmin ? "The library is empty. Photos arrive in Library review once people who share with the library approve them." : t("The library is empty for now."))
+            : words.length ? t("Nothing matches that search.") : t("Everything in the library is in your workspace and nothing changed in the last {n} days.", { n: RECENT_DAYS })}
         </div>
       )}
       {shown.map(({ o, aircraft, left }) => (
@@ -160,8 +162,8 @@ export default async function Library({ searchParams }: { searchParams: SP }) {
           <div className="person-head">
             <div style={{ minWidth: 0 }}>
               <b>{o.canonicalName}</b>{" "}
-              <span className="pill wait">{aircraft.length} aircraft</span>
-              <div className="small muted">{[o.region && `Region: ${o.region}`, o.base && `Base: ${o.base}`].filter(Boolean).join(" · ") || "No region or base yet"}</div>
+              <span className="pill wait">{t("{n} aircraft", { n: aircraft.length })}</span>
+              <div className="small muted">{[o.region && t("Region: {region}", { region: o.region }), o.base && t("Base: {base}", { base: o.base })].filter(Boolean).join(" · ") || t("No region or base yet")}</div>
               <OperatorContacts o={o} />
             </div>
             {canAdd && (() => {
@@ -169,7 +171,7 @@ export default async function Library({ searchParams }: { searchParams: SP }) {
               return left > 1 && notAdding > 0 && (
                 <form action={addFromLibraryAction}>
                   <input type="hidden" name="libraryOperatorId" value={o.id} /><input type="hidden" name="q" value={one(sp.q) ?? ""} />
-                  <PendingButton className="secondary small-btn" pending="Adding…">{notAdding === aircraft.length ? `Add all ${notAdding} to my workspace` : `Add the other ${notAdding} to my workspace`}</PendingButton>
+                  <PendingButton className="secondary small-btn" pending={t("Adding…")}>{notAdding === aircraft.length ? t("Add all {n} to my workspace", { n: notAdding }) : t("Add the other {n} to my workspace", { n: notAdding })}</PendingButton>
                 </form>
               );
             })()}
@@ -183,12 +185,12 @@ export default async function Library({ searchParams }: { searchParams: SP }) {
               <div key={r.aircraftId} className="lib-ac">
                 <div className="person-head">
                   <div><b>{r.aircraft}</b>{r.tail ? ` · ${r.tail}` : ""}{ago(r.aircraftId) && <span className="small muted"> · {ago(r.aircraftId)}</span>}</div>
-                  {copied.has(r.aircraftId) ? <span className="pill ok">In your workspace</span>
-                    : adding.has(r.aircraftId) ? <span className="pill wait">Adding…</span>
+                  {copied.has(r.aircraftId) ? <span className="pill ok">{t("In your workspace")}</span>
+                    : adding.has(r.aircraftId) ? <span className="pill wait">{t("Adding…")}</span>
                     : canAdd && (
                     <form action={addFromLibraryAction}>
                       <input type="hidden" name="libraryAircraftId" value={r.aircraftId} /><input type="hidden" name="q" value={one(sp.q) ?? ""} />
-                      <PendingButton className="secondary small-btn" pending="Adding…">Add to my workspace</PendingButton>
+                      <PendingButton className="secondary small-btn" pending={t("Adding…")}>{t("Add to my workspace")}</PendingButton>
                     </form>
                   )}
                 </div>
@@ -204,12 +206,12 @@ export default async function Library({ searchParams }: { searchParams: SP }) {
                   {combined && (
                     <a className="lib-tile combined" href={`/api/media/${combined.contentVersionId}`} target="_blank">
                       {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img src={`/api/media/${combined.contentVersionId}`} alt="Combined" loading="lazy" />
+                      <img src={`/api/media/${combined.contentVersionId}`} alt={t("Combined photo")} loading="lazy" />
                       <span>COMBINED</span>
                     </a>
                   )}
                 </div>
-                {singles.length < 4 && <div className="small muted">Still needs: {kinds.map((k) => ({ k, n: (k === "cabin" ? 2 : 1) - singles.filter((p) => p.classification === k).length })).filter((x) => x.n > 0).map((x) => `${x.n} ${x.k === "floor_plan" ? "floor plan" : x.k}`).join(", ")}</div>}
+                {singles.length < 4 && <div className="small muted">{t("Still needs:")} {kinds.map((k) => ({ k, n: (k === "cabin" ? 2 : 1) - singles.filter((p) => p.classification === k).length })).filter((x) => x.n > 0).map((x) => (x.k === "floor_plan" ? t("{n} floor plan", { n: x.n }) : x.k === "cabin" ? t("{n} cabin", { n: x.n }) : t("{n} exterior", { n: x.n }))).join(t(", "))}</div>}
               </div>
             );
           })}

@@ -1,5 +1,13 @@
 "use client";
 
+import { UI_LANG_COOKIE, parseUiLang, ui, type UiParams } from "@/domain/uiText";
+
+/** A label in the screen language chosen on this browser (these helpers run outside any component). */
+const t = (en: string, params?: UiParams) => {
+  const lang = typeof document === "undefined" ? "en" : parseUiLang(document.cookie.split(/;\s*/).find((c) => c.startsWith(`${UI_LANG_COOKIE}=`))?.slice(UI_LANG_COOKIE.length + 1));
+  return ui(lang, en, params);
+};
+
 /**
  * Download one photo for sharing. Tries twice (a dropped connection or the server restarting usually clears in a
  * moment), then fails with a message that names the photo.
@@ -12,7 +20,7 @@ export async function fetchPhoto(url: string, name: string): Promise<Blob> {
     } catch { /* network dropped: try again */ }
     if (attempt === 0) await new Promise((r) => setTimeout(r, 1200));
   }
-  throw new Error(`Could not download ${name}. The connection dropped or the site was restarting. Wait a few seconds and tap the button again.`);
+  throw new Error(t("Could not download {name}. The connection dropped or the site was restarting. Wait a few seconds and tap the button again.", { name }));
 }
 
 /**

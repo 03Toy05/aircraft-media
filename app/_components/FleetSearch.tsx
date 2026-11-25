@@ -4,6 +4,7 @@ import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { matchesWords, searchWords } from "@/domain/searchMatch";
 import Icon from "./Icon";
+import { useT } from "./uiLang";
 
 export interface FleetSuggestion {
   kind: "aircraft" | "operator";
@@ -24,6 +25,7 @@ const SCOPES: { id: In; label: string }[] = [{ id: "all", label: "All" }, { id: 
  * Tap one to open it; press Enter (or Apply) to filter the page instead. Sent as `q` and `in` with the filter form.
  */
 export default function FleetSearch({ defaultQ, defaultIn, items, form }: { defaultQ: string; defaultIn: In; items: FleetSuggestion[]; /** The filter form's id, when the search sits outside it. */ form?: string }) {
+  const t = useT();
   const router = useRouter();
   const [q, setQ] = useState(defaultQ);
   const [scope, setScope] = useState<In>(defaultIn);
@@ -53,11 +55,11 @@ export default function FleetSearch({ defaultQ, defaultIn, items, form }: { defa
   return (
     <div className="fleet-search" ref={box}>
       <input type="hidden" form={form} name="in" value={scope === "all" ? "" : scope} />
-      <div className="scope-switch" role="radiogroup" aria-label="Search in">
+      <div className="scope-switch" role="radiogroup" aria-label={t("Search in")}>
         {SCOPES.map((s) => (
           <button key={s.id} type="button" role="radio" aria-checked={scope === s.id} className={scope === s.id ? "on" : ""}
             onClick={() => { setScope(s.id); setOpen(!!q.trim()); input.current?.focus(); }}>
-            {s.id === "aircraft" && <Icon name="plane" />}{s.id === "operator" && <Icon name="operator" />}{s.label}
+            {s.id === "aircraft" && <Icon name="plane" />}{s.id === "operator" && <Icon name="operator" />}{t(s.label)}
           </button>
         ))}
       </div>
@@ -66,11 +68,11 @@ export default function FleetSearch({ defaultQ, defaultIn, items, form }: { defa
           ref={input}
           form={form}
           name="q"
-          aria-label="Search"
+          aria-label={t("Search")}
           type="search"
           value={q}
           enterKeyHint="search"
-          placeholder={scope === "aircraft" ? "Type, tail or operator" : scope === "operator" ? "Operator name" : "Operator, tail or aircraft"}
+          placeholder={scope === "aircraft" ? t("Type, tail or operator") : scope === "operator" ? t("Operator name") : t("Operator, tail or aircraft")}
           role="combobox"
           aria-expanded={open && matches.length > 0}
           aria-controls={listId}
@@ -86,19 +88,19 @@ export default function FleetSearch({ defaultQ, defaultIn, items, form }: { defa
         />
         {open && q.trim() && (
           <ul className="place-list" id={listId} role="listbox">
-            {matches.length === 0 && <li className="muted">Nothing matches “{q.trim()}”{scope !== "all" ? ` in ${scope === "aircraft" ? "aircraft" : "operators"}` : ""}.</li>}
+            {matches.length === 0 && <li className="muted">{scope === "aircraft" ? t("Nothing matches “{q}” in aircraft.", { q: q.trim() }) : scope === "operator" ? t("Nothing matches “{q}” in operators.", { q: q.trim() }) : t("Nothing matches “{q}”.", { q: q.trim() })}</li>}
             {matches.map((m, i) => (
               <li key={`${m.kind}:${m.href}:${m.label}`} role="option" aria-selected={i === active} className={i === active ? "on" : ""}
                 onMouseDown={(e) => e.preventDefault()} onClick={() => go(m)}>
                 <div className="sug-name"><Icon name={m.kind === "aircraft" ? "plane" : "operator"} /> <b>{m.label}</b></div>
                 {(m.sub || m.library) && (
-                  <div className="sug-sub">{m.library && <span className="tag">Library</span>}{m.sub && <span className="muted">{m.sub}</span>}</div>
+                  <div className="sug-sub">{m.library && <span className="tag">{t("Library")}</span>}{m.sub && <span className="muted">{m.sub}</span>}</div>
                 )}
               </li>
             ))}
             {matches.length > 0 && (
               <li className="muted" onMouseDown={(e) => e.preventDefault()} onClick={() => submit()}>
-                <Icon name="search" /> Show every match for “{q.trim()}” on this page
+                <Icon name="search" /> {t("Show every match for “{q}” on this page", { q: q.trim() })}
               </li>
             )}
           </ul>

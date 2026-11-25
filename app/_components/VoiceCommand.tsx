@@ -4,12 +4,14 @@ import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import Icon from "./Icon";
 import { getRecognition, listen, pageCommands, type CommandResult } from "./voice";
+import { useT } from "./uiLang";
 
 /**
  * The "Ask Toy" microphone on every page. Say what you want done. The page you are on carries it out when it can
  * (on the Quote page: "add the Jet Aviation G650ER, Chinese, price 85,000"); anything else goes to Toy.
  */
 export default function VoiceCommand() {
+  const t = useT();
   const path = usePathname() ?? "/";
   const router = useRouter();
   const [can, setCan] = useState(false);
@@ -44,7 +46,7 @@ export default function VoiceCommand() {
     if (state === "listening") { stop.current?.(); return; }
     setHeard(""); setResult(null); setErr(null);
     setState("listening");
-    stop.current = listen({ silenceMs: 2500, onText: setHeard, onEnd: (t) => { stop.current = null; run(t); }, onError: setErr });
+    stop.current = listen({ silenceMs: 2500, onText: setHeard, onEnd: (txt) => { stop.current = null; run(txt); }, onError: setErr });
   };
 
   startRef.current = start;
@@ -53,16 +55,16 @@ export default function VoiceCommand() {
       {state !== "idle" && (
         <div className="voice-bubble card" role="status">
           <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
-            <b className="small">{state === "listening" ? "Listening…" : "Toy"}</b>
-            <button type="button" className="secondary" style={{ minHeight: 0, padding: "0 8px" }} onClick={() => { stop.current?.(); setState("idle"); }} aria-label="Close">✕</button>
+            <b className="small">{state === "listening" ? t("Listening…") : "Toy"}</b>
+            <button type="button" className="secondary" style={{ minHeight: 0, padding: "0 8px" }} onClick={() => { stop.current?.(); setState("idle"); }} aria-label={t("Close")}>✕</button>
           </div>
-          <p className="small" style={{ margin: "4px 0" }}>{heard || (state === "listening" ? "Say what to do, e.g. “add the G280, Chinese, price 40,000”." : "")}</p>
+          <p className="small" style={{ margin: "4px 0" }}>{heard || (state === "listening" ? t("Say what to do, e.g. “add the G280, Chinese, price 40,000”.") : "")}</p>
           {result?.said.map((s, i) => <p key={i} className="small muted" style={{ margin: "2px 0" }}>{s}</p>)}
           {result?.followUp && <button type="button" onClick={() => { result.followUp!.run(); setState("idle"); }}>{result.followUp.label}</button>}
           {err && <p className="small" style={{ color: "var(--warn)" }}>{err}</p>}
         </div>
       )}
-      <button type="button" className={`voice-fab${state === "listening" ? " on" : ""}`} onClick={start} aria-label={state === "listening" ? "Stop listening" : "Ask Toy by voice"} title="Ask Toy by voice">
+      <button type="button" className={`voice-fab${state === "listening" ? " on" : ""}`} onClick={start} aria-label={state === "listening" ? t("Stop listening") : t("Ask Toy by voice")} title={t("Ask Toy by voice")}>
         <Icon name="mic" size={24} />
       </button>
     </>

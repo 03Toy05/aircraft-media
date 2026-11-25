@@ -3,6 +3,7 @@ import { and, asc, eq } from "drizzle-orm";
 import { getDb } from "@/db/client";
 import { aircraftTypes, organisations } from "@/db/schema";
 import { requireOwner } from "@/lib/session";
+import { serverT } from "@/lib/uiLang";
 import Icon from "../../_components/Icon";
 import OpenSection from "../../_components/OpenSection";
 import CollapseOnMobile from "../../_components/CollapseOnMobile";
@@ -32,6 +33,7 @@ export default async function Fleet({ searchParams }: { searchParams: SP }) {
   const sp = await searchParams;
   const session = await requireOwner();
   const { actor, readOnly } = session;
+  const t = await serverT();
   const db = await getDb();
   if (!readOnly) await tidyExistingPlaces(db, actor.tenantId); // "HK" saved before the city list -> "Hong Kong"
   const orgRows = await db.select().from(organisations).where(eq(organisations.tenantId, actor.tenantId)).orderBy(asc(organisations.canonicalName));
@@ -56,8 +58,8 @@ export default async function Fleet({ searchParams }: { searchParams: SP }) {
   const groups = [...AIRCRAFT_CATEGORIES, "none" as const]
     .map((k) => ({
       key: k,
-      label: k === "none" ? "No category" : AIRCRAFT_CATEGORY_LABEL[k],
-      items: types.filter((t) => (k === "none" ? !t.category || !(AIRCRAFT_CATEGORIES as readonly string[]).includes(t.category) : t.category === k)),
+      label: k === "none" ? t("No category") : t(AIRCRAFT_CATEGORY_LABEL[k]),
+      items: types.filter((ty) => (k === "none" ? !ty.category || !(AIRCRAFT_CATEGORIES as readonly string[]).includes(ty.category) : ty.category === k)),
     }))
     .filter((g) => g.items.length > 0);
 
@@ -65,17 +67,17 @@ export default async function Fleet({ searchParams }: { searchParams: SP }) {
   const opName = new Map(orgs.map((o) => [o.id, o.canonicalName]));
   const AircraftCard = ({ r, showOperator = false }: { r: CatalogueRow; showOperator?: boolean }) => {
     const d = details.get(r.aircraftId)!;
-    const wifi = d.card?.wifi === "yes" ? "WIFI" : d.card?.wifi === "no" ? "No WIFI" : null;
-    const facts = [d.card?.yom != null && `YOM ${d.card.yom}`, d.card?.yor != null && `YOR ${d.card.yor}`, d.card?.capacity != null && `${d.card.capacity} seats`, wifi, r.base && `Base: ${r.base}`, d.card?.notes].filter(Boolean);
+    const wifi = d.card?.wifi === "yes" ? "WIFI" : d.card?.wifi === "no" ? t("No WIFI") : null;
+    const facts = [d.card?.yom != null && `YOM ${d.card.yom}`, d.card?.yor != null && `YOR ${d.card.yor}`, d.card?.capacity != null && t("{n} seats", { n: d.card.capacity }), wifi, r.base && t("Base: {base}", { base: r.base }), d.card?.notes].filter(Boolean);
     return (
       <div className="ac-row">
         <div className="ac-row-text">
           <div className="ac-row-name">
             <Link href={`/aircraft/${r.aircraftId}`}><b>{r.aircraft}</b></Link>
-            <span className="muted"> · {r.tail ?? "no tail yet"}</span>
-            {showOperator && <span className="muted"> · {r.operatorId ? <Link href={`/organisations/${r.operatorId}`}>{opName.get(r.operatorId) ?? "Operator"}</Link> : "No operator"}</span>}
+            <span className="muted"> · {r.tail ?? t("no tail yet")}</span>
+            {showOperator && <span className="muted"> · {r.operatorId ? <Link href={`/organisations/${r.operatorId}`}>{opName.get(r.operatorId) ?? t("Operator")}</Link> : t("No operator")}</span>}
           </div>
-          <div className="small muted ac-row-facts">{facts.length ? facts.join(" · ") : "No details yet"}</div>
+          <div className="small muted ac-row-facts">{facts.length ? facts.join(" · ") : t("No details yet")}</div>
         </div>
         {d.photos.length > 0 && (
           <div className="ac-row-photos">
@@ -97,7 +99,7 @@ export default async function Fleet({ searchParams }: { searchParams: SP }) {
       {list.slice(0, SHOW_FIRST).map((r) => <AircraftCard key={r.aircraftId} r={r} />)}
       {list.length > SHOW_FIRST && (
         <details className="ac-more">
-          <summary className="small">Show all {list.length} aircraft</summary>
+          <summary className="small">{t("Show all {n} aircraft", { n: list.length })}</summary>
           {list.slice(SHOW_FIRST).map((r) => <AircraftCard key={r.aircraftId} r={r} />)}
         </details>
       )}
@@ -132,10 +134,10 @@ export default async function Fleet({ searchParams }: { searchParams: SP }) {
 
   // What the search box suggests while typing: your operators and aircraft, then the library's (when shared with you).
   const suggestions: FleetSuggestion[] = [
-    ...orgs.filter((o) => o.active).map((o) => ({ kind: "operator" as const, label: o.canonicalName, sub: `${rows.filter((r) => r.operatorId === o.id).length} aircraft${o.aliases.length ? ` · ${o.aliases.join(", ")}` : ""}`, keys: `${o.canonicalName} ${o.aliases.join(" ")} ${o.region ?? ""}`, href: `/organisations/${o.id}` })),
+    ...orgs.filter((o) => o.active).map((o) => ({ kind: "operator" as const, label: o.canonicalName, sub: `${t("{n} aircraft", { n: rows.filter((r) => r.operatorId === o.id).length })}${o.aliases.length ? ` · ${o.aliases.join(", ")}` : ""}`, keys: `${o.canonicalName} ${o.aliases.join(" ")} ${o.region ?? ""}`, href: `/organisations/${o.id}` })),
     ...rows.map((r) => {
       const o = orgs.find((x) => x.id === r.operatorId);
-      return { kind: "aircraft" as const, label: `${r.aircraft}${r.tail ? ` · ${r.tail}` : ""}`, sub: o?.canonicalName ?? "No operator", keys: `${r.aircraft} ${r.tail ?? ""} ${o ? `${o.canonicalName} ${o.aliases.join(" ")}` : ""}`, href: `/aircraft/${r.aircraftId}` };
+      return { kind: "aircraft" as const, label: `${r.aircraft}${r.tail ? ` · ${r.tail}` : ""}`, sub: o?.canonicalName ?? t("No operator"), keys: `${r.aircraft} ${r.tail ?? ""} ${o ? `${o.canonicalName} ${o.aliases.join(" ")}` : ""}`, href: `/aircraft/${r.aircraftId}` };
     }),
   ];
   let libraryHits = 0;
@@ -151,11 +153,11 @@ export default async function Fleet({ searchParams }: { searchParams: SP }) {
     const libNames = new Set(libOrgs.filter((o) => libRows.some((r) => r.operatorId === o.id)).map((o) => o.canonicalName.trim().toLowerCase()));
     for (let i = suggestions.length - 1; i >= 0; i--) {
       const x = suggestions[i];
-      if (x.kind === "operator" && x.sub?.startsWith("0 aircraft") && libNames.has(x.label.trim().toLowerCase())) suggestions.splice(i, 1);
+      if (x.kind === "operator" && x.sub?.startsWith(t("{n} aircraft", { n: 0 })) && libNames.has(x.label.trim().toLowerCase())) suggestions.splice(i, 1);
     }
     for (const o of libOrgs) {
       const n = libRows.filter((r) => r.operatorId === o.id).length;
-      if (n) suggestions.push({ kind: "operator", label: o.canonicalName, sub: `${n} aircraft`, keys: `${o.canonicalName} ${aliasOf(o.id)} ${o.region ?? ""}`, href: libLink(o.canonicalName), library: true });
+      if (n) suggestions.push({ kind: "operator", label: o.canonicalName, sub: t("{n} aircraft", { n }), keys: `${o.canonicalName} ${aliasOf(o.id)} ${o.region ?? ""}`, href: libLink(o.canonicalName), library: true });
     }
     for (const r of libRows) suggestions.push({ kind: "aircraft", label: `${r.aircraft}${r.tail ? ` · ${r.tail}` : ""}`, sub: r.operator ?? undefined, keys: `${r.aircraft} ${r.tail ?? ""} ${r.operator ?? ""} ${aliasOf(r.operatorId)}`, href: libLink(r.operator ?? r.aircraft), library: true });
     // Nothing of your own matches: say what the library has, so the search never just comes back empty.
@@ -171,13 +173,13 @@ export default async function Fleet({ searchParams }: { searchParams: SP }) {
   return (
     <>
       <div className="page-head">
-        <h1>Operators &amp; aircraft</h1>
+        <h1>{t("Operators & aircraft")}</h1>
         {/* On phones the two Add buttons fold into one small "Add" menu, so the search comes first. */}
         <details className="add-menu only-phone">
-          <summary className="btn"><Icon name="plus" />Add</summary>
+          <summary className="btn"><Icon name="plus" />{t("Add")}</summary>
           <div className="add-menu-list">
-            <OpenSection target="add-operator" icon="operator">Operator</OpenSection>
-            <OpenSection target="add-aircraft" icon="plane">Aircraft</OpenSection>
+            <OpenSection target="add-operator" icon="operator">{t("Operator")}</OpenSection>
+            <OpenSection target="add-aircraft" icon="plane">{t("Aircraft")}</OpenSection>
           </div>
         </details>
       </div>
@@ -186,69 +188,75 @@ export default async function Fleet({ searchParams }: { searchParams: SP }) {
       <Flash error={one(sp.error)} ok={one(sp.ok)} />
 
       <div className="row hide-phone" style={{ marginBottom: 12 }}>
-        <div style={{ flex: "0 0 auto" }}><OpenSection target="add-operator" icon="operator">Add operator</OpenSection></div>
-        <div style={{ flex: "0 0 auto" }}><OpenSection target="add-aircraft" icon="plane">Add aircraft</OpenSection></div>
+        <div style={{ flex: "0 0 auto" }}><OpenSection target="add-operator" icon="operator">{t("Add operator")}</OpenSection></div>
+        <div style={{ flex: "0 0 auto" }}><OpenSection target="add-aircraft" icon="plane">{t("Add aircraft")}</OpenSection></div>
       </div>
 
       {orgs.length > 0 && (
         <div className="card fleet-filters">
         {/* Search always shows; the other filters fold away on phones. Both belong to the one form below. */}
         <div className="search-cell"><FleetSearch form="fleet-filters" defaultQ={one(sp.q) ?? ""} defaultIn={searchIn} items={suggestions} /></div>
-        <CollapseOnMobile plain keepOpen={otherFilters > 0} summary={`Filters and sort${otherFilters ? ` (${otherFilters})` : ""}`}>
+        <CollapseOnMobile plain keepOpen={otherFilters > 0} summary={otherFilters ? t("Filters and sort ({n})", { n: otherFilters }) : t("Filters and sort")}>
         <form id="fleet-filters" method="get" className="row filterbar" style={{ alignItems: "end" }}>
-          <div><label>Region</label>
-            <SearchSelect name="region" defaultValue={regionFilter} emptyLabel="All regions"
-              options={[...regions.map((r) => ({ value: r, label: r })), { value: "__none", label: "No region set" }]} /></div>
-          <div><label>Aircraft category</label>
-            <SearchSelect name="category" defaultValue={catFilter} emptyLabel="All categories"
-              options={AIRCRAFT_CATEGORIES.map((c) => ({ value: c, label: AIRCRAFT_CATEGORY_LABEL[c] }))} /></div>
-          <div><label>Base</label>
-            <SearchSelect name="base" defaultValue={baseFilter} emptyLabel="All bases"
-              options={[...baseOptions.map((b) => ({ value: b, label: b })), { value: "__none", label: "Base not recorded" }]} /></div>
+          <div><label>{t("Region")}</label>
+            <SearchSelect name="region" defaultValue={regionFilter} emptyLabel={t("All regions")}
+              options={[...regions.map((r) => ({ value: r, label: r })), { value: "__none", label: t("No region set") }]} /></div>
+          <div><label>{t("Aircraft category")}</label>
+            <SearchSelect name="category" defaultValue={catFilter} emptyLabel={t("All categories")}
+              options={AIRCRAFT_CATEGORIES.map((c) => ({ value: c, label: t(AIRCRAFT_CATEGORY_LABEL[c]) }))} /></div>
+          <div><label>{t("Base")}</label>
+            <SearchSelect name="base" defaultValue={baseFilter} emptyLabel={t("All bases")}
+              options={[...baseOptions.map((b) => ({ value: b, label: b })), { value: "__none", label: t("Base not recorded") }]} /></div>
           {sort !== "name" && <input type="hidden" name="sort" value={sort} />}
           <input type="hidden" name="view" value={view} />
           <div><label>WIFI</label>
-            <SearchSelect name="wifi" defaultValue={wifiFilter} emptyLabel="Any WIFI"
-              options={WIFI_CHOICES.map((w) => ({ value: w.value, label: `WIFI: ${w.label}` }))} /></div>
-          <div><label>Sort aircraft by</label>
-            <SearchSelect name="acsort" defaultValue={acSort} options={AC_SORTS.map((o) => ({ value: o.id, label: o.label }))} /></div>
-          <div style={{ flex: "0 0 auto" }}><button type="submit"><Icon name="search" />Apply</button> {filtering && <Link href={`/fleet?reset=1&view=${view}`}>Clear</Link>}</div>
+            <SearchSelect name="wifi" defaultValue={wifiFilter} emptyLabel={t("Any WIFI")}
+              options={WIFI_CHOICES.map((w) => ({ value: w.value, label: `WIFI: ${t(w.label)}` }))} /></div>
+          <div><label>{t("Sort aircraft by")}</label>
+            <SearchSelect name="acsort" defaultValue={acSort} options={AC_SORTS.map((o) => ({ value: o.id, label: t(o.label) }))} /></div>
+          <div style={{ flex: "0 0 auto" }}><button type="submit"><Icon name="search" />{t("Apply")}</button> {filtering && <Link href={`/fleet?reset=1&view=${view}`}>{t("Clear")}</Link>}</div>
         </form>
         </CollapseOnMobile>
         </div>
       )}
       {filtering && (
         <p className="muted small">
-          {view === "operators" ? <>Showing {shown.length} of {orgs.length} operators</> : <>Filtered</>}{q ? `, for “${one(sp.q)?.trim()}”` : ""}.{" "}
-          <Link href={`/fleet?reset=1&view=${view}`}>Clear</Link>
+          {view === "operators"
+            ? (q ? t("Showing {n} of {total} operators, for “{q}”.", { n: shown.length, total: orgs.length, q: one(sp.q)?.trim() ?? "" }) : t("Showing {n} of {total} operators.", { n: shown.length, total: orgs.length }))
+            : (q ? t("Filtered, for “{q}”.", { q: one(sp.q)?.trim() ?? "" }) : t("Filtered."))}{" "}
+          <Link href={`/fleet?reset=1&view=${view}`}>{t("Clear")}</Link>
         </p>
       )}
       {q && libraryHits > 0 && (
         <div className="card small">
-          {shown.length || unassigned.length ? "The library also has" : "Nothing in your workspace matches, but the library has"} {libraryHits} aircraft for “{one(sp.q)?.trim()}”.{" "}
-          <Link href={`/library?q=${encodeURIComponent(one(sp.q)?.trim() ?? "")}`}>See them in the library →</Link>
+          {shown.length || unassigned.length
+            ? t("The library also has {n} aircraft for “{q}”.", { n: libraryHits, q: one(sp.q)?.trim() ?? "" })
+            : t("Nothing in your workspace matches, but the library has {n} aircraft for “{q}”.", { n: libraryHits, q: one(sp.q)?.trim() ?? "" })}{" "}
+          <Link href={`/library?q=${encodeURIComponent(one(sp.q)?.trim() ?? "")}`}>{t("See them in the library →")}</Link>
         </div>
       )}
 
-      {orgs.length === 0 && rows.length === 0 && <div className="card muted">Nothing here yet. Add an operator or an aircraft, or tell Toy on the dashboard.</div>}
+      {orgs.length === 0 && rows.length === 0 && <div className="card muted">{t("Nothing here yet. Add an operator or an aircraft, or tell Toy on the dashboard.")}</div>}
       {rows.length > 0 && (
-        <div className="view-switch" role="tablist" aria-label="Show">
-          <Link role="tab" aria-selected={view === "operators"} className={view === "operators" ? "on" : ""} href={viewLink("operators")}>By operator</Link>
-          <Link role="tab" aria-selected={view === "aircraft"} className={view === "aircraft" ? "on" : ""} href={viewLink("aircraft")}>All aircraft ({shownGroups.reduce((n, g) => n + g.aircraft.length, 0) + unassigned.length})</Link>
+        <div className="view-switch" role="tablist" aria-label={t("Show")}>
+          <Link role="tab" aria-selected={view === "operators"} className={view === "operators" ? "on" : ""} href={viewLink("operators")}>{t("By operator")}</Link>
+          <Link role="tab" aria-selected={view === "aircraft"} className={view === "aircraft" ? "on" : ""} href={viewLink("aircraft")}>{t("All aircraft ({n})", { n: shownGroups.reduce((n, g) => n + g.aircraft.length, 0) + unassigned.length })}</Link>
         </div>
       )}
 
       {view === "aircraft" ? (
         <div className="card">
           <p className="small muted" style={{ margin: 0 }}>
-            {allAircraft.length} aircraft, {acSort ? `sorted by ${AC_SORTS.find((s) => s.id === acSort)?.label.toLowerCase()}` : "by type"}. Change the order with “Sort aircraft by” above.
+            {acSort
+              ? t("{n} aircraft, sorted by {sort}. Change the order with “Sort aircraft by” above.", { n: allAircraft.length, sort: t(AC_SORTS.find((s) => s.id === acSort)?.label ?? "").toLowerCase() })
+              : t("{n} aircraft, by type. Change the order with “Sort aircraft by” above.", { n: allAircraft.length })}
           </p>
-          {allAircraft.length === 0 ? <p className="muted">No aircraft match.</p> : allAircraft.map((r) => <AircraftCard key={r.aircraftId} r={r} showOperator />)}
+          {allAircraft.length === 0 ? <p className="muted">{t("No aircraft match.")}</p> : allAircraft.map((r) => <AircraftCard key={r.aircraftId} r={r} showOperator />)}
         </div>
       ) : (
         <>
       {withAircraft.map(({ org: o, aircraft: mine }) => {
-        const head = <><Link href={`/organisations/${o.id}`}>{o.canonicalName}</Link> <span className="muted small" style={{ fontWeight: 400 }}>· {mine.length} aircraft{o.region ? ` · ${o.region}` : ""}{o.base ? ` · Base: ${o.base}` : ""}</span></>;
+        const head = <><Link href={`/organisations/${o.id}`}>{o.canonicalName}</Link> <span className="muted small" style={{ fontWeight: 400 }}>· {t("{n} aircraft", { n: mine.length })}{o.region ? ` · ${o.region}` : ""}{o.base ? ` · ${t("Base: {base}", { base: o.base })}` : ""}</span></>;
         // With many operators, each card folds to one line; tap it to see its aircraft.
         return fold ? (
           <details className="card op-card" key={o.id}>
@@ -265,7 +273,7 @@ export default async function Fleet({ searchParams }: { searchParams: SP }) {
       {/* Operators without aircraft take one line each in a single card, instead of a card each. */}
       {shownGroups.some((g) => g.aircraft.length === 0) && (
         <details className="card" open={filtering || shownGroups.every((g) => g.aircraft.length === 0)}>
-          <summary><b>Operators with no aircraft yet</b> <span className="muted small">· {shownGroups.filter((g) => g.aircraft.length === 0).length}</span></summary>
+          <summary><b>{t("Operators with no aircraft yet")}</b> <span className="muted small">· {shownGroups.filter((g) => g.aircraft.length === 0).length}</span></summary>
           <div className="op-names">
             {shownGroups.filter((g) => g.aircraft.length === 0).map(({ org: o }) => (
               <Link key={o.id} href={`/organisations/${o.id}`} className="chip small">{o.canonicalName}{o.region ? <span className="muted"> · {o.region}</span> : null}</Link>
@@ -275,7 +283,7 @@ export default async function Fleet({ searchParams }: { searchParams: SP }) {
       )}
       {unassigned.length > 0 && (
         <div className="card">
-          <h3 style={{ margin: 0 }}>No operator <span className="muted small" style={{ fontWeight: 400 }}>· {unassigned.length} aircraft</span></h3>
+          <h3 style={{ margin: 0 }}>{t("No operator")} <span className="muted small" style={{ fontWeight: 400 }}>· {t("{n} aircraft", { n: unassigned.length })}</span></h3>
           <AircraftList list={unassigned} />
         </div>
       )}
@@ -284,109 +292,109 @@ export default async function Fleet({ searchParams }: { searchParams: SP }) {
 
       <div className="grid g2">
         <details className="card" id="add-operator" open={openOperator}>
-          <summary><Icon name="operator" /><b>Add operator</b></summary>
+          <summary><Icon name="operator" /><b>{t("Add operator")}</b></summary>
           <form action={createOrganisationAction}>
             <Key />
-            <label>Name</label>
-            <input name="name" required placeholder="e.g. Metrojet" />
-            <label>Type of organisation</label>
-            <label><input type="checkbox" name="roles" value="operator" defaultChecked /> Operator (flies the aircraft)</label>
-            <label><input type="checkbox" name="roles" value="management_company" /> Management company</label>
-            <label>Region (optional)</label>
-            <PlacePicker name="region" kind="region" placeholder="e.g. Asia, Middle East, Hong Kong" />
-            <label>Base (optional)</label>
+            <label>{t("Name")}</label>
+            <input name="name" required placeholder={t("e.g. Metrojet")} />
+            <label>{t("Type of organisation")}</label>
+            <label><input type="checkbox" name="roles" value="operator" defaultChecked /> {t("Operator (flies the aircraft)")}</label>
+            <label><input type="checkbox" name="roles" value="management_company" /> {t("Management company")}</label>
+            <label>{t("Region (optional)")}</label>
+            <PlacePicker name="region" kind="region" placeholder={t("e.g. Asia, Middle East, Hong Kong")} />
+            <label>{t("Base (optional)")}</label>
             <PlacePicker name="base" kind="base" multiple />
-            <p className="muted small" style={{ margin: "2px 0 8px" }}>The operator's usual base. New aircraft for this operator start with it, and you can change it per aircraft.</p>
-            <label>Other names (comma separated, optional)</label>
+            <p className="muted small" style={{ margin: "2px 0 8px" }}>{t("The operator's usual base. New aircraft for this operator start with it, and you can change it per aircraft.")}</p>
+            <label>{t("Other names (comma separated, optional)")}</label>
             <input name="aliases" placeholder="Metro Jet, MJ" />
-            <p className="muted small">An “other name” (alias) is another way the same company gets written. When a card says “Metro Jet”, the app finds “Metrojet”.</p>
+            <p className="muted small">{t("An “other name” (alias) is another way the same company gets written. When a card says “Metro Jet”, the app finds “Metrojet”.")}</p>
             <p className="row" style={{ alignItems: "center" }}>
-              <span style={{ flex: "0 0 auto" }}><button type="submit">Create operator</button></span>
-              <span style={{ flex: "0 0 auto" }}><button type="submit" className="secondary" formAction={createOperatorThenAircraftAction}><Icon name="plane" />Create &amp; add its aircraft</button></span>
+              <span style={{ flex: "0 0 auto" }}><button type="submit">{t("Create operator")}</button></span>
+              <span style={{ flex: "0 0 auto" }}><button type="submit" className="secondary" formAction={createOperatorThenAircraftAction}><Icon name="plane" />{t("Create & add its aircraft")}</button></span>
             </p>
           </form>
         </details>
 
         <details className="card" id="add-aircraft" open={openAircraft}>
-          <summary><Icon name="plane" /><b>Add aircraft</b></summary>
+          <summary><Icon name="plane" /><b>{t("Add aircraft")}</b></summary>
           <form action={createAircraftAction}>
             <Key />
-            <label>Aircraft type</label>
-            <SearchSelect name="aircraftTypeId" required defaultValue={one(sp.typeId) ?? ""} placeholder="Type a model, e.g. G650 or Challenger"
-              options={groups.flatMap((g) => g.items.map((t) => ({ value: t.id, label: `${t.manufacturer} ${t.model}`, group: g.label })))} />
+            <label>{t("Aircraft type")}</label>
+            <SearchSelect name="aircraftTypeId" required defaultValue={one(sp.typeId) ?? ""} placeholder={t("Type a model, e.g. G650 or Challenger")}
+              options={groups.flatMap((g) => g.items.map((ty) => ({ value: ty.id, label: `${ty.manufacturer} ${ty.model}`, group: g.label })))} />
             <div className="row">
-              <div><label>Tail number</label><input name="registration" defaultValue={one(sp.tail)} placeholder="Optional. Add it later if unknown" /></div>
-              <div><label>Serial number</label><input name="serialNumber" /></div>
+              <div><label>{t("Tail number")}</label><input name="registration" defaultValue={one(sp.tail)} placeholder={t("Optional. Add it later if unknown")} /></div>
+              <div><label>{t("Serial number")}</label><input name="serialNumber" /></div>
             </div>
-            <label>Operator</label>
-            <SearchSelect name="operatorId" defaultValue={one(sp.operatorId) ?? ""} emptyLabel="Not recorded / new operator below"
+            <label>{t("Operator")}</label>
+            <SearchSelect name="operatorId" defaultValue={one(sp.operatorId) ?? ""} emptyLabel={t("Not recorded / new operator below")}
               options={orgs.map((o) => ({ value: o.id, label: o.canonicalName, hint: o.region ?? undefined }))} />
-            <label>…or add a new operator now (used only when none is chosen above)</label>
-            <input name="newOperatorName" defaultValue={one(sp.newOperator)} placeholder="e.g. Jet Aviation Hong Kong" />
-            <label>Base</label>
-            <Choice name="baseMode" defaultValue={one(sp.baseMode) ?? ""} ariaLabel="Base"
-              options={[{ value: "", label: "Not recorded" }, { value: "based", label: "Based at…" }, { value: "floating", label: "Floating" }]} />
-            <label>Base locations (for “Based at”)</label>
+            <label>{t("…or add a new operator now (used only when none is chosen above)")}</label>
+            <input name="newOperatorName" defaultValue={one(sp.newOperator)} placeholder={t("e.g. Jet Aviation Hong Kong")} />
+            <label>{t("Base")}</label>
+            <Choice name="baseMode" defaultValue={one(sp.baseMode) ?? ""} ariaLabel={t("Base")}
+              options={[{ value: "", label: t("Not recorded") }, { value: "based", label: t("Based at…") }, { value: "floating", label: t("Floating") }]} />
+            <label>{t("Base locations (for “Based at”)")}</label>
             <PlacePicker name="baseLocations" kind="base" multiple defaultValue={one(sp.baseLocations)} />
             <div className="row">
               <div><label>YOM</label><input name="yom" type="number" inputMode="numeric" defaultValue={one(sp.yom)} /></div>
               <div><label>YOR</label><input name="yor" type="number" inputMode="numeric" defaultValue={one(sp.yor)} /></div>
-              <div><label>Capacity</label><input name="capacity" type="number" inputMode="numeric" defaultValue={one(sp.capacity)} /></div>
+              <div><label>{t("Capacity")}</label><input name="capacity" type="number" inputMode="numeric" defaultValue={one(sp.capacity)} /></div>
             </div>
             <label>WIFI</label>
             <Choice name="wifiStatus" defaultValue={one(sp.wifi) ?? "unknown"} options={WIFI_CHOICES} ariaLabel="WIFI" />
-            <label>WIFI details</label><input name="wifiDetail" placeholder="e.g. complimentary, or USD 10/MB" />
+            <label>{t("WIFI details")}</label><input name="wifiDetail" placeholder={t("e.g. complimentary, or USD 10/MB")} />
             <div className="row">
-              <div><label>Smoking</label><Choice name="smoking" defaultValue={"unknown"} options={YES_NO_CHOICES} ariaLabel="Smoking" /></div>
-              <div><label>Pets</label><Choice name="pets" defaultValue={"unknown"} options={YES_NO_CHOICES} ariaLabel="Pets" /></div>
+              <div><label>{t("Smoking")}</label><Choice name="smoking" defaultValue={"unknown"} options={YES_NO_CHOICES} ariaLabel={t("Smoking")} /></div>
+              <div><label>{t("Pets")}</label><Choice name="pets" defaultValue={"unknown"} options={YES_NO_CHOICES} ariaLabel={t("Pets")} /></div>
             </div>
-            <label>Cleaning fee</label><input name="cleaningFee" placeholder="e.g. USD 500 for pets or smoking" />
-            <label>Notes</label><input name="notes" defaultValue={one(sp.notes)} placeholder="Owner's approval required" />
-            {tailInUse && <label style={{ color: "var(--warn)" }}><input type="checkbox" name="tailResolution" value="distinct_aircraft" /> This is a different aircraft that uses the same tail number</label>}
-            <p><button type="submit">Create aircraft</button></p>
+            <label>{t("Cleaning fee")}</label><input name="cleaningFee" placeholder={t("e.g. USD 500 for pets or smoking")} />
+            <label>{t("Notes")}</label><input name="notes" defaultValue={one(sp.notes)} placeholder={t("Owner's approval required")} />
+            {tailInUse && <label style={{ color: "var(--warn)" }}><input type="checkbox" name="tailResolution" value="distinct_aircraft" /> {t("This is a different aircraft that uses the same tail number")}</label>}
+            <p><button type="submit">{t("Create aircraft")}</button></p>
           </form>
         </details>
       </div>
 
       <details className="card" id="types" open={!!tq}>
-        <summary><Icon name="list" /><b>Aircraft types</b> <span className="muted small">({types.length} available when you add an aircraft)</span></summary>
-        <p className="muted small">About {STANDARD_AIRCRAFT_TYPES.length} standard types load automatically, each with a size category. Search to change a category or add another name for a type.</p>
+        <summary><Icon name="list" /><b>{t("Aircraft types")}</b> <span className="muted small">{t("({n} available when you add an aircraft)", { n: types.length })}</span></summary>
+        <p className="muted small">{t("About {n} standard types load automatically, each with a size category. Search to change a category or add another name for a type.", { n: STANDARD_AIRCRAFT_TYPES.length })}</p>
         <form method="get" action="/fleet#types" className="row">
-          <div><input name="tq" defaultValue={tq} placeholder="e.g. G280, Citation, Falcon" /></div>
-          <div style={{ flex: "0 0 auto" }}><button type="submit"><Icon name="search" />Search</button></div>
+          <div><input name="tq" defaultValue={tq} placeholder={t("e.g. G280, Citation, Falcon")} /></div>
+          <div style={{ flex: "0 0 auto" }}><button type="submit"><Icon name="search" />{t("Search")}</button></div>
         </form>
-        {tq && found.length === 0 && <p className="muted small">No type matches “{tq}”. Add it below.</p>}
-        {found.map((t) => (
-          <div key={t.id} style={{ marginTop: 10 }}>
+        {tq && found.length === 0 && <p className="muted small">{t("No type matches “{q}”. Add it below.", { q: tq })}</p>}
+        {found.map((ty) => (
+          <div key={ty.id} style={{ marginTop: 10 }}>
             <form action={setTypeCategoryAction} className="row">
-              <Key /><input type="hidden" name="aircraftTypeId" value={t.id} />
-              <div style={{ flex: "1 1 140px" }}>{t.manufacturer} {t.model}</div>
-              <div><SearchSelect name="category" defaultValue={t.category ?? ""} emptyLabel="No category" ariaLabel="Category"
-                options={AIRCRAFT_CATEGORIES.map((c) => ({ value: c, label: AIRCRAFT_CATEGORY_LABEL[c] }))} /></div>
-              <div style={{ flex: "0 0 auto" }}><button className="secondary" type="submit">Save</button></div>
+              <Key /><input type="hidden" name="aircraftTypeId" value={ty.id} />
+              <div style={{ flex: "1 1 140px" }}>{ty.manufacturer} {ty.model}</div>
+              <div><SearchSelect name="category" defaultValue={ty.category ?? ""} emptyLabel={t("No category")} ariaLabel={t("Category")}
+                options={AIRCRAFT_CATEGORIES.map((c) => ({ value: c, label: t(AIRCRAFT_CATEGORY_LABEL[c]) }))} /></div>
+              <div style={{ flex: "0 0 auto" }}><button className="secondary" type="submit">{t("Save")}</button></div>
             </form>
             <form action={addTypeAliasAction} className="row">
-              <Key /><input type="hidden" name="aircraftTypeId" value={t.id} />
-              <div><input name="alias" placeholder="add another name" required /></div>
-              <div style={{ flex: "0 0 auto" }}><button className="secondary" type="submit">Add name</button></div>
+              <Key /><input type="hidden" name="aircraftTypeId" value={ty.id} />
+              <div><input name="alias" placeholder={t("add another name")} required /></div>
+              <div style={{ flex: "0 0 auto" }}><button className="secondary" type="submit">{t("Add name")}</button></div>
             </form>
           </div>
         ))}
         <hr style={{ border: 0, borderTop: "1px solid var(--line)", margin: "14px 0" }} />
         <form action={createTypeAction}>
           <Key />
-          <b>Not in the list? Add an aircraft type</b>
+          <b>{t("Not in the list? Add an aircraft type")}</b>
           <div className="row">
-            <div><label>Manufacturer</label><input name="manufacturer" required placeholder="Gulfstream" /></div>
-            <div><label>Model / variant</label><input name="model" required placeholder="G650ER" /></div>
+            <div><label>{t("Manufacturer")}</label><input name="manufacturer" required placeholder="Gulfstream" /></div>
+            <div><label>{t("Model / variant")}</label><input name="model" required placeholder="G650ER" /></div>
           </div>
-          <label>Category</label>
-          <SearchSelect name="category" defaultValue="" emptyLabel="Not set" ariaLabel="Category"
-            options={AIRCRAFT_CATEGORIES.map((c) => ({ value: c, label: AIRCRAFT_CATEGORY_LABEL[c] }))} />
-          <label>Other names (comma separated, optional)</label><input name="aliases" placeholder="G650 ER, GVI" />
-          <p><button type="submit">Create type</button></p>
+          <label>{t("Category")}</label>
+          <SearchSelect name="category" defaultValue="" emptyLabel={t("Not set")} ariaLabel={t("Category")}
+            options={AIRCRAFT_CATEGORIES.map((c) => ({ value: c, label: t(AIRCRAFT_CATEGORY_LABEL[c]) }))} />
+          <label>{t("Other names (comma separated, optional)")}</label><input name="aliases" placeholder="G650 ER, GVI" />
+          <p><button type="submit">{t("Create type")}</button></p>
         </form>
-        <form action={loadStandardTypesAction}><Key /><button type="submit" className="secondary">Check for new standard types</button></form>
+        <form action={loadStandardTypesAction}><Key /><button type="submit" className="secondary">{t("Check for new standard types")}</button></form>
       </details>
     </>
   );

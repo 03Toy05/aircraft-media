@@ -1,6 +1,7 @@
 "use client";
 
 import type { Classification } from "@/domain/constants";
+import { useT } from "./uiLang";
 
 const VIEWS: { value: Classification; label: string }[] = [
   { value: "exterior", label: "Exterior" },
@@ -11,12 +12,13 @@ const VIEWS: { value: Classification; label: string }[] = [
 
 /** Three big buttons for a photo's view (radio buttons underneath, so the form works as usual). */
 export function ViewChoice({ name, value, label, group }: { name: string; value: Classification; label: string; group?: string }) {
+  const t = useT();
   return (
     <span className="view-choice" role="radiogroup" aria-label={label} data-group={group}>
       {VIEWS.map((v) => (
         <label key={v.value} className="view-btn">
           <input type="radio" name={name} value={v.value} defaultChecked={value === v.value} />
-          <span>{v.label}</span>
+          <span>{t(v.label)}</span>
         </label>
       ))}
     </span>

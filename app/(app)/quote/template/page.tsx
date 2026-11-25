@@ -6,10 +6,12 @@ import { getQuoteTemplates } from "@/domain/quoteTemplates";
 import { QUOTE_LANGUAGES, QUOTE_WORDS, defaultQuoteTemplate, type QuoteLanguage } from "@/domain/quote";
 import QuoteTemplateEditor from "../../../_components/QuoteTemplateEditor";
 import { Flash, one, type SP } from "../../../_components/ui";
+import { serverT } from "@/lib/uiLang";
 
 /** The owner's own wording for the quotation message, per language. */
 export default async function QuoteTemplatePage({ searchParams }: { searchParams: SP }) {
   const sp = await searchParams;
+  const t = await serverT();
   const { actor } = await requireOwner();
   const db = await getDb();
   const saved = await getQuoteTemplates(db, actor.tenantId);
@@ -17,11 +19,10 @@ export default async function QuoteTemplatePage({ searchParams }: { searchParams
   const defaults = defaultQuoteTemplate(lang);
   return (
     <>
-      <p className="small"><Link href="/quote">← Quote</Link></p>
-      <h1>Quote wording</h1>
+      <p className="small"><Link href="/quote">← {t("Quote")}</Link></p>
+      <h1>{t("Quote wording")}</h1>
       <p className="muted">
-        Set how your quotation message looks, once per language. Every quote starts from this wording and fills in the aircraft you choose.
-        You can still edit any single message before you send it, without changing what is saved here.
+        {t("Set how your quotation message looks, once per language. Every quote starts from this wording and fills in the aircraft you choose. You can still edit any single message before you send it, without changing what is saved here.")}
       </p>
       <Flash error={one(sp.error)} ok={one(sp.ok)} />
       <div className="row" style={{ marginBottom: 12 }}>
@@ -33,7 +34,7 @@ export default async function QuoteTemplatePage({ searchParams }: { searchParams
           </div>
         ))}
       </div>
-      <p className="small muted">● = you have changed the wording for that language.</p>
+      <p className="small muted">{t("● = you have changed the wording for that language.")}</p>
       <QuoteTemplateEditor key={lang} submitKey={randomUUID()} language={lang} defaults={defaults} saved={saved[lang] ?? null} />
     </>
   );

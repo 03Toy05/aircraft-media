@@ -1,3 +1,5 @@
+import Tr from "./Tr";
+
 /**
  * A short list (up to about five answers) as a row of buttons instead of a dropdown: one tap, no picker sheet on the
  * phone, and the choice is visible at a glance. Radio buttons underneath, so it works in any form, with or without
@@ -15,7 +17,7 @@ export default function Choice({ name, options, defaultValue, ariaLabel, require
       {options.map((o) => (
         <label key={o.value} className="view-btn">
           <input type="radio" name={name} value={o.value} defaultChecked={(defaultValue ?? "") === o.value} required={required} />
-          <span>{o.label}</span>
+          <span><Tr text={o.label} /></span>
         </label>
       ))}
     </span>

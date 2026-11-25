@@ -32,6 +32,7 @@ import { after } from "next/server";
 import * as media from "@/domain/media";
 import * as settings from "@/domain/settings";
 import { applyChatProposal } from "@/domain/chat";
+import { trStep } from "@/domain/toyText";
 import { makeCombinedPhoto } from "@/domain/combinedPhoto";
 import { and, eq } from "drizzle-orm";
 import { aircraft as aircraftTable, aircraftMedia as mediaTable, users } from "@/db/schema";
@@ -99,11 +100,12 @@ export async function signOutAction() {
 
 // ------------------------------------------------------------------ intake
 
-export type UploadResult = { name: string; status: "new" | "duplicate" | "failed" | "partial"; mediaId?: string; error?: string; detail?: string };
+export type UploadResult = { name: string; status: "new" | "duplicate" | "failed" | "partial"; mediaId?: string; error?: string; detail?: string; alreadyApproved?: boolean };
 
 /** One uploaded file (a photo, or a PDF whose photos are taken out): what happened, and how many photos now wait in Review. */
 async function uploadOne(actor: Actor, db: Awaited<ReturnType<typeof getDb>>, store: ReturnType<typeof getFileStore>, f: File, cardText: string | null, batchId: string): Promise<{ result: UploadResult; toReview: number }> {
   const bytes = new Uint8Array(await f.arrayBuffer());
+  const t = await serverT();
   try {
     let ids: string[];
     let status: "new" | "duplicate" | "partial";
@@ -114,8 +116,8 @@ async function uploadOne(actor: Actor, db: Awaited<ReturnType<typeof getDb>>, st
       ids = x.extracted.map((e) => e.mediaId);
       status = r.replayed ? "duplicate" : x.status === "partially_processed" ? "partial" : "new";
       detail = x.status === "no_images"
-        ? `PDF kept. No embedded photos were found in its ${x.pageCount} page(s) — page rendering is not supported; export the pages as images and upload those.`
-        : `${x.extracted.length} photo(s) taken out of ${x.pageCount} page(s)` + (x.skipped.length ? `; skipped ${x.skipped.length}: ${x.skipped.map((k) => `p${k.page} ${k.reason}`).join("; ")}` : "");
+        ? t("PDF kept. No embedded photos were found in its {n} page(s) — page rendering is not supported; export the pages as images and upload those.", { n: x.pageCount })
+        : t("{n} photo(s) taken out of {pages} page(s)", { n: x.extracted.length, pages: x.pageCount }) + (x.skipped.length ? t("; skipped {n}: {list}", { n: x.skipped.length, list: x.skipped.map((k) => `p${k.page} ${k.reason}`).join("; ") }) : "");
     } else {
       const r = await media.ingestUpload(db, store, actor, { filename: f.name, bytes, cardText, batchId });
       ids = [r.result.mediaId];
@@ -124,15 +126,15 @@ async function uploadOne(actor: Actor, db: Awaited<ReturnType<typeof getDb>>, st
     // Photos the workspace already had are reused: say where each one is, and bring removed ones back to Review.
     const st = await bringBackForReview(db, actor, ids);
     const where: string[] = [];
-    if (st.waiting.length) where.push(`${st.waiting.length} waiting in Review`);
-    if (st.reopened.length) where.push(`${st.reopened.length} removed earlier, now back in Review`);
+    if (st.waiting.length) where.push(t("{n} waiting in Review", { n: st.waiting.length }));
+    if (st.reopened.length) where.push(t("{n} removed earlier, now back in Review", { n: st.reopened.length }));
     if (st.approved.length) {
       const planes = [...new Set(st.approved.map((a) => a.aircraftId).filter((x): x is string => !!x))];
       const names = (await Promise.all(planes.map((id) => dir.getAircraftCard(db, id)))).filter(Boolean).map((c) => [c!.operator, c!.aircraft, c!.tailNumber].filter(Boolean).join(" "));
-      where.push(`${st.approved.length} already approved${names.length ? ` (on ${names.join("; ")})` : ""}, so not in Review`);
+      where.push(names.length ? t("{n} already approved (on {names}), so not in Review", { n: st.approved.length, names: names.join("; ") }) : t("{n} already approved, so not in Review", { n: st.approved.length }));
     }
     return {
-      result: { name: f.name, status, mediaId: [...st.waiting, ...st.reopened][0] ?? ids[0], detail: [detail, where.join("; ")].filter(Boolean).join(". ") },
+      result: { name: f.name, status, mediaId: [...st.waiting, ...st.reopened][0] ?? ids[0], detail: [detail, where.join("; ")].filter(Boolean).join(". "), ...(st.approved.length ? { alreadyApproved: true } : {}) },
       toReview: st.waiting.length + st.reopened.length,
     };
   } catch (e) {
@@ -142,9 +144,10 @@ async function uploadOne(actor: Actor, db: Awaited<ReturnType<typeof getDb>>, st
 }
 
 /** Where to go after an upload: straight to Review when everything went in, otherwise the list of what happened. */
-function afterUpload(results: UploadResult[], toReview: number): string {
-  if (toReview && results.every((r) => r.status !== "failed" && r.status !== "partial") && results.every((r) => !/already approved/.test(r.detail ?? ""))) {
-    return withParam("/review", "ok", `${toReview} photo${toReview === 1 ? "" : "s"} waiting in Review. Check the views and details of each set, then save it.`);
+async function afterUpload(results: UploadResult[], toReview: number): Promise<string> {
+  if (toReview && results.every((r) => r.status !== "failed" && r.status !== "partial") && results.every((r) => !r.alreadyApproved && !/already approved/.test(r.detail ?? ""))) {
+    const t = await serverT();
+    return withParam("/review", "ok", toReview === 1 ? t("{n} photo waiting in Review. Check the views and details of each set, then save it.", { n: toReview }) : t("{n} photos waiting in Review. Check the views and details of each set, then save it.", { n: toReview }));
   }
   return withParam("/intake", "r", JSON.stringify(results));
 }
@@ -163,7 +166,7 @@ export async function uploadMediaAction(fd: FormData) {
     toReview += r.toReview;
   }
   revalidatePath("/", "layout");
-  redirect(afterUpload(results, toReview));
+  redirect(await afterUpload(results, toReview));
 }
 
 /**
@@ -180,7 +183,7 @@ export async function uploadFileAction(fd: FormData): Promise<{ result: UploadRe
     if (e instanceof DomainError) return { result: { name, status: "failed", error: e.message }, toReview: 0 };
     throw e;
   }
-  if (!(f instanceof File) || f.size === 0) return { result: { name, status: "failed", error: "The file was empty." }, toReview: 0 };
+  if (!(f instanceof File) || f.size === 0) return { result: { name, status: "failed", error: (await serverT())("The file was empty.") }, toReview: 0 };
   const given = str(fd, "batchId");
   const batchId = /^[0-9a-f-]{36}$/.test(given) ? given : randomUUID();
   return uploadOne(actor, await getDb(), getFileStore(), f, optStr(fd, "cardText"), batchId);
@@ -189,7 +192,7 @@ export async function uploadFileAction(fd: FormData): Promise<{ result: UploadRe
 /** After the page has sent every file: refresh the pages and say where to go next. */
 export async function finishUploadAction(results: UploadResult[], toReview: number): Promise<string> {
   revalidatePath("/", "layout");
-  return afterUpload(results.slice(0, 200), toReview);
+  return await afterUpload(results.slice(0, 200), toReview);
 }
 
 export async function driveImportAction(fd: FormData) {
@@ -223,7 +226,7 @@ export async function driveImportAction(fd: FormData) {
 export async function createOrganisationAction(fd: FormData) {
   const { actor, db } = await ctx();
   const roles = fd.getAll("roles").map(String) as OrgRole[];
-  await run("/fleet?add=operator#add-operator", "Operator created", () =>
+  await run("/fleet?add=operator#add-operator", (await serverT())("Operator created"), () =>
     dir.createOrganisation(db, actor, key(fd), { name: str(fd, "name"), roles, aliases: list(str(fd, "aliases")), region: str(fd, "region"), base: str(fd, "base") }),
   "/fleet");
 }
@@ -242,13 +245,13 @@ export async function createOperatorThenAircraftAction(fd: FormData) {
   }
   revalidatePath("/", "layout");
   if (error) redirect(withParam("/fleet?add=operator#add-operator", "error", error));
-  redirect(`/fleet?add=aircraft&operatorId=${newId}&ok=${encodeURIComponent("Operator created. Now add its aircraft")}#add-aircraft`);
+  redirect(`/fleet?add=aircraft&operatorId=${newId}&ok=${encodeURIComponent((await serverT())("Operator created. Now add its aircraft"))}#add-aircraft`);
 }
 
 export async function renameOrgAction(fd: FormData) {
   const { actor, db } = await ctx();
   const id = str(fd, "organisationId");
-  await run(`/organisations/${id}`, "Name changed", () =>
+  await run(`/organisations/${id}`, (await serverT())("Name changed"), () =>
     dir.renameOrganisation(db, actor, key(fd), { organisationId: id, name: str(fd, "name"), keepOldAsAlias: fd.get("keepOld") === "on" }),
   );
 }
@@ -256,14 +259,14 @@ export async function renameOrgAction(fd: FormData) {
 export async function setOrgRegionAction(fd: FormData) {
   const { actor, db } = await ctx();
   const id = str(fd, "organisationId");
-  await run(str(fd, "returnTo") || "/fleet", "Region saved", () => dir.setOrganisationRegion(db, actor, key(fd), { organisationId: id, region: str(fd, "region") || null, base: str(fd, "base") })); 
+  await run(str(fd, "returnTo") || "/fleet", (await serverT())("Region saved"), () => dir.setOrganisationRegion(db, actor, key(fd), { organisationId: id, region: str(fd, "region") || null, base: str(fd, "base") })); 
 }
 
 /** Operator page: its website, email and sales contact. */
 export async function setOrgContactsAction(fd: FormData) {
   const { actor, db } = await ctx();
   const id = str(fd, "organisationId");
-  await run(`/organisations/${id}`, "Contact details saved", () =>
+  await run(`/organisations/${id}`, (await serverT())("Contact details saved"), () =>
     dir.setOrganisationContacts(db, actor, key(fd), { organisationId: id, website: str(fd, "website"), email: str(fd, "email"), salesContact: String(fd.get("salesContact") ?? "") }));
 }
 
@@ -271,7 +274,7 @@ export async function saveQuoteTemplateAction(fd: FormData) {
   const { actor, db } = await ctx();
   const language = str(fd, "language");
   const raw = (k: string) => String(fd.get(k) ?? "");
-  await run(`/quote/template?lang=${encodeURIComponent(language)}`, "Template saved", () =>
+  await run(`/quote/template?lang=${encodeURIComponent(language)}`, (await serverT())("Template saved"), () =>
     quoteTemplates.saveQuoteTemplate(db, actor, key(fd), {
       language,
       template: { greeting: raw("greeting"), block: raw("block"), closing: raw("closing"), yes: raw("yes"), no: raw("no"), tbc: raw("tbc"), seats: raw("seats"), routing: raw("routing"), times: raw("times") },
@@ -282,33 +285,33 @@ export async function saveQuoteTemplateAction(fd: FormData) {
 export async function resetQuoteTemplateAction(fd: FormData) {
   const { actor, db } = await ctx();
   const language = str(fd, "language");
-  await run(`/quote/template?lang=${encodeURIComponent(language)}`, "Back to the standard wording", () => quoteTemplates.resetQuoteTemplate(db, actor, key(fd), { language }));
+  await run(`/quote/template?lang=${encodeURIComponent(language)}`, (await serverT())("Back to the standard wording"), () => quoteTemplates.resetQuoteTemplate(db, actor, key(fd), { language }));
 }
 
 export async function createContactAction(fd: FormData) {
   const { actor, db } = await ctx();
-  await run("/contacts", "Contact added", () => contacts.createContact(db, actor, key(fd), { name: str(fd, "name"), englishName: optStr(fd, "englishName"), app: str(fd, "app"), handle: str(fd, "handle"), notes: str(fd, "notes") }));
+  await run("/contacts", (await serverT())("Contact added"), () => contacts.createContact(db, actor, key(fd), { name: str(fd, "name"), englishName: optStr(fd, "englishName"), app: str(fd, "app"), handle: str(fd, "handle"), notes: str(fd, "notes") }));
 }
 
 export async function updateContactAction(fd: FormData) {
   const { actor, db } = await ctx();
-  await run("/contacts", "Contact saved", () => contacts.updateContact(db, actor, key(fd), { contactId: str(fd, "contactId"), name: str(fd, "name"), englishName: optStr(fd, "englishName"), app: str(fd, "app"), handle: str(fd, "handle"), notes: str(fd, "notes") }));
+  await run("/contacts", (await serverT())("Contact saved"), () => contacts.updateContact(db, actor, key(fd), { contactId: str(fd, "contactId"), name: str(fd, "name"), englishName: optStr(fd, "englishName"), app: str(fd, "app"), handle: str(fd, "handle"), notes: str(fd, "notes") }));
 }
 
 export async function retireContactAction(fd: FormData) {
   const { actor, db } = await ctx();
-  await run("/contacts", "Contact removed", () => contacts.retireContact(db, actor, key(fd), { contactId: str(fd, "contactId") }));
+  await run("/contacts", (await serverT())("Contact removed"), () => contacts.retireContact(db, actor, key(fd), { contactId: str(fd, "contactId") }));
 }
 
 export async function addOrgAliasAction(fd: FormData) {
   const { actor, db } = await ctx();
   const id = str(fd, "organisationId");
-  await run(`/organisations/${id}`, "Alias added", () => dir.addOrganisationAlias(db, actor, key(fd), { organisationId: id, alias: str(fd, "alias") }));
+  await run(`/organisations/${id}`, (await serverT())("Alias added"), () => dir.addOrganisationAlias(db, actor, key(fd), { organisationId: id, alias: str(fd, "alias") }));
 }
 
 export async function createTypeAction(fd: FormData) {
   const { actor, db } = await ctx();
-  await run("/fleet", "Aircraft type created", () =>
+  await run("/fleet", (await serverT())("Aircraft type created"), () =>
     dir.createAircraftType(db, actor, key(fd), { manufacturer: str(fd, "manufacturer"), model: str(fd, "model"), aliases: list(str(fd, "aliases")), category: optStr(fd, "category") }),
   );
 }
@@ -318,17 +321,17 @@ export async function loadStandardTypesAction(fd: FormData) {
   const r = await dir.loadStandardAircraftTypes(db, actor, key(fd));
   revalidatePath("/", "layout");
   const x = r.result;
-  redirect(withParam("/fleet", "ok", `Standard types loaded: ${x.added} added, ${x.categorised} given a category, ${x.skipped} already there`));
+  redirect(withParam("/fleet", "ok", (await serverT())("Standard types loaded: {added} added, {categorised} given a category, {skipped} already there", { added: x.added, categorised: x.categorised, skipped: x.skipped })));
 }
 
 export async function setTypeCategoryAction(fd: FormData) {
   const { actor, db } = await ctx();
-  await run("/fleet", "Category saved", () => dir.setAircraftTypeCategory(db, actor, key(fd), { aircraftTypeId: str(fd, "aircraftTypeId"), category: optStr(fd, "category") }));
+  await run("/fleet", (await serverT())("Category saved"), () => dir.setAircraftTypeCategory(db, actor, key(fd), { aircraftTypeId: str(fd, "aircraftTypeId"), category: optStr(fd, "category") }));
 }
 
 export async function addTypeAliasAction(fd: FormData) {
   const { actor, db } = await ctx();
-  await run("/fleet", "Alias added", () => dir.addAircraftTypeAlias(db, actor, key(fd), { aircraftTypeId: str(fd, "aircraftTypeId"), alias: str(fd, "alias") }));
+  await run("/fleet", (await serverT())("Alias added"), () => dir.addAircraftTypeAlias(db, actor, key(fd), { aircraftTypeId: str(fd, "aircraftTypeId"), alias: str(fd, "alias") }));
 }
 
 // ------------------------------------------------------------------ aircraft
@@ -389,13 +392,13 @@ export async function createAircraftAction(fd: FormData) {
   }
   revalidatePath("/", "layout");
   if (error) redirect(withParam("/fleet", "error", error));
-  redirect(`/aircraft/${newId}?ok=${encodeURIComponent("Aircraft created")}`);
+  redirect(`/aircraft/${newId}?ok=${encodeURIComponent((await serverT())("Aircraft created"))}`);
 }
 
 export async function changeTailAction(fd: FormData) {
   const { actor, db } = await ctx();
   const id = str(fd, "aircraftId");
-  await run(`/aircraft/${id}`, "Tail number changed; history kept", () =>
+  await run(`/aircraft/${id}`, (await serverT())("Tail number changed; history kept"), () =>
     dir.changeRegistration(db, actor, key(fd), {
       aircraftId: id,
       newRegistration: str(fd, "newRegistration"),
@@ -408,7 +411,7 @@ export async function changeTailAction(fd: FormData) {
 export async function addInfoVersionAction(fd: FormData) {
   const { actor, db } = await ctx();
   const id = str(fd, "aircraftId");
-  await run(`/aircraft/${id}`, "New information version saved", () =>
+  await run(`/aircraft/${id}`, (await serverT())("New information version saved"), () =>
     dir.addInformationVersion(db, actor, key(fd), { aircraftId: id, expectedVersion: Number(str(fd, "expectedVersion")), info: infoFrom(fd), effectiveDate: optStr(fd, "effectiveDate") }),
   );
 }
@@ -417,8 +420,8 @@ export async function setBasesAction(fd: FormData) {
   const { actor, db } = await ctx();
   const id = str(fd, "aircraftId");
   const base = baseFrom(fd);
-  await run(`/aircraft/${id}`, "Base updated", async () => {
-    if (!base) throw new DomainError("INVALID", "Choose Based or Floating");
+  await run(`/aircraft/${id}`, (await serverT())("Base updated"), async () => {
+    if (!base) throw new DomainError("INVALID", (await serverT())("Choose Based or Floating"));
     return dir.setBases(db, actor, key(fd), { aircraftId: id, base });
   });
 }
@@ -426,13 +429,13 @@ export async function setBasesAction(fd: FormData) {
 export async function setOperatorAction(fd: FormData) {
   const { actor, db } = await ctx();
   const id = str(fd, "aircraftId");
-  await run(`/aircraft/${id}`, "Operator updated", () => dir.setOperator(db, actor, key(fd), { aircraftId: id, organisationId: str(fd, "organisationId"), validFrom: optStr(fd, "validFrom") }));
+  await run(`/aircraft/${id}`, (await serverT())("Operator updated"), () => dir.setOperator(db, actor, key(fd), { aircraftId: id, organisationId: str(fd, "organisationId"), validFrom: optStr(fd, "validFrom") }));
 }
 
 export async function addManagementAction(fd: FormData) {
   const { actor, db } = await ctx();
   const id = str(fd, "aircraftId");
-  await run(`/aircraft/${id}`, "Management company added", () => dir.addManagementCompany(db, actor, key(fd), { aircraftId: id, organisationId: str(fd, "organisationId") }));
+  await run(`/aircraft/${id}`, (await serverT())("Management company added"), () => dir.addManagementCompany(db, actor, key(fd), { aircraftId: id, organisationId: str(fd, "organisationId") }));
 }
 
 // ------------------------------------------------------------------ media review
@@ -442,7 +445,7 @@ export async function mediaMetadataAction(fd: FormData) {
   exportAfterResponse(await requireUser());
   const id = str(fd, "mediaId");
   const cls = str(fd, "classification") as Classification;
-  await run(`/review/${id}`, "Saved", () =>
+  await run(`/review/${id}`, (await serverT())("Saved"), () =>
     media.updateMediaMetadata(db, actor, key(fd), {
       mediaId: id,
       expectedVersion: Number(str(fd, "expectedVersion")),
@@ -458,7 +461,7 @@ export async function mediaAssociationAction(fd: FormData) {
   exportAfterResponse(await requireUser());
   const id = str(fd, "mediaId");
   const status = str(fd, "status") as "actual_aircraft" | "representative_type" | "unresolved";
-  await run(`/review/${id}`, "Association saved", () =>
+  await run(`/review/${id}`, (await serverT())("Association saved"), () =>
     media.setMediaAssociation(db, actor, key(fd), {
       mediaId: id,
       expectedVersion: Number(str(fd, "expectedVersion")),
@@ -474,7 +477,7 @@ export async function approveAction(fd: FormData) {
   exportAfterResponse(await requireUser());
   const id = str(fd, "mediaId");
   // After a decision, go back to the queue so the next photo is one click away.
-  await run(`/review/${id}`, "Photo approved", () =>
+  await run(`/review/${id}`, (await serverT())("Photo approved"), () =>
     media.approveMedia(db, actor, { mediaId: id, contentVersionId: str(fd, "contentVersionId"), expectedVersion: Number(str(fd, "expectedVersion")) }),
     "/review",
   );
@@ -484,7 +487,7 @@ export async function useVersionAction(fd: FormData) {
   const { actor, db } = await ctx();
   exportAfterResponse(await requireUser());
   const id = str(fd, "mediaId");
-  await run(`/review/${id}`, "Switched version (earlier versions are kept)", () =>
+  await run(`/review/${id}`, (await serverT())("Switched version (earlier versions are kept)"), () =>
     media.useContentVersion(db, actor, key(fd), { mediaId: id, contentVersionId: str(fd, "contentVersionId"), expectedVersion: Number(str(fd, "expectedVersion")) }),
   );
 }
@@ -493,7 +496,7 @@ export async function rejectAction(fd: FormData) {
   const { actor, db } = await ctx();
   exportAfterResponse(await requireUser());
   const id = str(fd, "mediaId");
-  await run(`/review/${id}`, "Photo rejected. It is listed under Rejected, where you can reopen it.", () =>
+  await run(`/review/${id}`, (await serverT())("Photo rejected. It is listed under Rejected, where you can reopen it."), () =>
     media.rejectMedia(db, actor, key(fd), { mediaId: id, expectedVersion: Number(str(fd, "expectedVersion")), reason: str(fd, "reason") }),
     "/review",
   );
@@ -503,21 +506,21 @@ export async function reopenAction(fd: FormData) {
   const { actor, db } = await ctx();
   exportAfterResponse(await requireUser());
   const id = str(fd, "mediaId");
-  await run(`/review/${id}`, "Reopened for review", () => media.reopenMedia(db, actor, key(fd), { mediaId: id, expectedVersion: Number(str(fd, "expectedVersion")) }));
+  await run(`/review/${id}`, (await serverT())("Reopened for review"), () => media.reopenMedia(db, actor, key(fd), { mediaId: id, expectedVersion: Number(str(fd, "expectedVersion")) }));
 }
 
 export async function retireAction(fd: FormData) {
   const { actor, db } = await ctx();
   exportAfterResponse(await requireUser());
   const id = str(fd, "mediaId");
-  await run(`/review/${id}`, "Retired", () => media.retireMedia(db, actor, key(fd), { mediaId: id }));
+  await run(`/review/${id}`, (await serverT())("Retired"), () => media.retireMedia(db, actor, key(fd), { mediaId: id }));
 }
 
 export async function restoreAction(fd: FormData) {
   const { actor, db } = await ctx();
   exportAfterResponse(await requireUser());
   const id = str(fd, "mediaId");
-  await run(`/review/${id}`, "Restored", () => media.restoreMedia(db, actor, key(fd), { mediaId: id }));
+  await run(`/review/${id}`, (await serverT())("Restored"), () => media.restoreMedia(db, actor, key(fd), { mediaId: id }));
 }
 
 export async function cropAction(fd: FormData) {
@@ -541,9 +544,9 @@ export async function cropAction(fd: FormData) {
     }
     revalidatePath("/", "layout");
     if (error) redirect(withParam(`/review/${id}`, "error", error));
-    redirect(withParam(`/review/${newId}`, "ok", "Separated into a new photo for review"));
+    redirect(withParam(`/review/${newId}`, "ok", (await serverT())("Separated into a new photo for review")));
   }
-  await run(`/review/${id}`, "Crop applied as a new version", () => media.recropMedia(db, store, actor, input));
+  await run(`/review/${id}`, (await serverT())("Crop applied as a new version"), () => media.recropMedia(db, store, actor, input));
 }
 
 export interface AssignOutcome {
@@ -565,7 +568,8 @@ async function assignFromForm(actor: Actor, db: Awaited<ReturnType<typeof getDb>
   // The other photos sent with this one (same source evidence) that the owner kept ticked, each with its own view.
   const also = [...new Set(fd.getAll("also").map(String).filter((x) => /^[0-9a-f-]{36}$/.test(x) && x !== mediaId))];
   const ids = [...(mediaId ? [mediaId] : []), ...also];
-  if (!ids.length) return { ok: false, message: "Tick at least one photo.", approvedIds: [] };
+  const t = await serverT();
+  if (!ids.length) return { ok: false, message: t("Tick at least one photo."), approvedIds: [] };
   const classifications: Record<string, Classification> = {};
   if (mediaId) classifications[mediaId] = asClass(str(fd, "classification"));
   for (const id of also) classifications[id] = asClass(str(fd, `cls_${id}`));
@@ -583,9 +587,9 @@ async function assignFromForm(actor: Actor, db: Awaited<ReturnType<typeof getDb>
     // One line per outcome ("3 photos approved as this aircraft"), not one per photo.
     const tally = new Map<string, number>();
     for (const p of r.photos) tally.set(p.detail, (tally.get(p.detail) ?? 0) + 1);
-    const message = [...r.steps, ...[...tally].map(([detail, n]) => (n === 1 ? `Photo ${detail}` : `${n} photos ${detail}`))].join(". ");
+    const message = [...r.steps.map((x) => trStep(t.lang, x)), ...[...tally].map(([detail, n]) => (n === 1 ? t("Photo {detail}", { detail: trStep(t.lang, detail) }) : t("{n} photos {detail}", { n, detail: trStep(t.lang, detail) })))].join(t(". "));
     const approvedIds = r.photos.filter((p) => p.outcome === "approved").map((p) => p.mediaId);
-    return { ok: approvedIds.length === ids.length, message: message || "Saved", approvedIds };
+    return { ok: approvedIds.length === ids.length, message: message || t("Saved"), approvedIds };
   } catch (e) {
     if (e instanceof DomainError) return { ok: false, message: e.message, approvedIds: [] };
     throw e;
@@ -599,7 +603,7 @@ export async function assignPhotoAction(fd: FormData) {
   if (r.approvedIds.length) exportAfterResponse(await requireUser());
   revalidatePath("/", "layout");
   if (r.ok) redirect(withParam("/review", "ok", r.message));
-  redirect(withParam(`/review/${str(fd, "mediaId")}`, "error", r.message || "Nothing was saved"));
+  redirect(withParam(`/review/${str(fd, "mediaId")}`, "error", r.message || (await serverT())("Nothing was saved")));
 }
 
 /** Review worksheet: save one group and stay on the page. Returns what happened instead of navigating. */
@@ -621,18 +625,18 @@ export async function assignGroupAction(fd: FormData): Promise<AssignOutcome> {
 
 export async function addNumberAction(fd: FormData) {
   const { actor, db } = await ctx();
-  await run("/settings", "Number added", () => settings.addVerifiedNumber(db, actor, key(fd), { phone: str(fd, "phone") }));
+  await run("/settings", (await serverT())("Number added"), () => settings.addVerifiedNumber(db, actor, key(fd), { phone: str(fd, "phone") }));
 }
 
 export async function deactivateNumberAction(fd: FormData) {
   const { actor, db } = await ctx();
-  await run("/settings", "Number deactivated", () => settings.deactivateNumber(db, actor, key(fd), { numberId: str(fd, "numberId") }));
+  await run("/settings", (await serverT())("Number deactivated"), () => settings.deactivateNumber(db, actor, key(fd), { numberId: str(fd, "numberId") }));
 }
 
 export async function setPreferredOperatorsAction(fd: FormData) {
   const { actor, db } = await ctx();
   const ids = fd.getAll("organisationId").map(String).filter(Boolean);
-  await run(str(fd, "returnTo") || "/settings", "Preferred operators saved", () => dir.setPreferredOperators(db, actor, key(fd), { organisationIds: ids }));
+  await run(str(fd, "returnTo") || "/settings", (await serverT())("Preferred operators saved"), () => dir.setPreferredOperators(db, actor, key(fd), { organisationIds: ids }));
 }
 
 /** Star or unstar an operator from the Quote page, without leaving it. Returns the new list, or a message. */
@@ -660,7 +664,7 @@ export async function togglePreferredOperator(organisationId: string): Promise<{
 
 export async function setLanguageAction(fd: FormData) {
   const { actor, db } = await ctx();
-  await run("/settings", "Language saved", () => settings.setPreferredLanguage(db, actor, key(fd), { language: str(fd, "language") }));
+  await run("/settings", (await serverT())("Language saved"), () => settings.setPreferredLanguage(db, actor, key(fd), { language: str(fd, "language") }));
 }
 
 // ------------------------------------------------------------------ admin (platform owner only)
@@ -722,16 +726,17 @@ export async function makeCombinedAction(fd: FormData) {
   const { actor, db, store } = await ctx();
   const aircraftId = str(fd, "aircraftId");
   const back = `/aircraft/${aircraftId}`;
+  const t = await serverT();
   const [ac] = await db.select().from(aircraftTable).where(and(eq(aircraftTable.id, aircraftId), eq(aircraftTable.tenantId, actor.tenantId)));
-  if (!ac) redirect(withParam("/fleet", "error", "Aircraft not found"));
+  if (!ac) redirect(withParam("/fleet", "error", t("Aircraft not found")));
   let error: string | null = null;
   let ok = "";
   try {
     const r = await makeCombinedPhoto(db, store, actor, { kind: "aircraft", aircraftId, aircraftTypeId: ac.aircraftTypeId }, { replace: true });
-    if (r.made) ok = r.replaced ? "Combined photo remade. The old one was retired." : "Combined photo made and saved with the aircraft's photos.";
-    else error = `No combined photo made. ${r.reason}`;
+    if (r.made) ok = r.replaced ? t("Combined photo remade. The old one was retired.") : t("Combined photo made and saved with the aircraft's photos.");
+    else error = t("No combined photo made. {reason}", { reason: r.reason });
   } catch (e) {
-    error = `The combined photo could not be made: ${e instanceof Error ? e.message : "unknown error"}`;
+    error = t("The combined photo could not be made: {reason}", { reason: e instanceof Error ? e.message : t("unknown error") });
   }
   revalidatePath("/", "layout");
   if (!error) exportAfterResponse(await requireUser());
@@ -740,15 +745,16 @@ export async function makeCombinedAction(fd: FormData) {
 
 export async function exportCbosAction() {
   await ctx(); // refuses read-only workspaces
+  const t = await serverT();
   const s = await requireUser();
   let error: string | null = null;
   let ok = "";
   try {
     const r = await runExport(s);
-    ok = `Export to Drive “${r.root}” done: ${r.added} added, ${r.updated} refreshed, ${r.moved} renamed or moved, ${r.removed} removed, ${r.unchanged} unchanged${r.skipped ? `, ${r.skipped} not exported (combined photos, or no view)` : ""}.`;
-    if (r.failed.length) error = `${ok} ${r.failed.length} failed (${r.failed[0].error}). Press Export again to retry them.`;
+    ok = t("Export to Drive “{root}” done: {added} added, {updated} refreshed, {moved} renamed or moved, {removed} removed, {unchanged} unchanged", { root: r.root, added: r.added, updated: r.updated, moved: r.moved, removed: r.removed, unchanged: r.unchanged }) + (r.skipped ? t(", {n} not exported (combined photos, or no view)", { n: r.skipped }) : "") + t(".");
+    if (r.failed.length) error = `${ok} ${t("{n} failed ({error}). Press Export again to retry them.", { n: r.failed.length, error: r.failed[0].error })}`;
   } catch (e) {
-    error = `Export failed: ${e instanceof Error ? e.message : "unknown error"}`;
+    error = t("Export failed: {reason}", { reason: e instanceof Error ? e.message : t("unknown error") });
   }
   redirect(withParam("/photos", error ? "error" : "ok", error ?? ok));
 }
@@ -846,7 +852,7 @@ export async function recordQuoteShareAction(input: { quoteKey: string; how: "sh
 /** Settings: share (or stop sharing) this workspace's approved photos with the platform library. */
 export async function setLibraryOptInAction(fd: FormData) {
   const s = await requireUser();
-  if (s.viewingAs) redirect(withParam("/settings", "error", "You are looking at someone else's workspace."));
+  if (s.viewingAs) redirect(withParam("/settings", "error", (await serverT())("You are looking at someone else's workspace.")));
   const on = str(fd, "libraryOptIn") === "yes";
   const db = await getDb();
   await library.setOptIn(db, s.actor.id, on);
@@ -855,7 +861,8 @@ export async function setLibraryOptInAction(fd: FormData) {
     try { await library.collectContributions(await getDb(), s.actor.tenantId, s.actor.id); } catch (e) { console.error("Library contributions failed", e); }
   });
   revalidatePath("/settings");
-  redirect(withParam("/settings", "ok", on ? "Thank you. Your approved photos will help build the library." : "Your photos are no longer offered to the library."));
+  const t = await serverT();
+  redirect(withParam("/settings", "ok", on ? t("Thank you. Your approved photos will help build the library.") : t("Your photos are no longer offered to the library.")));
 }
 
 async function libraryAdmin() {
@@ -917,17 +924,18 @@ export async function changePasswordAction(fd: FormData) {
   // Passwords exactly as typed (not trimmed).
   const raw = (k: string) => String(fd.get(k) ?? "");
   const pw = raw("password");
+  const t = await serverT();
   const back = (k: "error" | "ok", msg: string) => redirect(withParam("/settings", k, msg));
-  if (pw !== raw("again")) back("error", "The two new passwords aren't the same.");
+  if (pw !== raw("again")) back("error", t("The two new passwords aren't the same."));
   const problem = passwords.passwordProblem(pw);
   if (problem) back("error", problem);
   if (await passwords.hasPassword(db, email)) {
     const r = await passwords.checkPassword(db, email, raw("current"));
-    if (r.result === "locked") back("error", "Too many wrong tries. Wait 15 minutes and try again.");
-    if (r.result !== "ok") back("error", "The current password isn't right.");
+    if (r.result === "locked") back("error", t("Too many wrong tries. Wait 15 minutes and try again."));
+    if (r.result !== "ok") back("error", t("The current password isn't right."));
   }
-  if (!(await passwords.setPassword(db, email, pw))) back("error", "The password couldn't be saved.");
-  back("ok", "Password saved. Use it with your email on the sign-in page.");
+  if (!(await passwords.setPassword(db, email, pw))) back("error", t("The password couldn't be saved."));
+  back("ok", t("Password saved. Use it with your email on the sign-in page."));
 }
 
 /** Users page: which library operators this person may see (all of them, or only the ticked ones). */
@@ -945,7 +953,8 @@ export async function addFromLibraryAction(fd: FormData) {
   const session = await requireWriter().catch((e) => { if (e instanceof DomainError) redirect(withParam("/library", "error", e.message)); throw e; });
   const db = await getDb();
   const scope = await library.libraryScope(db, session);
-  if (!scope) redirect(withParam("/library", "error", "The library is not shared with you yet."));
+  const t = await serverT();
+  if (!scope) redirect(withParam("/library", "error", t("The library is not shared with you yet.")));
   const back = `/library${str(fd, "q") ? `?q=${encodeURIComponent(str(fd, "q"))}` : ""}`;
   const operatorId = str(fd, "libraryOperatorId");
   // Only aircraft of the operators opened to them.
@@ -956,8 +965,8 @@ export async function addFromLibraryAction(fd: FormData) {
   const { queued, done } = library.queueAdds(db, getFileStore(), session.actor, ids.filter((id) => !have.has(id)));
   if (queued.length) after(async () => { await done; exportAfterResponse(session); });
   redirect(withParam(back, "ok", queued.length
-    ? `Adding ${queued.length} aircraft to your workspace with their photos. This takes about half a minute each; this page shows each one as it arrives.`
-    : "Already in your workspace, or being added."));
+    ? t("Adding {n} aircraft to your workspace with their photos. This takes about half a minute each; this page shows each one as it arrives.", { n: queued.length })
+    : t("Already in your workspace, or being added.")));
 }
 
 /** Aircraft page: bring a copy from the library up to date with the library's newer photos. */
@@ -967,7 +976,8 @@ export async function updateLibraryCopyAction(fd: FormData) {
   let msg: string;
   try {
     const r = await library.updateCopy(db, store, actor, id);
-    msg = `Updated from the library: ${r.added} newer photo${r.added === 1 ? "" : "s"} added${r.retired ? `, ${r.retired} older one${r.retired === 1 ? "" : "s"} retired` : ""}.`;
+    const t = await serverT();
+    msg = (r.added === 1 ? t("Updated from the library: {n} newer photo added", { n: r.added }) : t("Updated from the library: {n} newer photos added", { n: r.added })) + (r.retired ? (r.retired === 1 ? t(", {n} older one retired", { n: r.retired }) : t(", {n} older ones retired", { n: r.retired })) : "") + t(".");
   } catch (e) {
     redirect(withParam(`/aircraft/${id}`, "error", (e as Error).message));
   }
@@ -987,7 +997,8 @@ export async function offerLibraryUpdateAction(fd: FormData) {
     redirect(withParam(`/aircraft/${id}`, "error", (e as Error).message));
   }
   revalidatePath(`/aircraft/${id}`);
-  redirect(withParam(`/aircraft/${id}`, "ok", n ? `Thank you. ${n} photo${n === 1 ? "" : "s"} offered to the library; the Aircraft Media team will compare them with the current ones.` : "Nothing new to offer (tick at least one photo that was not offered before)."));
+  const t = await serverT();
+  redirect(withParam(`/aircraft/${id}`, "ok", n ? (n === 1 ? t("Thank you. {n} photo offered to the library; the Aircraft Media team will compare them with the current ones.", { n }) : t("Thank you. {n} photos offered to the library; the Aircraft Media team will compare them with the current ones.", { n })) : t("Nothing new to offer (tick at least one photo that was not offered before).")));
 }
 
 /** Library review: newer photos, each replacing the library photo chosen for it (or added, or not used). */
@@ -1033,7 +1044,7 @@ export async function removeReviewPhotoAction(mediaId: string): Promise<{ ok: bo
   }
   const db = await getDb();
   const [m] = await db.select({ version: mediaTable.version, tenantId: mediaTable.tenantId }).from(mediaTable).where(eq(mediaTable.id, mediaId));
-  if (!m || m.tenantId !== actor.tenantId) return { ok: false, message: "That photo is no longer here." };
+  if (!m || m.tenantId !== actor.tenantId) return { ok: false, message: (await serverT())("That photo is no longer here.") };
   try {
     await media.rejectMedia(db, actor, randomUUID(), { mediaId, expectedVersion: m.version, reason: "Removed in Review" });
   } catch (e) {
@@ -1041,7 +1052,7 @@ export async function removeReviewPhotoAction(mediaId: string): Promise<{ ok: bo
     throw e;
   }
   revalidatePath("/", "layout");
-  return { ok: true, message: "Removed" };
+  return { ok: true, message: (await serverT())("Removed") };
 }
 
 /** Settings: the workspace's logo and colour on its quotes (PDF and client page). */
@@ -1066,5 +1077,5 @@ export async function saveBrandAction(fd: FormData) {
   } catch (e) {
     back("error", (e as Error).message);
   }
-  back("ok", "Branding saved. Your PDFs and client links now use it.");
+  back("ok", (await serverT())("Branding saved. Your PDFs and client links now use it."));
 }

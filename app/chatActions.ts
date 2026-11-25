@@ -14,6 +14,7 @@ import { libraryScope } from "@/domain/library";
 import { ingestUpload } from "@/domain/media";
 import { applyChatProposal, changeAircraftFields, suggestClassification, type ApplyResult } from "@/domain/chat";
 import { parseChatLang, tr, trStep } from "@/domain/toyText";
+import { serverT } from "@/lib/uiLang";
 import { converse, emptyDraft, quoteReply, type ToyReply, type Draft, type DraftPhoto } from "@/domain/toy";
 
 export interface TurnResult {
@@ -44,9 +45,10 @@ export async function toyTurnAction(fd: FormData): Promise<TurnResult> {
 async function turn(fd: FormData): Promise<TurnResult> {
   const session = await requireUser();
   const { actor } = session;
+  const t = await serverT();
   const readOnlyWhy = session.viewingAs
-    ? `You are looking at ${session.viewingAs.email}'s workspace, so nothing can be added here.`
-    : session.readOnly ? "Your 14-day trial has ended, so I can look things up and share, but not add or change anything. Ask the admin to extend it." : null;
+    ? t("You are looking at {email}'s workspace, so nothing can be added here.", { email: session.viewingAs.email })
+    : session.readOnly ? t("Your 14-day trial has ended, so I can look things up and share, but not add or change anything. Ask the admin to extend it.") : null;
   const db = await getDb();
   const store = getFileStore();
   let draft: Draft;
@@ -82,14 +84,14 @@ async function turn(fd: FormData): Promise<TurnResult> {
         const why = [...real.reduce((m, s) => m.set(s.reason, (m.get(s.reason) ?? 0) + 1), new Map<string, number>())].map(([reason, n]) => `${n} × ${reason}`).join("; ");
         if (r.result.extracted.length === 0) {
           failures.push(why
-            ? `${f.name}: no photos could be taken out of this PDF. Skipped: ${why}. The PDF is kept; send the photos as JPG files instead.`
-            : `${f.name}: this PDF has no photo files inside (its pages are drawn as artwork, or the photos are tiny). The PDF is kept; send the photos as JPG files instead.`);
-        } else if (why) failures.push(`${f.name}: ${r.result.extracted.length} photo${r.result.extracted.length === 1 ? "" : "s"} taken out; some could not be: ${why}.`);
+            ? t("{file}: no photos could be taken out of this PDF. Skipped: {why}. The PDF is kept; send the photos as JPG files instead.", { file: f.name, why })
+            : t("{file}: this PDF has no photo files inside (its pages are drawn as artwork, or the photos are tiny). The PDF is kept; send the photos as JPG files instead.", { file: f.name }));
+        } else if (why) failures.push(r.result.extracted.length === 1 ? t("{file}: {n} photo taken out; some could not be: {why}.", { file: f.name, n: 1, why }) : t("{file}: {n} photos taken out; some could not be: {why}.", { file: f.name, n: r.result.extracted.length, why }));
       } else {
         const r = await ingestUpload(db, store, actor, { filename: f.name, bytes, cardText: message || null, batchId });
         await bringBackForReview(db, actor, [r.result.mediaId]);
         if (draft.photos.some((p) => p.mediaId === r.result.mediaId)) continue; // same photo sent twice in this chat
-        photos.push(await photoFor(db, actor.tenantId, r.result.mediaId, f.name, r.replayed ? "uploaded before" : undefined));
+        photos.push(await photoFor(db, actor.tenantId, r.result.mediaId, f.name, r.replayed ? t("uploaded before") : undefined));
       }
     } catch (e) {
       if (e instanceof DomainError) failures.push(`${f.name}: ${e.message}`);

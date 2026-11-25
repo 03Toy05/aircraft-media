@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useId, useRef, useState } from "react";
+import { useT } from "./uiLang";
 
 interface Suggestion { value: string; detail: string }
 
@@ -13,6 +14,7 @@ interface Suggestion { value: string; detail: string }
 export default function PlacePicker({ name, kind, defaultValue, multiple = false, placeholder, ariaLabel }: {
   name: string; kind: "base" | "region"; defaultValue?: string | null; multiple?: boolean; placeholder?: string; ariaLabel?: string;
 }) {
+  const t = useT();
   const split = (v: string) => v.split(/[,;]|\r?\n/).map((x) => x.trim()).filter(Boolean);
   const [chosen, setChosen] = useState<string[]>(() => (multiple ? split(defaultValue ?? "") : []));
   const [text, setText] = useState(multiple ? "" : defaultValue ?? "");
@@ -26,13 +28,13 @@ export default function PlacePicker({ name, kind, defaultValue, multiple = false
     const q = text.trim();
     if (!open || (kind === "base" && !q)) { setItems([]); return; }
     const ctl = new AbortController();
-    const t = setTimeout(() => {
+    const timer = setTimeout(() => {
       fetch(`/api/places?kind=${kind}&q=${encodeURIComponent(q)}`, { signal: ctl.signal })
         .then((r) => (r.ok ? r.json() : { items: [] }))
         .then((d: { items: Suggestion[] }) => { setItems(d.items); setActive(0); })
         .catch(() => undefined);
     }, 150);
-    return () => { clearTimeout(t); ctl.abort(); };
+    return () => { clearTimeout(timer); ctl.abort(); };
   }, [text, open, kind]);
 
   // Close the list when tapping elsewhere.
@@ -57,15 +59,15 @@ export default function PlacePicker({ name, kind, defaultValue, multiple = false
       {multiple && chosen.length > 0 && (
         <div className="place-chips">
           {chosen.map((c) => (
-            <span key={c} className="place-chip">{c}<button type="button" aria-label={`Remove ${c}`} onClick={() => setChosen((x) => x.filter((y) => y !== c))}>×</button></span>
+            <span key={c} className="place-chip">{c}<button type="button" aria-label={t("Remove {name}", { name: c })} onClick={() => setChosen((x) => x.filter((y) => y !== c))}>×</button></span>
           ))}
         </div>
       )}
       <input
         type="text"
         value={text}
-        placeholder={placeholder ?? (kind === "base" ? "City or airport code (e.g. HKG)" : "Region, country or city")}
-        aria-label={ariaLabel ?? (kind === "base" ? "Base" : "Region")}
+        placeholder={placeholder ?? (kind === "base" ? t("City or airport code (e.g. HKG)") : t("Region, country or city"))}
+        aria-label={ariaLabel ?? (kind === "base" ? t("Base") : t("Region"))}
         role="combobox"
         aria-expanded={open && items.length > 0}
         aria-controls={listId}

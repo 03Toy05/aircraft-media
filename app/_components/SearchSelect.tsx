@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { useT } from "./uiLang";
 
 export interface SearchOption { value: string; label: string; group?: string; hint?: string }
 
@@ -22,6 +23,7 @@ export default function SearchSelect({ name, options, defaultValue, value: contr
   ariaLabel?: string;
   id?: string;
 }) {
+  const t = useT();
   const byValue = useMemo(() => new Map(options.map((o) => [o.value, o])), [options]);
   const [inner, setInner] = useState(defaultValue ?? "");
   const value = controlled ?? inner;
@@ -59,7 +61,7 @@ export default function SearchSelect({ name, options, defaultValue, value: contr
         id={id}
         type="text"
         value={text}
-        placeholder={placeholder ?? (emptyLabel ? emptyLabel : "Type to search…")}
+        placeholder={placeholder ?? (emptyLabel ? emptyLabel : t("Type to search…"))}
         aria-label={ariaLabel}
         role="combobox"
         aria-expanded={open}
@@ -77,7 +79,7 @@ export default function SearchSelect({ name, options, defaultValue, value: contr
       />
       {open && (
         <ul className="place-list" id={listId} role="listbox">
-          {list.length === 0 && <li className="muted">No match</li>}
+          {list.length === 0 && <li className="muted">{t("No match")}</li>}
           {list.map((o, i) => {
             const head = o.group && o.group !== list[i - 1]?.group ? o.group : null;
             return (

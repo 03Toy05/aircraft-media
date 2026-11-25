@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import Choice from "./Choice";
+import { useT } from "./uiLang";
 
 type Rect = { x: number; y: number; w: number; h: number };
 type Handle = "n" | "s" | "e" | "w" | "ne" | "nw" | "se" | "sw";
@@ -27,6 +28,7 @@ export default function CropTool({
   action: (fd: FormData) => void | Promise<void>;
   mediaId: string; contentVersionId: string; disabled: boolean; submitKey: string;
 }) {
+  const t = useT();
   const wrap = useRef<HTMLDivElement>(null);
   const sel = useRef<HTMLDivElement>(null);
   const dim = { t: useRef<HTMLDivElement>(null), b: useRef<HTMLDivElement>(null), l: useRef<HTMLDivElement>(null), r: useRef<HTMLDivElement>(null) };
@@ -54,7 +56,7 @@ export default function CropTool({
     if (!r) return;
     const s = sel.current!.style;
     s.left = pc(r.x, width); s.top = pc(r.y, height); s.width = pc(r.w, width); s.height = pc(r.h, height);
-    const t = dim.t.current!.style; t.left = "0"; t.top = "0"; t.width = "100%"; t.height = pc(r.y, height);
+    const ts = dim.t.current!.style; ts.left = "0"; ts.top = "0"; ts.width = "100%"; ts.height = pc(r.y, height);
     const b = dim.b.current!.style; b.left = "0"; b.top = pc(r.y + r.h, height); b.width = "100%"; b.height = pc(height - r.y - r.h, height);
     const l = dim.l.current!.style; l.left = "0"; l.top = pc(r.y, height); l.width = pc(r.x, width); l.height = pc(r.h, height);
     const rr = dim.r.current!.style; rr.left = pc(r.x + r.w, width); rr.top = pc(r.y, height); rr.width = pc(width - r.x - r.w, width); rr.height = pc(r.h, height);
@@ -133,7 +135,7 @@ export default function CropTool({
       <input type="hidden" name="key" value={submitKey} />
       <input type="hidden" name="mediaId" value={mediaId} />
       <input type="hidden" name="contentVersionId" value={contentVersionId} />
-      <p className="muted small">Drag on the photo to select the area to keep, like the Snipping Tool. Drag inside the selection to move it; drag an edge or corner to resize. Click outside to start again.</p>
+      <p className="muted small">{t("Drag on the photo to select the area to keep, like the Snipping Tool. Drag inside the selection to move it; drag an edge or corner to resize. Click outside to start again.")}</p>
       <div
         ref={wrap}
         onPointerDown={down}
@@ -145,7 +147,7 @@ export default function CropTool({
         style={{ position: "relative", width: "100%", userSelect: "none", touchAction: "none", cursor: disabled ? "default" : "crosshair", lineHeight: 0, outline: "none" }}
       >
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src={src} alt="Photo to crop" draggable={false} style={{ width: "100%", height: "auto", display: "block", pointerEvents: "none" }} />
+        <img src={src} alt={t("Photo to crop")} draggable={false} style={{ width: "100%", height: "auto", display: "block", pointerEvents: "none" }} />
         <div ref={dim.t} style={dimStyle} /><div ref={dim.b} style={dimStyle} /><div ref={dim.l} style={dimStyle} /><div ref={dim.r} style={dimStyle} />
         <div ref={sel} style={{ position: "absolute", display: "none", boxSizing: "border-box", border: "2px dashed #fff", outline: "1px solid rgba(0,0,0,.6)", cursor: "move" }}>
           <span ref={label} style={{ position: "absolute", left: 0, top: -24, background: "rgba(0,0,0,.75)", color: "#fff", font: "12px system-ui", padding: "2px 6px", borderRadius: 3, whiteSpace: "nowrap", lineHeight: 1.4 }} />
@@ -164,18 +166,18 @@ export default function CropTool({
       </div>
 
       <details style={{ marginTop: 8 }}>
-        <summary className="small muted">Exact numbers (pixels)</summary>
+        <summary className="small muted">{t("Exact numbers (pixels)")}</summary>
         <div className="row" style={{ marginTop: 6 }}>
           <div><label>X</label><input ref={field.x} name="x" type="number" min={0} defaultValue={0} onChange={typed("x")} required /></div>
           <div><label>Y</label><input ref={field.y} name="y" type="number" min={0} defaultValue={0} onChange={typed("y")} required /></div>
-          <div><label>Width</label><input ref={field.w} name="width" type="number" min={1} defaultValue={width} onChange={typed("w")} required /></div>
-          <div><label>Height</label><input ref={field.h} name="height" type="number" min={1} defaultValue={height} onChange={typed("h")} required /></div>
+          <div><label>{t("Width")}</label><input ref={field.w} name="width" type="number" min={1} defaultValue={width} onChange={typed("w")} required /></div>
+          <div><label>{t("Height")}</label><input ref={field.h} name="height" type="number" min={1} defaultValue={height} onChange={typed("h")} required /></div>
         </div>
       </details>
       <div className="row" style={{ marginTop: 8 }}>
-        <div><Choice name="mode" defaultValue="recrop" ariaLabel="Crop" options={[{ value: "recrop", label: "Replace (can be undone)" }, { value: "separate", label: "Separate as a new photo" }]} /></div>
-        <div style={{ flex: "0 0 auto" }}><button className="secondary" type="button" onClick={clear} disabled={!selected}>Clear</button></div>
-        <div style={{ flex: "0 0 auto" }}><button type="submit" disabled={disabled || !selected}>Apply crop</button></div>
+        <div><Choice name="mode" defaultValue="recrop" ariaLabel={t("Crop")} options={[{ value: "recrop", label: "Replace (can be undone)" }, { value: "separate", label: "Separate as a new photo" }]} /></div>
+        <div style={{ flex: "0 0 auto" }}><button className="secondary" type="button" onClick={clear} disabled={!selected}>{t("Clear")}</button></div>
+        <div style={{ flex: "0 0 auto" }}><button type="submit" disabled={disabled || !selected}>{t("Apply crop")}</button></div>
       </div>
     </form>
   );
