@@ -56,3 +56,23 @@ describe("A quote request with a routing", () => {
     expect(parseQuoteRequest("帮我草拟报价", today)).toEqual({ what: [] });
   });
 });
+
+describe("Several aircraft with operators and prices", () => {
+  const two = { what: ["Phenix Jet Global 7500", "Tag Aviation G650ER"], prices: ["USD 248,000", "USD 230,000"] };
+  it("one per line, numbered or not", () => {
+    expect(parseQuoteRequest("Quote please\n1. Phenix Jet Global 7500 - USD 248,000\n2. Tag Aviation G650ER - USD 230,000", today)).toEqual(two);
+  });
+  it("labelled, on one line or several", () => {
+    expect(parseQuoteRequest("Can you prepare 2 quotes?\nOperator: Phenix Jet, Aircraft: Global 7500, Price: USD 248,000\nOperator: Tag Aviation, Aircraft: G650ER, Price: USD 230,000", today)).toEqual(two);
+    expect(parseQuoteRequest("Quote\nOperator: Phenix Jet\nAircraft: Global 7500\nPrice: USD 248,000\nOperator: Tag Aviation\nAircraft: G650ER\nPrice: USD 230,000", today)).toEqual(two);
+  });
+  it("several on one line", () => {
+    expect(parseQuoteRequest("Quote: Phenix Jet Global 7500 USD 248,000, Tag Aviation G650ER USD 230,000", today)).toEqual(two);
+  });
+  it("the chat's quote template, blank lines skipped (English and Chinese)", () => {
+    const en = "Quote\nLeg 1 – Date: 12 Dec | From: HKG | To: LHR | Time: 1630 | Pax: 8\nLeg 2 – Date:  | From:  | To:  | Time:  | Pax: \nOption 1 – Operator: Phenix Jet | Aircraft: Global 7500 | Price: USD 248,000\nOption 2 – Operator: Tag Aviation | Aircraft: G650ER | Price: USD 230,000";
+    expect(parseQuoteRequest(en, today)).toEqual({ ...two, legs: [{ from: "VHHH", to: "EGLL", date: "2026-12-12", time: "16:30", pax: 8 }] });
+    const zh = "報價\n航段1 – 日期：12月12日｜出發：HKG｜到達：LHR｜時間：1630｜乘客：8\n選項1 – 營運商：Phenix Jet｜飛機：Global 7500｜價格：USD 248,000\n選項2 – 營運商： ｜飛機： ｜價格： ";
+    expect(parseQuoteRequest(zh, today)).toEqual({ what: ["Phenix Jet Global 7500"], prices: ["USD 248,000"], legs: [{ from: "VHHH", to: "EGLL", date: "2026-12-12", time: "16:30", pax: 8 }] });
+  });
+});

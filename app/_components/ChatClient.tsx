@@ -23,6 +23,9 @@ const UI_EN = {
   addHint: "Fill in what you know (leave the rest blank), attach photos if you have them, then press Send. Nothing is saved until you confirm.",
   askHint: "Or just type what you need, e.g. “Give me CapaJet's G550 quote and photos”.",
   template: "Operator: \nRegion: \nAircraft type: \nTail number: \nYOM: \nCapacity: ",
+  quoteTemplate: "Quote\nLeg 1 – Date:  | From:  | To:  | Time:  | Pax: \nLeg 2 – Date:  | From:  | To:  | Time:  | Pax: \nOption 1 – Operator:  | Aircraft:  | Price: \nOption 2 – Operator:  | Aircraft:  | Price: ",
+  tplQuote: "Quote", tplAircraft: "Aircraft",
+  quoteHint: "Fill in what you have; blank lines are skipped. Airports by ICAO or IATA code, e.g. HKG or VHHH. Add more legs or options with the same format.",
   placeholderNew: "Ask Toy, or tap Template…",
   placeholderReply: "Reply to Toy, or add more details…",
   templateBtn: "Template", speak: "Speak", stop: "Stop", send: "Send", attach: "Photos", voiceOptions: "Voice options", clear: "Clear",
@@ -55,6 +58,9 @@ const UI_HANT: UI = {
   addHint: "填上你知道的資料（其餘留空），有相片可一併附上，然後按傳送。確認前不會儲存任何內容。",
   askHint: "也可以直接輸入你的需要，例如「給我 CapaJet 的 G550 報價和相片」。",
   template: "營運商：\n地區：\n機型：\n機尾號：\n出廠年份：\n載客量：",
+  quoteTemplate: "報價\n航段1 – 日期： ｜出發： ｜到達： ｜時間： ｜乘客： \n航段2 – 日期： ｜出發： ｜到達： ｜時間： ｜乘客： \n選項1 – 營運商： ｜飛機： ｜價格： \n選項2 – 營運商： ｜飛機： ｜價格： ",
+  tplQuote: "報價", tplAircraft: "飛機",
+  quoteHint: "填上你有的資料，空白的行會略過。機場用 ICAO 或 IATA 代碼，例如 HKG 或 VHHH。可用相同格式加入更多航段或選項。",
   placeholderNew: "問 Toy，或按「範本」…",
   placeholderReply: "回覆 Toy，或補充更多資料…",
   templateBtn: "範本", speak: "語音輸入", stop: "停止", send: "傳送", attach: "相片", voiceOptions: "語音選項", clear: "清除",
@@ -268,6 +274,8 @@ export default function ChatClient() {
   const fileRef = useRef<HTMLInputElement>(null);
   const boxRef = useRef<HTMLTextAreaElement>(null);
   const [adding, setAdding] = useState(false);
+  const [quoting, setQuoting] = useState(false);
+  const [tplOpen, setTplOpen] = useState(false);
   const endRef = useRef<HTMLDivElement>(null);
   const textRef = useRef(text);
   textRef.current = text;
@@ -467,8 +475,14 @@ export default function ChatClient() {
   const lastToy = [...msgs].reverse().find((m) => m.role === "toy");
   /** "Add an aircraft or photos" / Template: put the labelled template in the box and focus it. */
   const startAdd = () => {
-    setAdding(true);
+    setAdding(true); setQuoting(false); setTplOpen(false);
     setText((v) => (v.trim() ? v : ui.template));
+    setTimeout(() => boxRef.current?.focus(), 0);
+  };
+  /** Template → Quote: the routing and the options as labelled lines (blank ones are skipped). */
+  const startQuote = () => {
+    setQuoting(true); setAdding(false); setTplOpen(false);
+    setText((v) => (v.trim() ? v : ui.quoteTemplate));
     setTimeout(() => boxRef.current?.focus(), 0);
   };
 
@@ -491,7 +505,7 @@ export default function ChatClient() {
           <button type="button" className="secondary" onClick={startAdd} aria-pressed={adding}><Icon name="upload" />{ui.doAdd}</button>
           <Link href="/fleet" className="btn secondary"><Icon name="search" />{ui.doFind}</Link>
         </div>
-        <p className="small muted" style={{ margin: "8px 0 0" }}>{adding ? ui.addHint : ui.askHint}</p>
+        <p className="small muted" style={{ margin: "8px 0 0" }}>{adding ? ui.addHint : quoting ? ui.quoteHint : ui.askHint}</p>
       </div>
 
       {msgs.map((m) =>
@@ -567,7 +581,13 @@ export default function ChatClient() {
         <input ref={fileRef} type="file" hidden accept="image/jpeg,image/png,image/webp,application/pdf" multiple onChange={(e) => setFiles([...(e.target.files ?? [])])} />
         <div className="composer-bar">
           <button type="button" className="secondary" onClick={() => fileRef.current?.click()} aria-label={ui.attach}><Icon name="photos" />{files.length > 0 && <b>{files.length}</b>}<span className="lbl">{files.length > 0 ? "" : ui.attach}</span></button>
-          <button type="button" className="secondary" onClick={startAdd}>{ui.templateBtn}</button>
+          <button type="button" className="secondary" onClick={() => setTplOpen((o) => !o)} aria-expanded={tplOpen}>{ui.templateBtn}</button>
+          {tplOpen && (
+            <>
+              <button type="button" className="secondary" onClick={startQuote}><Icon name="quote" />{ui.tplQuote}</button>
+              <button type="button" className="secondary" onClick={startAdd}><Icon name="plane" />{ui.tplAircraft}</button>
+            </>
+          )}
           {canListen && <button type="button" className={listening ? "danger" : "secondary"} onClick={toggleMic} aria-pressed={listening}><Icon name="mic" /><span className="lbl">{listening ? ui.stop : ui.speak}</span></button>}
           <button type="button" className="send" onClick={() => send()} disabled={pending || (!text.trim() && files.length === 0)} aria-busy={pending}>{pending ? <><span className="spinner" aria-hidden="true" />{ui.working}</> : <><Icon name="send" />{ui.send}</>}</button>
         </div>

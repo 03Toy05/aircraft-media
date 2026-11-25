@@ -118,8 +118,53 @@ function aircraftOnly(line: string): string[] {
     .replace(/\b(?:quotes?|quotations?|photos?|pictures?|pics?|images?|template|message)\b|報價|报价|相片|照片/gi, " ")
     .replace(/\s{2,}/g, " ")
     .split(/\s*(?:,|，|、|&|\band\b|\bplus\b|和|及)\s*/i)
-    .map((x) => x.replace(/^(?:the|my|a|an)\s+/i, "").replace(/[.!?。！？:：]+$/, "").trim())
+    .map((x) => x.replace(/^(?:the|my|a|an)\s+/i, "").replace(/^[\s:：\-–—|]+|[\s.!?。！？:：\-–—|]+$/g, "").trim())
     .filter((x) => x && !COUNT_ONLY.test(x) && !POLITE.test(x));
+}
+
+/** Labels in the chat's quote template and in typed requests ("Operator: Phenix Jet | Aircraft: Global 7500 | Price: USD 248,000"). */
+const FIELD_LABELS: [string, RegExp][] = [
+  ["date", /^(?:date|day|日期)$/i],
+  ["from", /^(?:from|dep(?:arture)?|origin|出發|出发|由|起飛|起飞)$/i],
+  ["to", /^(?:to|arr(?:ival)?|dest(?:ination)?|到達|到达|目的地|至)$/i],
+  ["time", /^(?:time|etd|dep(?:arture)?\s*time|departs|時間|时间|起飛時間|起飞时间)$/i],
+  ["pax", /^(?:pax|passengers?|乘客|人數|人数)$/i],
+  ["operator", /^(?:operator|營運商|营运商|運營商|运营商)$/i],
+  ["aircraft", /^(?:aircraft|aircraft type|type|jet|tail|tail number|飛機|飞机|機型|机型)$/i],
+  ["price", /^(?:price|cost|rate|價格|价格|價錢|价钱)$/i],
+];
+const LABEL_WORDS = "date|day|from|to|dep(?:arture)?|arr(?:ival)?|time|etd|pax|passengers?|operator|aircraft(?: type)?|type|tail(?: number)?|price|cost|日期|出發|出发|到達|到达|時間|时间|乘客|營運商|营运商|飛機|飞机|機型|机型|價格|价格";
+const LABELLED_SPLIT = new RegExp(`\\s*[|｜;；]\\s*|[,，]\\s*(?=(?:${LABEL_WORDS})\\s*[:：])`, "i");
+
+type Labelled = { route?: string; operator?: string; aircraft?: string; price?: string; blank?: boolean };
+
+/** A line of labelled fields, or null when it has none. Blank fields ("Date: | From: |") give { blank: true }. */
+function readLabelled(line: string): Labelled | null {
+  const body = line.replace(/^\s*(?:leg|option|航段|選項|选项)\s*\d*\s*[-–—.)]?\s*/i, "");
+  const f: Record<string, string> = {};
+  let labelled = 0;
+  for (const part of body.split(LABELLED_SPLIT)) {
+    const m = part.match(/^\s*([^:：]{1,24}?)\s*[:：]\s*(.*)$/);
+    if (!m) continue;
+    const key = FIELD_LABELS.find(([, re]) => re.test(m[1].trim()))?.[0];
+    if (!key) continue;
+    labelled++;
+    if (m[2].trim()) f[key] = m[2].trim();
+  }
+  if (!labelled) return null;
+  if (!Object.keys(f).length) return { blank: true };
+  if (f.from || f.to || f.date || f.time || f.pax) {
+    if (!f.from || !f.to) return { blank: true };
+    return { route: [`${f.from}-${f.to}`, f.date ?? "", f.time ?? "", f.pax ? `${f.pax.replace(/\D+$/, "")} pax` : ""].filter(Boolean).join(" ") };
+  }
+  return { operator: f.operator, aircraft: f.aircraft, price: f.price };
+}
+
+const MONEY_ALL = new RegExp(MONEY.source, "gi");
+/** "Phenix Jet G7500 USD 248k, Tag G650ER USD 230k": one line per aircraft when a line carries several prices. */
+function splitPricedLine(line: string): string[] {
+  if ((line.match(MONEY_ALL) ?? []).length < 2) return [line];
+  return line.split(/\s*[,，;；]\s*(?=\D)/).filter(Boolean);
 }
 
 /**
@@ -130,7 +175,7 @@ function aircraftOnly(line: string): string[] {
  * and the photo kinds wanted. The first line must ask for a quote.
  */
 export function parseQuoteRequest(message: string, today = new Date()): QuoteRequest | null {
-  const lines = message.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+  const lines = message.split(/\r?\n/).map((l) => l.trim()).filter(Boolean).flatMap(splitPricedLine);
   if (!lines.length) return null;
   const what: string[] = [];
   const prices: string[] = [];
@@ -138,7 +183,20 @@ export function parseQuoteRequest(message: string, today = new Date()): QuoteReq
   let pending: string | null = null; // a price typed before its aircraft
   const legs: Leg[] = [];
   const unknown: string[] = [];
-  for (const [n, raw] of lines.entries()) {
+  let pendingOperator: string | null = null; // "Operator: X" on its own line, the aircraft on the next
+  for (const [n, rawLine] of lines.entries()) {
+    // The template's labelled lines: a leg ("Date: 12 Dec | From: HKG | To: LHR") or an option ("Operator: … | Aircraft: … | Price: …").
+    let raw = rawLine;
+    const lab = n > 0 ? readLabelled(rawLine) : null;
+    if (lab?.blank) continue;
+    if (lab?.route) raw = lab.route;
+    else if (lab && (lab.operator || lab.aircraft)) {
+      if (!lab.aircraft) { pendingOperator = lab.operator ?? null; if (lab.price) pending = lab.price; continue; }
+      what.push([lab.operator ?? pendingOperator ?? "", lab.aircraft].filter(Boolean).join(" "));
+      prices.push(lab.price ?? pending ?? "");
+      pendingOperator = null; pending = null;
+      continue;
+    } else if (lab?.price) raw = `Price: ${lab.price}`;
     const k = takeKinds(raw);
     if (k.kinds) kinds = [...new Set([...(kinds ?? []), ...k.kinds])];
     const p = takePrice(k.rest);
@@ -193,7 +251,7 @@ function parseOneQuoteLine(message: string): { what: string[] } | null {
       .replace(/\b(?:a|an)\s+(?=\s)/gi, " ")
       .replace(/\b(?:template|templates|message|photos?|pictures?|pics?|images?|please|thanks?|thank you)\b/gi, " ")
       .replace(/^\s*(?:a|an)\s+/i, " ");
-    const what = body.split(/\s*(?:,|&|\band\b|\bplus\b|\bwith\b)\s*/i).map((x) => x.trim().replace(/^(?:the|my|a|an)\s+/i, "").trim()).filter(Boolean);
+    const what = body.split(/\s*(?:,|&|\band\b|\bplus\b|\bwith\b)\s*/i).map((x) => x.trim().replace(/^[\s:：\-–—|]+|[\s:：\-–—|]+$/g, "").replace(/^(?:the|my|a|an)\s+/i, "").trim()).filter(Boolean);
     return { what };
   }
   // No "quote" word: "give me X and Y template and photos" (needs a request verb and a template/message word).
