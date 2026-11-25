@@ -14,16 +14,27 @@ import { textOn } from "./branding";
 /**
  * A quote version as a PDF (A4) in the broker's look (logo and colour): a summary page (greeting, routing table with
  * local and UTC times, the options with their prices, closing), then one page per aircraft in the same fixed layout
- * (title band with the price, details, exterior / two cabins / floor plan). Font: Noto Sans TC (SIL OFL), as a subset.
+ * (title band with the price, details, exterior / two cabins / floor plan). Font: Noto Sans TC (SIL OFL): a small Latin/Cyrillic TrueType copy embedded whole, or the full font as a subset for Chinese and Japanese.
  */
 
 /** Languages the embedded font covers completely; the others are read on the client's link instead. */
 export const PDF_LANGUAGES: QuoteLanguage[] = ["en", "zh-Hant", "ja", "vi", "fr", "de", "id", "ru"];
 export const pdfSupported = (lang: string) => (PDF_LANGUAGES as string[]).includes(lang);
 
-const FONT_FILE = path.join(process.cwd(), "src", "data", "fonts", "NotoSansTC-Regular.otf");
-let fontBytes: Buffer | null = null;
-const font = () => (fontBytes ??= fs.readFileSync(FONT_FILE));
+const FONT_DIR = path.join(process.cwd(), "src", "data", "fonts");
+/** Full font (CFF outlines), embedded as a subset: needed for Chinese and Japanese. */
+const CJK_FONT = path.join(FONT_DIR, "NotoSansTC-Regular.otf");
+/**
+ * Latin, Vietnamese, Greek and Cyrillic only, as TrueType outlines (made from the same font with fontTools), embedded
+ * whole. Phone PDF apps (Honor PDF) showed mixed-up letters with the CFF subset; TrueType embedded whole is the
+ * most widely readable form.
+ */
+const LATIN_FONT = path.join(FONT_DIR, "NotoSansTC-Latin.ttf");
+const fontCache = new Map<string, Buffer>();
+const fontFile = (file: string) => fontCache.get(file) ?? (fontCache.set(file, fs.readFileSync(file)), fontCache.get(file)!);
+/** Characters the Latin font does not have (Chinese, Japanese, Thai, Arabic...). */
+const BEYOND_LATIN = /[^\u0000-\u024F\u0300-\u04FF\u1E00-\u1EFF\u2000-\u206F\u20A0-\u20CF\u2100-\u215F\u2190-\u21FF\u2212\u2600-\u26FF]/;
+export const needsCjkFont = (lang: string, text: string) => lang === "zh-Hant" || lang === "ja" || BEYOND_LATIN.test(text);
 
 export interface PdfQuote {
   reference: string; version: number; savedAt: Date; quote: QuoteSnapshot; broker: { name: string; email: string };
@@ -89,7 +100,10 @@ export async function quotePdf(q: PdfQuote, loadPhoto: PhotoLoader): Promise<Uin
   doc.setCreator(q.broker.name || "Quotation");
   doc.setProducer(q.broker.name || "Quotation");
   // No joined letters (fi, fl): the subset drops the joined forms, which left gaps like "f nd".
-  const F = await doc.embedFont(font(), { subset: true, features: { liga: false, clig: false, dlig: false } });
+  const noLigatures = { liga: false, clig: false, dlig: false };
+  const F = needsCjkFont(lang, JSON.stringify(q.quote) + q.broker.name + q.broker.email)
+    ? await doc.embedFont(fontFile(CJK_FONT), { subset: true, features: noLigatures })
+    : await doc.embedFont(fontFile(LATIN_FONT), { subset: false, features: noLigatures });
   const color = q.brand?.color && /^#[0-9a-fA-F]{6}$/.test(q.brand.color) ? q.brand.color : "#1f3a5f";
   const ACCENT = hexColor(color);
   const ON_ACCENT = textOn(color) === "#ffffff" ? rgb(1, 1, 1) : rgb(0.07, 0.07, 0.07);
