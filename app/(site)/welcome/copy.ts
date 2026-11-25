@@ -32,7 +32,8 @@ export type Copy = {
   questions: Record<QuestionKey, string>;
   what: { headline: string; items: string[]; next: string };
   show: { headline: string; soon: string; caption: string };
-  begins: { headline: string; paragraphs: string[]; vision: string };
+  /** The brand signature (TOY-14): `lead` + `tail`, then the airplane in place of the final period; `plain` is what screen readers hear. */
+  begins: { lead: string; tail: string; plain: string; paragraphs: string[]; vision: string };
   price: { headline: string; body: string; soon: string };
   cta: string;
   footer: { rights: string; privacy: string; terms: string; contact: string };
@@ -65,7 +66,9 @@ export const COPY: Record<SiteLang, Copy> = {
     },
     show: { headline: "Watch me at work.", soon: "Demo coming soon", caption: "Upload. Organize. Ask. Quote." },
     begins: {
-      headline: "Everything begins as a Toy.",
+      lead: "Everything begins as a ",
+      tail: "Toy",
+      plain: "Everything begins as a Toy.",
       paragraphs: [
         "My creator spent 14 years as an aviation charter broker. After years of searching for aircraft photos, juggling platforms and preparing quotations, he wanted to build the assistant he always wished he had.",
         "Not every broker can afford an assistant. So he decided to build one.",
@@ -84,7 +87,7 @@ export const COPY: Record<SiteLang, Copy> = {
   },
   "zh-hant": {
     tagline: "為航空業帶來一點幫助。",
-    greeting: "你好，我是 Toy。",
+    greeting: "我是Toy",
     promise: "每位經紀都值得擁有一位助理。",
     signIn: "登入",
     languageLabel: "語言",
@@ -108,7 +111,9 @@ export const COPY: Record<SiteLang, Copy> = {
     },
     show: { headline: "看我工作。", soon: "示範影片即將推出", caption: "上載。整理。詢問。報價。" },
     begins: {
-      headline: "一切由一個 Toy 開始。",
+      lead: "一切從Toy",
+      tail: "開始",
+      plain: "一切從Toy開始。",
       paragraphs: [
         "我的創造者當了 14 年航空包機經紀。多年來，他不斷尋找飛機相片、在不同平台之間周旋、製作報價，於是想打造一位他一直渴望擁有的助理。",
         "不是每位經紀都請得起助理。所以他決定自己造一個。",
@@ -127,7 +132,7 @@ export const COPY: Record<SiteLang, Copy> = {
   },
   "zh-hans": {
     tagline: "为航空业带来一点帮助。",
-    greeting: "你好，我是 Toy。",
+    greeting: "我是Toy",
     promise: "每位经纪都值得拥有一位助理。",
     signIn: "登录",
     languageLabel: "语言",
@@ -151,7 +156,9 @@ export const COPY: Record<SiteLang, Copy> = {
     },
     show: { headline: "看我工作。", soon: "演示视频即将推出", caption: "上传。整理。询问。报价。" },
     begins: {
-      headline: "一切由一个 Toy 开始。",
+      lead: "一切从Toy",
+      tail: "开始",
+      plain: "一切从Toy开始。",
       paragraphs: [
         "我的创造者当了 14 年航空包机经纪。多年来，他不断寻找飞机照片、在不同平台之间周旋、制作报价，于是想打造一位他一直渴望拥有的助理。",
         "不是每位经纪都请得起助理。所以他决定自己造一个。",

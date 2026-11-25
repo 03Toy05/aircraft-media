@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type { Metadata } from "next";
 import Toy from "../../_components/Toy";
+import BrandSignature from "../../_components/BrandSignature";
 import { COPY, HTML_LANG, LANGS, LANG_NAMES, QUESTIONS, parseLang, parseQuestion, type QuestionKey, type SiteLang } from "./copy";
 
 // Preview path: kept out of search engines until the owner approves the launch (move to "/" and drop this line then).
@@ -86,7 +87,7 @@ export default async function WelcomePage({ searchParams }: { searchParams: Prom
           )}
           {q === "begins" && (
             <>
-              <h2>{t.begins.headline}</h2>
+              <BrandSignature key={lang} lead={t.begins.lead} tail={t.begins.tail} plain={t.begins.plain} takeoff />
               {t.begins.paragraphs.map((p) => <p key={p}>{p}</p>)}
               <p className="site-vision">{t.begins.vision}</p>
             </>

@@ -1,5 +1,5 @@
 # Toy Design Rulebook
-Version 1.3 | 25 November 2026 | Approved design direction
+Version 1.4 | 25 November 2026 | Approved design direction
 
 ## TOY-01 — Identity and purpose
 Toy is the personal aircraft media assistant of Aircraft Media (aircraftmedia.my), the founder's first creation developed with the help of AI. The product itself does not use generative AI for Toy's commands at launch. Toy is the interface, not merely a decorative mascot. It helps aviation charter brokers and does not replace their judgment.
@@ -92,10 +92,30 @@ Toy stays the original yellow rounded block (TOY-02), with two approved aviation
 
 **Accessibility.** The SVG is decorative wherever a readable status text sits beside it (for example "Toy is working on it…" in the chat, announced politely).
 
+## TOY-12 — Typography
+Rounded geometric identity approved. Preserve the fonts, sizes and typography already used on the existing website; do not migrate fonts or resize the website. Earlier Nunito / Manrope / IBM Plex Mono and Noto Sans TC/SC proposals are design references only where compatible with the existing implementation. Use compact aviation values and readable localized labels. No new font dependencies for branding.
+
+## TOY-13 — Mobile design principle
+Spacious interaction, compact information. Prioritize phone use, comfortable touch targets, readable text and natural scrolling where necessary. Keep aircraft data compact. This principle does not authorize a website redesign or font-size changes.
+
+## TOY-14 — Brand signature and meaning
+Canonical text remains **Everything begins as a Toy.** Replace only the visible final period with a tiny custom gold SVG airplane (`public/brand/airplane.svg`, gold #C2934D): inline immediately after "Toy", baseline aligned, width and height 0.35em, margin-left 0.045em, vertical-align -0.015em, rotated 40 degrees clockwise from nose-up. No emoji, fixed text coordinates, overlap with the "y", or extra visible period. Keep the normal period in accessible and plain text.
+
+Chinese: Traditional **一切從Toy開始**, Simplified **一切从Toy开始**; the airplane replaces the final 。 (accessible text keeps it). Toy's Chinese self-introduction is **我是Toy**.
+
+Signature animation: static punctuation by default; on explicit playback or a one-time scripted transition (the public site plays it once when "How it begins" opens), the airplane flies along a curved path starting at the punctuation's centre, revealing individual round sage dots progressively behind it along the same path. The trail stays visible at the end. No looping; reduced motion keeps the static punctuation. Reference duration 2600 ms; no backend dependency. Implementation: `app/_components/BrandSignature.tsx`.
+
+Standalone assets (`public/brand/`): 01 Foundation to flight (`foundation-to-flight.svg`) and 02 The journey (`the-journey.svg`) only; the underline (`brand-underline.svg`). Solid ink #293C43, sage #ADC5B8, round dotted stroke 2.5, dash array 1 6. The wordmark variation 03 is rejected.
+
+Combined composition: the centred master. Character scene viewBox 0 0 340 175, block centred at x170, shadow x170 y148, ground M90 160 H250, runway M95 168 H245. The two-line statement is centred beneath it with the inline airplane punctuation. Underline in a separate centred 340 × 40 viewBox: solid M40 26 H195; dotted M195 26 Q255 26 307 10. Do not shift, shorten or re-centre these paths independently. The vision statement and the existing wordmark are centred beneath. Scale the whole composition proportionally. Production draws Toy with the master component (TOY-02), not the reference drawing in `centered-toy.svg`.
+
+Meaning: Toy = beginning of creation; solid line = reliability and foundation; dotted line = exploration and possibilities; small airplane = aviation and moving forward; takeoff = the beginning of a journey. Reuse the approved assets in marketing, video and quotation branding where appropriate; no changes to quotation data or workflows.
+
 ## Version history
 | Version | Date | Changes (approved by the owner) |
 |---|---|---|
 | 1.0 | 24 November 2026 | First approved direction. |
-| 1.3 | 25 November 2026 | Working now shows the ready face with wings out instead of flat eyes and three dots (TOY-04, TOY-11). |
-| 1.2 | 25 November 2026 | TOY-11 Aviation identity added: retractable wings (the one accessory exception to TOY-02) and flight movements with solid ground, dashed runway and dotted flight path; Takeoff and Landing transitions (TOY-04). |
 | 1.1 | 25 November 2026 | Toy is the Aircraft Media logo (TOY-01). Soft shadow defined for larger placements; aircraft and other accessories considered and declined (TOY-02). New Greeting state; head tilt reserved for Greeting; Completed and Goodbye stay upright with one bounce; Needs help leans the other way (TOY-04). Spoken commands suspended for now; Listening not shown and voice not advertised (TOY-04, TOY-05, TOY-06). "No AI claims" replaced by "AI claims must be accurate" (TOY-06). Component reference added (TOY-07). Public site Greeting/Ready behaviour (TOY-08). |
+| 1.2 | 25 November 2026 | TOY-11 Aviation identity added: retractable wings (the one accessory exception to TOY-02) and flight movements with solid ground, dashed runway and dotted flight path; Takeoff and Landing transitions (TOY-04). |
+| 1.3 | 25 November 2026 | Working now shows the ready face with wings out instead of flat eyes and three dots (TOY-04, TOY-11). |
+| 1.4 | 25 November 2026 | Owner's final v1.2 package merged: TOY-12 Typography, TOY-13 Mobile principle, TOY-14 Brand signature (airplane punctuation, progressive dotted takeoff, centred composition, locked line geometry, approved SVG assets). Chinese brand line 一切從Toy開始 / 一切从Toy开始 and greeting 我是Toy. Decisions from 1.1–1.3 kept where the package differed (working face, greeting tilt, Toy logo, voice suspended, accurate AI wording). |
