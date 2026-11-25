@@ -67,3 +67,26 @@
   .site-main { padding: 4px 16px 12px; }
   .site-brand-tag { display: block; }
 }
+
+/* Brand composition (/brand, TOY-14): centred, and the whole composition scales together with its width. */
+.brand-page { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 48px; padding: 8px 16px 48px; }
+.brand-comp { width: min(100%, 480px); display: flex; flex-direction: column; align-items: center; text-align: center; }
+.brand-scene { position: relative; width: 100%; aspect-ratio: 340 / 175; }
+.brand-scene > svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+/* Toy's 100-unit drawing holds an 80-unit block, so a 100-unit block needs 125 units, centred on x170, y75. */
+.brand-scene-toy { position: absolute; left: 31.62%; top: 7.14%; width: 36.76%; }
+.brand-scene-toy .toy { width: 100%; height: auto; }
+.brand-comp-statement { margin: 4px 0 0; font-size: clamp(28px, 7vw, 38px); line-height: 1.2; width: 100%; }
+.brand-comp-underline { display: block; width: 100%; height: auto; }
+.brand-comp-vision { margin: 4px 0 0; color: var(--ink-soft); line-height: 1.8; }
+.brand-comp-wordmark { margin: 16px 0 0; font-weight: 700; }
+.brand-comp-controls { display: flex; gap: 10px; margin-top: 20px; flex-wrap: wrap; justify-content: center; }
+.brand-comp-controls .site-btn { min-height: 44px; background: #fff; color: var(--ink); cursor: pointer; font: inherit; font-weight: 600; }
+.toy-site .brand-comp-controls .site-btn-ink { background: var(--ink); color: var(--canvas); }
+.brand-assets { width: min(100%, 480px); display: flex; flex-direction: column; gap: 28px; }
+.brand-assets figure { margin: 0; display: flex; flex-direction: column; gap: 8px; }
+.brand-assets img { width: 100%; height: auto; }
+.brand-assets figcaption { font-weight: 700; text-align: center; }
+/* The app's "photo still loading" shimmer (globals.css) is cleared by a script the public site doesn't load: the public
+   site's images are small brand graphics that load at once, so they get no shimmer. */
+.toy-site main img:not([data-loaded]) { background: none; animation: none; }

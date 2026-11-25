@@ -15,7 +15,8 @@ const DURATION_MS = 2600;
  * `lead` is the text before the last word; `tail` is the last word, kept on one line with the plane.
  */
 export default function BrandSignature({ lead, tail, plain, as: Tag = "h2", takeoff = false, className }: {
-  lead: string;
+  /** Text before the last word; may hold a line break (<br />) for the two-line composition. */
+  lead: React.ReactNode;
   tail: string;
   plain: string;
   as?: "h1" | "h2" | "p";
@@ -82,7 +83,7 @@ export default function BrandSignature({ lead, tail, plain, as: Tag = "h2", take
     });
     observer.observe(stage);
     return () => { observer.disconnect(); reset(); };
-  }, [takeoff, lead, tail]);
+  }, [takeoff, tail, plain]);
 
   return (
     <Tag className={["brand-signature", className].filter(Boolean).join(" ")}>

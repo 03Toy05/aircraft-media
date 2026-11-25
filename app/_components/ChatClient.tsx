@@ -49,7 +49,7 @@ const UI_EN = {
 };
 type UI = typeof UI_EN;
 const UI_HANT: UI = {
-  hi: "你好，我是 Toy。",
+  hi: "我是Toy",
   intro: "有什麼可以幫你？",
   doQuote: "草擬報價", doAdd: "新增飛機或相片", doFind: "搜尋飛機",
   addHint: "填上你知道的資料（其餘留空），有相片可一併附上，然後按傳送。確認前不會儲存任何內容。",
