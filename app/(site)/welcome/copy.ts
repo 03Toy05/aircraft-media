@@ -59,10 +59,11 @@ export const COPY: Record<SiteLang, Copy> = {
       items: [
         "Organize and manage your aircraft photos.",
         "Find aircraft and operator information.",
-        "Prepare client quotations with photos.",
+        "Prepare client quotations with photos, as a message, a PDF or a link.",
+        "Put your own logo and colour on every PDF and link.",
         "Work with typed commands.",
       ],
-      next: "Coming next: PDF quotations with your own template.",
+      next: "Coming next: itineraries for confirmed trips.",
     },
     show: { headline: "Watch me at work.", soon: "Demo coming soon", caption: "Upload. Organize. Ask. Quote." },
     begins: {
@@ -104,10 +105,11 @@ export const COPY: Record<SiteLang, Copy> = {
       items: [
         "整理和管理你的飛機相片。",
         "查找飛機和營運商資料。",
-        "為客戶準備附相片的報價。",
+        "為客戶準備附相片的報價：訊息、PDF 或連結。",
+        "每份 PDF 和連結都用上你自己的標誌和顏色。",
         "以輸入指令的方式與我合作。",
       ],
-      next: "即將推出：使用你自己範本的 PDF 報價。",
+      next: "即將推出：已確認行程的行程表。",
     },
     show: { headline: "看我工作。", soon: "示範影片即將推出", caption: "上載。整理。詢問。報價。" },
     begins: {
@@ -149,10 +151,11 @@ export const COPY: Record<SiteLang, Copy> = {
       items: [
         "整理和管理你的飞机照片。",
         "查找飞机和运营商资料。",
-        "为客户准备附照片的报价。",
+        "为客户准备附照片的报价：消息、PDF 或链接。",
+        "每份 PDF 和链接都用上你自己的标志和颜色。",
         "以输入指令的方式与我合作。",
       ],
-      next: "即将推出：使用你自己模板的 PDF 报价。",
+      next: "即将推出：已确认行程的行程表。",
     },
     show: { headline: "看我工作。", soon: "演示视频即将推出", caption: "上传。整理。询问。报价。" },
     begins: {

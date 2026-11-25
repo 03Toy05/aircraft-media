@@ -1,5 +1,5 @@
 # Toy Design Rulebook
-Version 1.4 | 25 November 2026 | Approved design direction
+Version 1.5 | 25 November 2026 | Approved design direction
 
 ## TOY-01 — Identity and purpose
 Toy is the personal aircraft media assistant of Aircraft Media (aircraftmedia.my), the founder's first creation developed with the help of AI. The product itself does not use generative AI for Toy's commands at launch. Toy is the interface, not merely a decorative mascot. It helps aviation charter brokers and does not replace their judgment.
@@ -64,7 +64,7 @@ The one implementation is `app/_components/Toy.tsx` (motion in `app/_components/
 Concept A: single-screen conversational interface. Greeting, character, central response panel, four predefined questions: “What can you do?”, “Show me how”, “How it begins”, “How much?”. Clicking changes the central panel, not page scroll position. Toy shows Greeting on the opening screen and Ready once a question is chosen; clicking Toy or the logo returns to the greeting. Sign-in and subscription remain directly accessible. Mobile and zoom may scroll when needed for accessibility. Text input is a later phase, not V1.
 
 ## TOY-09 — Evolution
-Toy remains the little block even as its supported tasks expand. Future assistants may have distinct identities. No public CBOS branding at launch. Do not imply future PDF quotation or AI capabilities are available today.
+Toy remains the little block even as its supported tasks expand. Future assistants may have distinct identities. No public CBOS branding at launch. PDF quotations and client links in the broker's own logo and colour are live (since November 2026) and may be described; do not imply itineraries or AI capabilities are available today. The client's PDF and link carry the broker's brand, not Toy or Aircraft Media.
 
 ## TOY-10 — Governance
 This file is the authoritative Toy design reference. Website and video handoffs reference it rather than redefine it. Keep version history; propose material changes to the owner before implementation. Reuse existing components where possible. Verify actual behavior and visual consistency, not unnecessary new architecture or audit layers.
@@ -119,3 +119,4 @@ Meaning: Toy = beginning of creation; solid line = reliability and foundation; d
 | 1.2 | 25 November 2026 | TOY-11 Aviation identity added: retractable wings (the one accessory exception to TOY-02) and flight movements with solid ground, dashed runway and dotted flight path; Takeoff and Landing transitions (TOY-04). |
 | 1.3 | 25 November 2026 | Working now shows the ready face with wings out instead of flat eyes and three dots (TOY-04, TOY-11). |
 | 1.4 | 25 November 2026 | Owner's final v1.2 package merged: TOY-12 Typography, TOY-13 Mobile principle, TOY-14 Brand signature (airplane punctuation, progressive dotted takeoff, centred composition, locked line geometry, approved SVG assets). Chinese brand line 一切從Toy開始 / 一切从Toy开始 and greeting 我是Toy. Decisions from 1.1–1.3 kept where the package differed (working face, greeting tilt, Toy logo, voice suspended, accurate AI wording). |
+| 1.5 | 25 November 2026 | Merged into the app: TOY-09 updated now that PDF quotations and client links are live (they carry the broker's brand); the signed-in app uses the TOY-03 tokens (Canvas background, Ink text and controls, Sage link underline). |
