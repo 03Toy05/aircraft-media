@@ -685,5 +685,7 @@ export const brands = pgTable("brands", {
   logoHeight: integer("logo_height"),
   /** "#1f3a5f" */
   color: text("color"),
+  /** How the reference and version read on quotes: "{ref} | v{n}" (default), "{ref} Rev.{n}"… */
+  versionFormat: text("version_format"),
   updatedAt: updated(),
 });

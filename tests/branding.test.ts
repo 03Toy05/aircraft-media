@@ -16,7 +16,7 @@ const images = async (bytes: Uint8Array) => {
 describe("Quote branding", () => {
   it("keeps a colour and a logo per workspace, and puts them on the PDF and the client link", async () => {
     const t = await setup();
-    expect(await getBrand(t.db, t.actor.tenantId)).toEqual({ color: DEFAULT_COLOR, logo: null });
+    expect(await getBrand(t.db, t.actor.tenantId)).toEqual({ color: DEFAULT_COLOR, logo: null, versionFormat: "{ref} | v{n}" });
     expect(validColor("#0a7c3e")).toBe(true);
     expect(validColor("red")).toBe(false);
     expect(textOn("#ffffff")).toBe("#111111");
@@ -41,7 +41,7 @@ describe("Quote branding", () => {
     const snap = cleanSnapshot({ lang: "en", text: "x", options: [{ aircraftId: randomUUID(), type: "Gulfstream G650", price: "USD 1", photos: [] }], builder: {} });
     const { requestId } = await saveQuoteVersion(t.db, t.actor, null, legs, snap);
     const who = { isAdmin: false, actor: t.actor, email: "owner@example.test" };
-    expect(await images((await brokerQuotePdf(t.db, t.store, who, requestId))!.bytes)).toBe(1);
+    expect(await images((await brokerQuotePdf(t.db, t.store, who, requestId))!.bytes)).toBe(2); // the logo on the summary and the aircraft page
     const link = await ensureLink(t.db, t.actor, requestId);
     b = (await openLink(t.db, link.token))!.brand;
     expect(b.color).toBe("#0a7c3e");

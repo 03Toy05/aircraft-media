@@ -14,12 +14,16 @@ export interface QuoteSnapshotPhoto { id: string; label: string; classification:
 export interface QuoteSnapshotOption {
   aircraftId: string; type: string; operator: string | null; tail: string | null; base: string | null;
   yom: number | null; yor: number | null; capacity: number | null; price: string; extra: string; photos: QuoteSnapshotPhoto[];
+  /** yes | no | tbc | unknown (Wi-Fi), yes | no | unknown (smoking, pets), and the aircraft's notes ("Owner's approval required"). */
+  wifi?: string; smoking?: string; pets?: string; notes?: string | null;
 }
 /** What a saved quote holds: the routing and message as sent, each option as quoted, and the Quote page's state to reopen it. */
 export interface QuoteSnapshot {
   lang: string; text: string; legs: Leg[]; options: QuoteSnapshotOption[]; builder: Record<string, unknown>;
   /** The opening and closing lines as written (for the client's page and the PDF), and whether times show UTC. */
   greeting?: string | null; closing?: string | null; utc?: boolean;
+  /** The broker's own name for this version ("Revised price"), shown with the reference. */
+  label?: string | null;
 }
 
 
@@ -103,11 +107,12 @@ export function cleanSnapshot(input: unknown): QuoteSnapshot {
   const options: QuoteSnapshotOption[] = s.options.map((o) => ({
     aircraftId: str(o?.aircraftId, 40), type: str(o?.type, 120), operator: str(o?.operator, 120) || null, tail: str(o?.tail, 20) || null, base: str(o?.base, 200) || null,
     yom: numOrNull(o?.yom), yor: numOrNull(o?.yor), capacity: numOrNull(o?.capacity), price: str(o?.price, 120), extra: str(o?.extra, 500),
+    wifi: str(o?.wifi, 10) || "unknown", smoking: str(o?.smoking, 10) || "unknown", pets: str(o?.pets, 10) || "unknown", notes: str(o?.notes, 1000) || null,
     photos: (Array.isArray(o?.photos) ? o.photos : []).slice(0, 30).map((p) => ({ id: str(p?.id, 40), label: str(p?.label, 40), classification: str(p?.classification, 30) })).filter((p) => /^[0-9a-f-]{36}$/.test(p.id)),
   }));
   const snap: QuoteSnapshot = {
     lang: str(s.lang, 10) || "en", text: s.text.slice(0, 20_000), legs: [], options,
-    greeting: str(s.greeting, 2000) || null, closing: str(s.closing, 2000) || null, utc: s.utc !== false,
+    greeting: str(s.greeting, 2000) || null, closing: str(s.closing, 2000) || null, utc: s.utc !== false, label: str(s.label, 80).trim() || null,
     builder: (s.builder && typeof s.builder === "object" ? s.builder : {}) as Record<string, unknown> };
   if (JSON.stringify(snap).length > MAX_SNAPSHOT_BYTES) throw new Error("This quote is too large to save.");
   return snap;
@@ -158,3 +163,6 @@ export async function getVersion(db: Db, tenantId: string, requestId: string, ve
   const [v] = await db.select().from(quoteVersions).where(and(eq(quoteVersions.requestId, requestId), eq(quoteVersions.tenantId, tenantId), eq(quoteVersions.version, version)));
   return v ? { version: v.version, createdAt: v.createdAt, content: v.content as unknown as QuoteSnapshot } : null;
 }
+
+/** Whether the aircraft's notes say the owner must approve the flight ("Owner's approval required", "subject to owner's approval"). */
+export const needsOwnerApproval = (notes: string | null | undefined) => !!notes && /owner'?s?\s+approv|subject\s+to\s+owner|owner\s+approval/i.test(notes);

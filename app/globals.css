@@ -513,3 +513,5 @@ ul.history li:last-child { border-bottom: 0; }
 .brand-name { font-size: 1.2rem; font-weight: 700; }
 .brand-ref { display: flex; flex-direction: column; text-align: right; font-size: 0.85rem; color: #6b7280; }
 .brand-ref b { color: #111; font-size: 0.95rem; }
+
+.save-version .version-name { flex: 1 1 220px; min-width: 0; }

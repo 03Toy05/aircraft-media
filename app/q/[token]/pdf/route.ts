@@ -4,6 +4,7 @@ import { getFileStore } from "@/storage";
 import { readContentBytes } from "@/domain/media";
 import { openLink, quotePhotoIds } from "@/domain/quoteLinks";
 import { pdfSupported, quotePdf } from "@/domain/quotePdf";
+import { versionFileName } from "@/domain/branding";
 
 /** The client's PDF of the quote their link shows (latest version), with only that quote's photos. */
 export async function GET(_req: Request, ctx: { params: Promise<{ token: string }> }) {
@@ -18,7 +19,7 @@ export async function GET(_req: Request, ctx: { params: Promise<{ token: string 
   return new NextResponse(Buffer.from(pdf), {
     headers: {
       "Content-Type": "application/pdf",
-      "Content-Disposition": `inline; filename="${q.reference}-v${q.version}.pdf"`,
+      "Content-Disposition": `inline; filename="${versionFileName(q.brand.versionFormat, q.reference, q.version)}"`,
       "Cache-Control": "private, no-store",
       "X-Content-Type-Options": "nosniff",
       "Referrer-Policy": "no-referrer",

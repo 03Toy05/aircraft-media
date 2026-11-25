@@ -92,7 +92,7 @@ export default async function RequestPage({ params, searchParams }: { params: Pr
       {versions.map((v) => (
         <div key={v.id} className="card">
           <div className="people-head">
-            <span><b>Version {v.version}</b> <span className="muted small">· saved <LocalTime iso={v.createdAt.toISOString()} /></span></span>
+            <span><b>Version {v.version}</b>{v.content.label ? <> · <b>{v.content.label}</b></> : null} <span className="muted small">· saved <LocalTime iso={v.createdAt.toISOString()} /></span></span>
             <span style={{ display: "flex", gap: 6 }}>
               {pdfSupported(v.content.lang)
                 ? <a className="btn secondary small-btn" href={`/api/requests/${r.id}/pdf?version=${v.version}`} target="_blank" rel="noopener">PDF</a>

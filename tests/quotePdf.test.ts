@@ -34,7 +34,7 @@ describe("Quote PDF", () => {
     const snap = (lang: string, photos: string[]) => cleanSnapshot({
       lang, text: "x", greeting: "您好，以下是飛機選項：", closing: "Thank you",
       options: [{ aircraftId: randomUUID(), type: "Bombardier Global 6000", operator: "Sheet Air", price: "USD 210,000 + tax", yom: 2014, capacity: 13, extra: "From 12 Dec",
-        photos: photos.map((id, i) => ({ id, label: `P${i}`, classification: "exterior" })) }],
+        photos: photos.map((id, i) => ({ id, label: `P${i}`, classification: i === 0 ? "exterior" : "cabin" })) }],
       builder: { inc: { operator: true } },
     });
     const who = { isAdmin: false, actor: t.actor, email: "owner@example.test" };
@@ -45,8 +45,10 @@ describe("Quote PDF", () => {
     const { doc, n } = await imageCount(pdf!.bytes);
     expect(doc.getPageCount()).toBeGreaterThanOrEqual(1);
     expect(doc.getPage(0).getSize().width).toBeCloseTo(595.28, 1);
-    expect(doc.getTitle()).toBe(`${reference} · 飛機選項`);
-    expect(n).toBe(2); // two photos; the one that isn't theirs is left out
+    expect(doc.getTitle()).toBe(`您的包機方案 · ${reference} | v1`);
+    expect(pdf?.filename).toBe(`${reference}-v1.pdf`);
+    expect(n).toBe(2); // exterior + one cabin; the photo that isn't theirs is left out
+    expect(doc.getPageCount()).toBe(2); // the summary, then one page for the aircraft
     expect(pdf!.bytes.length).toBeLessThan(2_000_000); // the font goes in as a subset
 
     // Another workspace gets nothing; a language the font can't show gets no PDF.
@@ -56,4 +58,41 @@ describe("Quote PDF", () => {
     expect((await brokerQuotePdf(t.db, t.store, who, requestId, 1))?.version).toBe(1);
     expect(pdfSupported("en") && pdfSupported("ja") && !pdfSupported("zh-Hans") && !pdfSupported("ar")).toBe(true);
   }, 60_000);
+});
+
+describe("Fixed photo layout", () => {
+  it("puts one exterior, two cabin photos and the floor plan in their places", async () => {
+    const { photoSlots } = await import("../src/domain/quotePdf");
+    const p = (id: string, classification: string) => ({ id, classification });
+    expect(photoSlots([p("c1", "cabin"), p("e1", "exterior"), p("f1", "floor_plan"), p("c2", "cabin"), p("c3", "cabin"), p("e2", "exterior"), p("x", "combined")]))
+      .toEqual({ exterior: p("e1", "exterior"), cabins: [p("c1", "cabin"), p("c2", "cabin")], floorPlan: p("f1", "floor_plan") });
+    expect(photoSlots([p("o1", "other"), p("c1", "cabin")])).toEqual({ exterior: p("o1", "other"), cabins: [p("c1", "cabin")], floorPlan: null });
+    expect(photoSlots([])).toEqual({ exterior: null, cabins: [], floorPlan: null });
+  });
+});
+
+describe("Reference format, version names and owner's approval", () => {
+  it("writes the reference the broker's way, names files safely, and spots the owner's approval", async () => {
+    const { formatVersion, validVersionFormat, versionFileName, DEFAULT_VERSION_FORMAT } = await import("../src/domain/branding");
+    const { needsOwnerApproval, cleanSnapshot } = await import("../src/domain/requests");
+    expect(formatVersion(DEFAULT_VERSION_FORMAT, "AM-2611-003", 2)).toBe("AM-2611-003 | v2");
+    expect(formatVersion("{ref} Rev.{n}", "AM-2611-003", 2)).toBe("AM-2611-003 Rev.2");
+    expect(formatVersion("{ref}-{nn}", "AM-2611-003", 2)).toBe("AM-2611-003-02");
+    expect(formatVersion("no placeholders", "AM-2611-003", 2)).toBe("AM-2611-003 | v2"); // a broken format falls back
+    expect(validVersionFormat("{ref} Version {n}")).toBe(true);
+    expect(validVersionFormat("{ref} only")).toBe(false);
+    expect(validVersionFormat("<script>{ref}{n}")).toBe(false);
+    expect(versionFileName("{ref} | v{n}", "AM-2611-003", 2)).toBe("AM-2611-003-v2.pdf");
+    expect(versionFileName("{ref}/V{nn}", "AM-2611-003", 12)).toBe("AM-2611-003-V12.pdf");
+
+    expect(needsOwnerApproval("Owner's approval required. Pets TBC.")).toBe(true);
+    expect(needsOwnerApproval("subject to owner's approval")).toBe(true);
+    expect(needsOwnerApproval("Owner approval needed")).toBe(true);
+    expect(needsOwnerApproval("Pets on request")).toBe(false);
+    expect(needsOwnerApproval(null)).toBe(false);
+
+    const snap = cleanSnapshot({ lang: "en", text: "x", label: "  Revised price  ", options: [{ type: "G650", wifi: "yes", smoking: "no", pets: "tbc", notes: "Owner's approval required", photos: [] }], builder: {} });
+    expect(snap.label).toBe("Revised price");
+    expect(snap.options[0]).toMatchObject({ wifi: "yes", smoking: "no", pets: "tbc", notes: "Owner's approval required" });
+  });
 });

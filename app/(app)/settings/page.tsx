@@ -5,7 +5,7 @@ import { requireOwner } from "@/lib/session";
 import { LANGUAGES } from "@/domain/settings";
 import { MAX_PREFERRED_OPERATORS, getPreferredOperators } from "@/domain/directory";
 import { addNumberAction, changePasswordAction, deactivateNumberAction, saveBrandAction, setLanguageAction, setLibraryOptInAction, setPreferredOperatorsAction } from "../../actions";
-import { getBrand, logoDataUrl } from "@/domain/branding";
+import { VERSION_FORMATS, getBrand, logoDataUrl } from "@/domain/branding";
 import BrandForm from "../../_components/BrandForm";
 import { MIN_PASSWORD, hasPassword } from "@/domain/passwords";
 import Choice from "../../_components/Choice";
@@ -38,7 +38,7 @@ export default async function Settings({ searchParams }: { searchParams: SP }) {
       <div className="card" id="branding">
         <h3 style={{ marginTop: 0 }}>Quote branding</h3>
         <p className="small muted" style={{ marginTop: 0 }}>Your logo and colour on every quote PDF and client link. Clients see your brand, not Aircraft Media&apos;s.</p>
-        <BrandForm action={saveBrandAction} name={myName} color={brand.color} logo={logoDataUrl(brand)} />
+        <BrandForm action={saveBrandAction} name={myName} color={brand.color} logo={logoDataUrl(brand)} versionFormat={brand.versionFormat} formats={VERSION_FORMATS} />
       </div>
       <div className="grid g2">
         <div className="card">

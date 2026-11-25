@@ -169,6 +169,13 @@
       "when": 1795800000000,
       "tag": "0023_brands",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1795900000000,
+      "tag": "0024_brand_version_format",
+      "breakpoints": true
     }
   ]
 }

@@ -10,6 +10,11 @@ html:has(.cq), body:has(.cq) { background: var(--cq-bg, #f6f7f9); }
 .cq-title { font-size: 1.15rem; font-weight: 700; }
 .cq-muted, .cq-ref em { color: var(--cq-muted); }
 .cq-text { white-space: pre-line; margin: 0 0 16px; }
+/* The greeting and closing read like the headings. */
+.cq-lead { color: var(--cq-accent); font-size: 1.08rem; }
+/* Owner's approval: a sticker on the aircraft. */
+.cq-sticker { display: inline-block; margin: 2px 0 0 6px; padding: 1px 8px; border-radius: 999px; background: #fff3d1; border: 1px solid #d99a1a; color: #7f5400; font-size: 0.75rem; font-weight: 600; white-space: nowrap; }
+.cq-sticker-big { margin: 0 0 10px; font-size: 0.85rem; padding: 3px 12px; }
 .cq-card { background: #fff; border: 1px solid var(--cq-line); border-radius: 10px; padding: 16px; margin-bottom: 16px; }
 .cq-card h2 { font-size: 1.05rem; margin: 0 0 10px; color: var(--cq-accent); }
 .cq-leg { padding: 8px 0; border-top: 1px solid var(--cq-line); }
@@ -32,3 +37,25 @@ html:has(.cq), body:has(.cq) { background: var(--cq-bg, #f6f7f9); }
 .cq-btn-light { background: #fff; color: var(--cq-accent); border: 1px solid var(--cq-accent); }
 @media (max-width: 560px) { .cq-photos { grid-template-columns: repeat(2, minmax(0, 1fr)); } .cq-ref { text-align: start; } }
 @media print { html:has(.cq), body:has(.cq) { background: #fff; } .cq-card { break-inside: avoid; } .cq-foot { display: none; } }
+/* Tables: routing and the options summary. */
+.cq-table-wrap { overflow-x: auto; }
+.cq-table { width: 100%; border-collapse: collapse; font-size: 0.93rem; }
+.cq-table th { text-align: start; font-weight: 500; font-size: 0.8rem; color: var(--cq-muted); background: var(--cq-bg); padding: 6px 8px; white-space: nowrap; }
+.cq-table td { padding: 8px; border-bottom: 1px solid var(--cq-line); vertical-align: top; }
+.cq-table small { display: block; color: var(--cq-muted); font-size: 0.8rem; }
+.cq-table a { color: inherit; }
+.cq-num { text-align: end !important; }
+.cq-price-cell { font-weight: 700; color: var(--cq-accent); white-space: nowrap; }
+/* Each aircraft: a band in the brand colour, details, then the same photo layout every time. */
+.cq-band { display: flex; justify-content: space-between; align-items: center; gap: 12px; background: var(--cq-accent); color: var(--cq-on-accent, #fff); border-radius: 8px; padding: 10px 14px; margin: -2px 0 12px; }
+.cq-band h2 { color: inherit; margin: 0; font-size: 1.1rem; }
+.cq-band small { opacity: 0.85; }
+.cq-band .cq-price { color: inherit; }
+.cq-slots { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 4px 0 8px; }
+.cq-slots a { display: block; border-radius: 6px; overflow: hidden; background: var(--cq-bg); }
+.cq-slots img { width: 100%; height: 100%; display: block; object-fit: cover; }
+.cq-slot-ext { grid-column: 1 / -1; aspect-ratio: 511 / 235; }
+.cq-slot-cabin { aspect-ratio: 251 / 150; }
+.cq-slot-plan { grid-column: 1 / -1; aspect-ratio: 511 / 105; background: #fff !important; border: 1px solid var(--cq-line); }
+.cq-slot-plan img { object-fit: contain; }
+@media print { .cq-option { break-before: page; } }

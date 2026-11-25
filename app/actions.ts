@@ -1058,6 +1058,8 @@ export async function saveBrandAction(fd: FormData) {
     if (logo instanceof File && logo.size > 0) await branding.setBrandLogo(db, s.actor.tenantId, new Uint8Array(await logo.arrayBuffer()));
     const color = str(fd, "color");
     if (color) await branding.setBrandColor(db, s.actor.tenantId, color);
+    const format = str(fd, "versionFormat");
+    if (format) await branding.setVersionFormat(db, s.actor.tenantId, format);
   } catch (e) {
     back("error", (e as Error).message);
   }

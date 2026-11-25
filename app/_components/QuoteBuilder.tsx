@@ -127,6 +127,7 @@ export default function QuoteBuilder({ aircraft, operators, preferred: preferred
   const [subject, setSubject] = useState("");
   const [copyMe, setCopyMe] = useState(true);
   const [emailPdf, setEmailPdf] = useState(true);
+  const [versionName, setVersionName] = useState("");
   const [emailLink, setEmailLink] = useState(true);
   const styleFor: "whatsapp" | "other" = app === "whatsapp" ? "whatsapp" : "other";
 
@@ -387,9 +388,10 @@ export default function QuoteBuilder({ aircraft, operators, preferred: preferred
     setBusy(true); setSaved(null);
     try {
       const snapshot = {
-        lang, text: textFor("whatsapp"), legs: fullLegs, greeting, closing, utc: tpl.times !== "local",
+        lang, text: textFor("whatsapp"), legs: fullLegs, greeting, closing, utc: tpl.times !== "local", label: versionName,
         options: chosen.map((a, i) => ({
           aircraftId: a.id, type: a.type, operator: a.operator, tail: a.tail, base: a.base, yom: a.yom, yor: a.yor, capacity: a.capacity,
+          wifi: a.wifi, smoking: a.smoking, pets: a.pets, notes: a.notes,
           price: prices[a.id] ?? "", extra: extras[a.id] ?? "",
           photos: photos.filter((x) => x.i === i).map(({ p }) => ({ id: p.url.replace(/^.*\/api\/media\//, ""), label: p.label, classification: p.classification })),
         })),
@@ -709,7 +711,8 @@ export default function QuoteBuilder({ aircraft, operators, preferred: preferred
           )}
           {chosen.length > 0 && fullLegs.length > 0 && (
             <div className="save-version">
-              <button type="button" onClick={() => saveVersion()} disabled={busy || !text.trim()}>{busy ? "Saving…" : req ? "Save as next version" : "Save as request"}</button>
+              <input type="text" className="version-name" value={versionName} onChange={(e) => setVersionName(e.target.value)} maxLength={80} placeholder="Version name (optional), e.g. Revised price" aria-label="Version name" />
+              <button type="button" onClick={() => { saveVersion(); setVersionName(""); }} disabled={busy || !text.trim()}>{busy ? "Saving…" : req ? "Save as next version" : "Save as request"}</button>
               {saved ? (
                 <span className="small" role="status">
                   {saved.message} {saved.ok && saved.requestId && <a href={`/requests/${saved.requestId}`}>See all versions</a>}

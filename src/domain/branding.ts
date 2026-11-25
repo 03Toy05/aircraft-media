@@ -12,7 +12,7 @@ export const DEFAULT_COLOR = "#1f3a5f";
 export const MAX_LOGO_BYTES = 3 * 1024 * 1024;
 const LOGO_BOX = { width: 800, height: 400 };
 
-export interface Brand { color: string; logo: { png: Uint8Array; width: number; height: number } | null }
+export interface Brand { color: string; logo: { png: Uint8Array; width: number; height: number } | null; versionFormat: string }
 
 export const validColor = (c: string) => /^#[0-9a-fA-F]{6}$/.test(c);
 
@@ -28,6 +28,7 @@ export async function getBrand(db: Db, tenantId: string): Promise<Brand> {
   return {
     color: b?.color && validColor(b.color) ? b.color : DEFAULT_COLOR,
     logo: b?.logoPng && b.logoWidth && b.logoHeight ? { png: new Uint8Array(Buffer.from(b.logoPng, "base64")), width: b.logoWidth, height: b.logoHeight } : null,
+    versionFormat: b?.versionFormat && validVersionFormat(b.versionFormat) ? b.versionFormat : DEFAULT_VERSION_FORMAT,
   };
 }
 
@@ -60,3 +61,25 @@ export async function removeBrandLogo(db: Db, tenantId: string) {
 
 /** The logo as a data address for pages (it is small). */
 export const logoDataUrl = (b: Brand) => (b.logo ? `data:image/png;base64,${Buffer.from(b.logo.png).toString("base64")}` : null);
+
+// ---------------------------------------------------------------- how the reference and version read on quotes
+
+export const DEFAULT_VERSION_FORMAT = "{ref} | v{n}";
+/** Ready-made formats; the broker can also write their own with {ref} and {n} (or {nn} for 01, 02…). */
+export const VERSION_FORMATS = ["{ref} | v{n}", "{ref} Rev.{n}", "{ref}-{nn}", "{ref} Version {n}", "{ref}/V{nn}"];
+
+export const validVersionFormat = (f: string) => f.length <= 60 && f.includes("{ref}") && /\{nn?\}/.test(f) && !/[\r\n<>]/.test(f);
+
+/** "AM-2611-003 | v2", "AM-2611-003 Rev.2", "AM-2611-003-02"… */
+export const formatVersion = (format: string, reference: string, version: number) =>
+  (validVersionFormat(format) ? format : DEFAULT_VERSION_FORMAT).replaceAll("{ref}", reference).replaceAll("{nn}", String(version).padStart(2, "0")).replaceAll("{n}", String(version));
+
+/** The same, safe as a file name: "AM-2611-003-v2.pdf". */
+export const versionFileName = (format: string, reference: string, version: number) =>
+  `${formatVersion(format, reference, version).replace(/[^\p{L}\p{N}._-]+/gu, "-").replace(/-+/g, "-").replace(/^-|-$/g, "") || reference}.pdf`;
+
+export async function setVersionFormat(db: Db, tenantId: string, format: string) {
+  const f = format.trim();
+  if (!validVersionFormat(f)) throw new Error("The format needs {ref} and {n} (or {nn}), e.g. “{ref} Rev.{n}”.");
+  await upsert(db, tenantId, { versionFormat: f });
+}
