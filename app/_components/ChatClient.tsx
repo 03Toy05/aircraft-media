@@ -14,6 +14,7 @@ import { ShareBox } from "./ShareBox";
 import { copyText, fetchPhoto } from "./copyText";
 import Icon from "./Icon";
 import Toy, { TOY_LANDING_MS, TOY_TAKEOFF_MS, type ToyState } from "./Toy";
+import BrandSignature from "./BrandSignature";
 import { CHAT_LANGUAGES, parseChatLang, toHans, trClassification, type ChatLang } from "@/domain/toyText";
 import { VOICE_ON, savedVoice, saveVoice } from "./voice";
 
@@ -499,7 +500,7 @@ export default function ChatClient() {
         <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "start" }}>
           <div style={{ display: "flex", gap: 12, alignItems: "center", minWidth: 0 }}>
             <Toy state={toyState} size={44} className="chat-toy" />
-            <p style={{ margin: 0 }}><b>{ui.hi}</b><br />{ui.intro}</p>
+            <p style={{ margin: 0 }}><b><Greeting text={ui.hi} /></b>{ui.intro}</p>
           </div>
           <span className="seg" role="radiogroup" aria-label={ui.language}>
             {CHAT_LANGUAGES.map((l) => (
@@ -621,4 +622,11 @@ export default function ChatClient() {
       </div>
     </div>
   );
+}
+
+/** "Hi, I'm Toy." / 我是Toy with the airplane as its full stop (TOY-14). Any other wording is shown as it is. */
+function Greeting({ text }: { text: string }) {
+  const m = /^(.*)Toy[.。]?$/.exec(text);
+  if (!m) return <>{text}<br /></>;
+  return <BrandSignature as="span" lead={m[1]} tail="Toy" plain={/[.。]$/.test(text) ? text : `${text}。`} />;
 }
