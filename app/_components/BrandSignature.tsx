@@ -19,7 +19,7 @@ export default function BrandSignature({ lead, tail, plain, as: Tag = "h2", take
   lead: React.ReactNode;
   tail: string;
   plain: string;
-  as?: "h1" | "h2" | "p";
+  as?: "h1" | "h2" | "p" | "span";
   takeoff?: boolean;
   className?: string;
 }) {
