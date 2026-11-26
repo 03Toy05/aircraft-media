@@ -678,14 +678,19 @@ function lineupFrom(rows: LineupRow[], opts: { aircraftId: string; aircraftTypeI
   const counters = new Map<Classification, number>();
   const out: LineupItem[] = [];
   const isActual = (r: LineupRow) => r.a.associationStatus === "actual_aircraft" && r.a.aircraftId === opts.aircraftId;
-  // An aircraft's own combined photo replaces the type's: one combined picture per aircraft is enough.
-  const ownCombined = rows.some((r) => isActual(r) && r.m.primaryClassification === "combined");
+  // One combined picture per aircraft: its own newest one, else the type's newest (older copies, from making it again
+  // or a broker's upload as well, stay in the gallery but are not offered twice).
+  const usable = (r: LineupRow) => r.m.rightsStatus !== "restricted" && !r.cv.unavailableAt
+    && (isActual(r) || (r.a.associationStatus === "representative_type" && r.a.aircraftTypeId === opts.aircraftTypeId));
+  const combined = rows.filter((r) => r.m.primaryClassification === "combined" && usable(r));
+  const keepCombined = [...combined.filter(isActual), ...combined.filter((r) => !isActual(r))]
+    .reduce<LineupRow | null>((best, r) => (!best || (isActual(r) === isActual(best) && r.m.createdAt > best.m.createdAt) ? r : best), null);
   for (const r of rows) {
     if (r.m.rightsStatus === "restricted" || r.cv.unavailableAt) continue;
     const actual = isActual(r);
     const repr = r.a.associationStatus === "representative_type" && r.a.aircraftTypeId === opts.aircraftTypeId;
     if (!actual && !repr) continue;
-    if (!actual && ownCombined && r.m.primaryClassification === "combined") continue;
+    if (r.m.primaryClassification === "combined" && r !== keepCombined) continue;
     const n = (counters.get(r.m.primaryClassification) ?? 0) + 1;
     counters.set(r.m.primaryClassification, n);
     out.push({

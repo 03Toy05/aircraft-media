@@ -15,7 +15,7 @@ import { copyText, fetchPhoto } from "./copyText";
 import Icon from "./Icon";
 import Toy, { TOY_LANDING_MS, TOY_TAKEOFF_MS, type ToyState } from "./Toy";
 import BrandSignature from "./BrandSignature";
-import { CHAT_LANGUAGES, parseChatLang, toHans, trClassification, type ChatLang } from "@/domain/toyText";
+import { parseChatLang, toHans, trClassification, type ChatLang } from "@/domain/toyText";
 import { VOICE_ON, savedVoice, saveVoice } from "./voice";
 
 /** The words on the chat itself. Toy's own sentences come from the server in the chosen language. */
@@ -315,11 +315,6 @@ export default function ChatClient() {
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
   // The microphone follows the language, unless a voice language was chosen on purpose.
   useEffect(() => { if (!savedVoice()) setVoice(chatLang === "zh-Hans" ? "zh-CN" : chatLang === "zh-Hant" ? "zh-HK" : "en-US"); }, [chatLang]);
-  const changeChatLang = (l: ChatLang) => {
-    if (l === chatLang) return;
-    rememberUiLang(l);
-    router.refresh();
-  };
   const chooseVoice = (v: string) => {
     if (listening) stopListening(false);
     setVoice(v);
@@ -517,19 +512,13 @@ export default function ChatClient() {
             <Toy state={toyState} size={44} className="chat-toy" />
             <p style={{ margin: 0 }}><b><Greeting text={ui.hi} /></b>{ui.intro}</p>
           </div>
-          <span style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap", justifyContent: "flex-end" }}>
+          {/* Toy speaks the site's language (EN / 繁 / 简 in the top bar), so the chat has no switch of its own. */}
           {msgs.length > 0 && (
             <button type="button" className="secondary small-btn" title={ui.newChatHint} disabled={pending}
               onClick={() => { setMsgs([]); setDraft(""); try { window.sessionStorage.removeItem(QUOTE_KEY); } catch { /* ignore */ } clearToyChatAction().catch(() => {}); }}>
               {ui.newChat}
             </button>
           )}
-          <span className="seg" role="radiogroup" aria-label={ui.language}>
-            {CHAT_LANGUAGES.map((l) => (
-              <button key={l.id} type="button" role="radio" aria-checked={chatLang === l.id} className={chatLang === l.id ? "on" : ""} onClick={() => changeChatLang(l.id)}>{l.id === "en" ? "EN" : l.id === "zh-Hant" ? "繁" : "简"}</button>
-            ))}
-          </span>
-          </span>
         </div>
         <div className="welcome-actions">
           <Link href="/quote" className="btn"><Icon name="quote" />{ui.doQuote}</Link>

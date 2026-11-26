@@ -104,6 +104,15 @@ describe("combined photo in the gallery", () => {
     expect((await existingCombined(t.db, t.actor.tenantId, scope))).toHaveLength(1);
   });
 
+  it("offers one combined photo per aircraft, with its separate photos, even when it has two", async () => {
+    await approved(1, "exterior"); await approved(2, "cabin"); await approved(3, "cabin"); await approved(4, "floor_plan");
+    await approved(5, "combined"); // the broker's own upload
+    const made = await makeCombinedPhoto(t.db, t.store, t.actor, scope); // and one made here, without replacing
+    const lineup = await getLineup(t.db, { aircraftId: acId, aircraftTypeId: typeId });
+    expect(lineup.map((l) => l.classification).sort()).toEqual(["cabin", "cabin", "combined", "exterior", "floor_plan"]);
+    expect(lineup.find((l) => l.classification === "combined")?.mediaId).toBe((made as { mediaId: string }).mediaId); // the newest
+  });
+
   it("remaking replaces the old one", async () => {
     await approved(1, "exterior"); await approved(2, "cabin"); await approved(3, "cabin"); await approved(4, "floor_plan");
     const first = await makeCombinedPhoto(t.db, t.store, t.actor, scope);

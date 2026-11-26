@@ -334,7 +334,7 @@ export async function acceptContributions(
   }
   // A full set makes the library's combined photo too.
   if (KINDS.every((k) => (have[k] ?? 0) >= (LIBRARY_NEEDS[k] ?? 0))) {
-    try { await makeCombinedPhoto(db, store, lib, { kind: "aircraft", aircraftId: libraryAircraftId, aircraftTypeId: typeId }); }
+    try { await makeCombinedPhoto(db, store, lib, { kind: "aircraft", aircraftId: libraryAircraftId, aircraftTypeId: typeId }, { replace: true }); }
     catch (e) { console.error("Library combined photo failed", e); }
   }
   return { accepted, skipped, libraryAircraftId };
