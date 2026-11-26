@@ -33,7 +33,7 @@ export type Copy = {
   questions: Record<QuestionKey, string>;
   what: { headline: string; items: string[]; next: string };
   /** The film section of the front page: the selling point, the video (or "coming soon"), the broker's pains and the claim. */
-  demo: { intro: string; watch: string; close: string; screen: string; soon: string; soonNote: string; transcript: string; painTitle: string; pains: string[]; claim: string };
+  demo: { intro: string; watch: string; close: string; draft: string; again: string; screen: string; soon: string; soonNote: string; transcript: string; painTitle: string; pains: string[]; claim: string };
   /** The brand signature (TOY-14): `lead` + `tail`, then the airplane in place of the final period; `plain` is what screen readers hear. */
   begins: { lead: string; tail: string; plain: string; paragraphs: string[]; vision: string };
   price: { headline: string; body: string; soon: string };
@@ -71,6 +71,8 @@ export const COPY: Record<SiteLang, Copy> = {
       intro: "Generate a text, weblink or PDF quotation with photos in just a few clicks!",
       watch: "Watch the demo",
       close: "Close the demo",
+      draft: "Draft your first quote",
+      again: "Watch again",
       screen: "Toy's screen",
       soon: "Demo coming soon",
       soonNote: "The video is being made. It will play here, with captions.",
@@ -133,6 +135,8 @@ export const COPY: Record<SiteLang, Copy> = {
       intro: "只需幾下點擊，就能生成附相片的文字、網頁連結或 PDF 報價！",
       watch: "觀看示範",
       close: "關閉示範",
+      draft: "草擬您的第一份報價",
+      again: "再看一次",
       screen: "Toy 的螢幕",
       soon: "示範影片即將推出",
       soonNote: "影片製作中，完成後會在這裡播放，並附字幕。",
@@ -195,6 +199,8 @@ export const COPY: Record<SiteLang, Copy> = {
       intro: "只需几下点击，就能生成附照片的文字、网页链接或 PDF 报价！",
       watch: "观看演示",
       close: "关闭演示",
+      draft: "起草您的第一份报价",
+      again: "再看一次",
       screen: "Toy 的屏幕",
       soon: "演示视频即将推出",
       soonNote: "视频制作中，完成后会在这里播放，并附字幕。",
