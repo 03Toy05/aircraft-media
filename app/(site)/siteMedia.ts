@@ -5,6 +5,7 @@ import type { SiteLang } from "./welcome/copy";
 /*
  * The front page's media turn up by themselves once their files are in public/ (nothing else to change):
  *   public/demo/toy-demo.mp4                    the film (H.264/AAC MP4)       required for the player
+ *   public/demo/toy-demo-<lang>.mp4             zh-hant, zh-hans               the same film with that language's captions burned in (optional)
  *   public/demo/toy-demo-poster.jpg             still shown before playing    optional
  *   public/demo/captions-<lang>.vtt             en, zh-hant, zh-hans           optional caption tracks
  *   public/demo/transcript-<lang>.txt           en, zh-hant, zh-hans           optional written transcript
@@ -21,10 +22,12 @@ export const CAPTION_LANGS: { lang: SiteLang; srclang: string; label: string }[]
   { lang: "zh-hans", srclang: "zh-Hans", label: "简体中文" },
 ];
 
-export function demoVideo() {
+/** The demo film in the page's language: toy-demo-<lang>.mp4 when it exists (captions burned in), else the English one. */
+export function demoVideo(lang: SiteLang = "en") {
   if (!has("demo/toy-demo.mp4")) return null;
+  const own = lang !== "en" && has(`demo/toy-demo-${lang}.mp4`);
   return {
-    src: "/demo/toy-demo.mp4",
+    src: own ? `/demo/toy-demo-${lang}.mp4` : "/demo/toy-demo.mp4",
     poster: has("demo/toy-demo-poster.jpg") ? "/demo/toy-demo-poster.jpg" : undefined,
     captions: CAPTION_LANGS.filter((c) => has(`demo/captions-${c.lang}.vtt`)),
   };

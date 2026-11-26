@@ -19,7 +19,8 @@ export default function FounderClip({ video, lang, label, cta, hasDemo }: {
   const own = video.captions.some((c) => c.lang === lang);
   return (
     <figure className="phone-founder">
-      <video controls playsInline preload="metadata" poster={video.poster} aria-label={label}
+      {/* Keyed by language: a browser picks the default caption track only when the video loads. */}
+      <video key={lang} controls playsInline preload="metadata" poster={video.poster} aria-label={label}
         onEnded={() => setEnded(true)} onPlay={() => setEnded(false)}>
         <source src={video.src} type="video/mp4" />
         {video.captions.map((c) => (

@@ -69,7 +69,7 @@ export default function PhoneDemo({ video, lang, labels, draftHref, hidePlay = f
         <dialog ref={dialog} className={tall ? "film-dialog is-tall" : "film-dialog"} aria-label={labels.watch} onClose={stop}
           onClick={(e) => { if (e.target === e.currentTarget) close(); }}>
           <div className="film-frame">
-            <video ref={film} className="film-video" controls={!ended} playsInline preload="metadata" poster={video.poster}
+            <video key={video.src} ref={film} className="film-video" controls={!ended} playsInline preload="metadata" poster={video.poster}
               onLoadedMetadata={(e) => setTall(e.currentTarget.videoHeight > e.currentTarget.videoWidth)}
               onEnded={() => setEnded(true)} onPlay={() => setEnded(false)}>
               <source src={video.src} type="video/mp4" />

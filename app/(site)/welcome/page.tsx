@@ -37,7 +37,7 @@ export default async function WelcomePage({ searchParams }: { searchParams: Prom
   const q = parseQuestion(sp.q);
   const t = COPY[lang];
   const mail = contactHref();
-  const video = demoVideo();
+  const video = demoVideo(lang);
   const words = video ? demoTranscript(lang) : null;
   const founder = founderPhoto();
   const founderFilm = founderVideo();
