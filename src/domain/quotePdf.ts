@@ -37,6 +37,16 @@ const fontFile = (file: string) => fontCache.get(file) ?? (fontCache.set(file, f
 const BEYOND_LATIN = /[^\u0000-\u024F\u0300-\u04FF\u1E00-\u1EFF\u2000-\u206F\u20A0-\u20CF\u2100-\u215F\u2190-\u21FF\u2212\u2600-\u26FF]/;
 export const needsCjkFont = (lang: string, text: string) => lang === "zh-Hant" || lang === "ja" || BEYOND_LATIN.test(text);
 
+/** The quote font for a document: the Latin TrueType copy whole, or the full font as a subset when the text needs Chinese or Japanese. */
+export async function embedQuoteFont(doc: PDFDocument, lang: string, sample: string): Promise<PDFFont> {
+  doc.registerFontkit(fontkit);
+  // No joined letters (fi, fl): the subset drops the joined forms, which left gaps like "f nd".
+  const noLigatures = { liga: false, clig: false, dlig: false };
+  return needsCjkFont(lang, sample)
+    ? doc.embedFont(fontFile(CJK_FONT), { subset: true, features: noLigatures })
+    : doc.embedFont(fontFile(LATIN_FONT), { subset: false, features: noLigatures });
+}
+
 export interface PdfQuote {
   reference: string; version: number; savedAt: Date; quote: QuoteSnapshot; broker: { name: string; email: string };
   /** The broker's logo and colour (Settings → Quote branding). */
@@ -323,6 +333,19 @@ export async function quotePdf(q: PdfQuote, loadPhoto: PhotoLoader): Promise<Uin
   return doc.save();
 }
 
+/** A quote's PDF: in the broker's own layout when they have one switched on (Settings), otherwise the standard one. */
+export async function renderQuotePdf(db: import("../db/client").Db, tenantId: string, q: PdfQuote, loadPhoto: PhotoLoader): Promise<Uint8Array> {
+  const { activeQuoteLayout, layoutValues } = await import("./quoteLayout");
+  const layout = await activeQuoteLayout(db, tenantId);
+  if (!layout) return quotePdf(q, loadPhoto);
+  const { layoutPdf } = await import("./layoutPdf");
+  const lang = langOf(q.quote.lang);
+  return layoutPdf(layout, layoutValues(q), lang, loadPhoto, {
+    title: `${PROPOSAL_TITLE[lang]} · ${formatVersion(q.brand?.versionFormat ?? DEFAULT_VERSION_FORMAT, q.reference, q.version)}`,
+    author: q.broker.name || q.broker.email,
+  });
+}
+
 /**
  * The broker's PDF of one saved version of their request (the latest without `version`), with only photos they may
  * use. Null when there is no such version, or its language has no PDF yet.
@@ -346,7 +369,8 @@ export async function brokerQuotePdf(
   if (!v || !pdfSupported(v.content.lang)) return null;
   const [by] = await db.select({ name: users.displayName, email: users.email }).from(users).where(eq(users.id, who.actor.id));
   const { getBrand } = await import("./branding");
-  const bytes = await quotePdf(
+  const bytes = await renderQuotePdf(
+    db, who.actor.tenantId,
     { reference: r.reference, version: v.version, savedAt: v.createdAt, quote: v.content, broker: { name: by?.name ?? "", email: by?.email ?? who.email }, brand: await getBrand(db, who.actor.tenantId) },
     async (pid) => ((await photoAllowed(db, who, pid)) ? readContentBytes(db, store, pid) : null),
   );
@@ -383,7 +407,8 @@ export async function brokerPreviewPdf(
   const quote = { ...snap, label: snap.label ? `PREVIEW · ${snap.label}` : "PREVIEW" };
   const [by] = await db.select({ name: users.displayName, email: users.email }).from(users).where(eq(users.id, who.actor.id));
   const brand = await getBrand(db, who.actor.tenantId);
-  const bytes = await quotePdf(
+  const bytes = await renderQuotePdf(
+    db, who.actor.tenantId,
     { reference, version, savedAt: new Date(), quote, broker: { name: by?.name ?? "", email: by?.email ?? who.email }, brand },
     async (pid) => ((await photoAllowed(db, who, pid)) ? readContentBytes(db, store, pid) : null),
   );

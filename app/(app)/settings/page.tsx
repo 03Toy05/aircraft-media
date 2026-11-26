@@ -7,6 +7,7 @@ import { MAX_PREFERRED_OPERATORS, getPreferredOperators } from "@/domain/directo
 import { addNumberAction, changePasswordAction, deactivateNumberAction, saveBrandAction, setLanguageAction, setLibraryOptInAction, setPreferredOperatorsAction } from "../../actions";
 import { VERSION_FORMATS, getBrand, logoDataUrl } from "@/domain/branding";
 import BrandForm from "../../_components/BrandForm";
+import QuoteLayoutCard from "../../_components/QuoteLayoutCard";
 import { MIN_PASSWORD, hasPassword } from "@/domain/passwords";
 import Choice from "../../_components/Choice";
 import { Flash, Key, one, type SP } from "../../_components/ui";
@@ -42,6 +43,7 @@ export default async function Settings({ searchParams }: { searchParams: SP }) {
         <p className="small muted" style={{ marginTop: 0 }}>{t("Your logo and colour on every quote PDF and client link. Clients see your brand, not Aircraft Media's.")}</p>
         <BrandForm action={saveBrandAction} name={myName} color={brand.color} logo={logoDataUrl(brand)} versionFormat={brand.versionFormat} formats={VERSION_FORMATS} />
       </div>
+      <QuoteLayoutCard tenantId={actor.tenantId} open={one(sp.layout) === "1"} />
       <div className="grid g2">
         <div className="card">
           <h3>{t("Password")}</h3>

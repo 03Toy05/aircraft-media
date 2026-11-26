@@ -176,6 +176,27 @@
       "when": 1795900000000,
       "tag": "0024_brand_version_format",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1796000000000,
+      "tag": "0025_word_templates",
+      "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1796100000000,
+      "tag": "0026_quote_layout",
+      "breakpoints": true
+    },
+    {
+      "idx": 27,
+      "version": "7",
+      "when": 1796200000000,
+      "tag": "0027_signup_emails",
+      "breakpoints": true
     }
   ]
 }

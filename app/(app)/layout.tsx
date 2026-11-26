@@ -14,6 +14,10 @@ import TableLabels from "../_components/TableLabels";
 import BusyHints from "../_components/BusyHints";
 import { LangSwitch } from "../_components/uiLang";
 import { serverT } from "@/lib/uiLang";
+import { after } from "next/server";
+import { maybeSendDueEmails } from "@/domain/userEmails";
+import { sendMail } from "@/lib/mail";
+import { siteAddress } from "@/lib/site";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const s = await requireUser(); // redirects to /login unless an invited user (or the admin) is signed in
@@ -27,6 +31,9 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     }
   }
   const t = await serverT();
+  // Welcome and trial-ending emails go out from ordinary page loads (at most every 15 minutes), after the page is sent.
+  const site = await siteAddress().catch(() => null);
+  after(async () => maybeSendDueEmails(await getDb(), site, sendMail));
   let libraryOn = s.isAdmin;
   try { libraryOn = await hasLibraryAccess(await getDb(), s); } catch { /* the menu must not fail */ }
   return (

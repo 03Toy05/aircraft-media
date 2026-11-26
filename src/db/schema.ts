@@ -74,6 +74,14 @@ export const users = pgTable(
     passwordHash: text("password_hash"),
     passwordFailures: integer("password_failures").notNull().default(0),
     passwordLockedUntil: timestamp("password_locked_until", { withTimezone: true }),
+    /** Started their own trial from the website (not invited by the admin). */
+    signedUpAt: timestamp("signed_up_at", { withTimezone: true }),
+    /** When each automatic email went out (welcome, trial ending soon, trial ended), so each is sent once. */
+    welcomedAt: timestamp("welcomed_at", { withTimezone: true }),
+    trialReminderAt: timestamp("trial_reminder_at", { withTimezone: true }),
+    trialEndedMailAt: timestamp("trial_ended_mail_at", { withTimezone: true }),
+    /** Asked not to get announcements (trial emails still come). */
+    emailOptOut: boolean("email_opt_out").notNull().default(false),
     createdAt: created(),
     updatedAt: updated(),
   },
@@ -688,4 +696,32 @@ export const brands = pgTable("brands", {
   /** How the reference and version read on quotes: "{ref} | v{n}" (default), "{ref} Rev.{n}"… */
   versionFormat: text("version_format"),
   updatedAt: updated(),
+});
+
+/** A workspace's own quote layout: a past quote (Word) that Toy read; quote PDFs are drawn that way (Settings). */
+export const wordTemplates = pgTable("word_templates", {
+  tenantId: uuid("tenant_id").primaryKey(),
+  fileName: text("file_name").notNull(),
+  /** Base64 .docx, at most 5 MB. */
+  docx: text("docx").notNull(),
+  /** What Toy read from it: the layout (JSON) and the fields it found (JSON); used for quote PDFs while enabled. */
+  layout: text("layout"),
+  found: text("found"),
+  enabled: boolean("enabled").notNull().default(true),
+  updatedAt: updated(),
+});
+
+/** Emails the admin sent to users (new features, notices), and how the sending went. */
+export const announcements = pgTable("announcements", {
+  id: pk(),
+  subject: text("subject").notNull(),
+  body: text("body").notNull(),
+  /** all | trial | full | active */
+  audience: text("audience").notNull(),
+  recipients: integer("recipients").notNull().default(0),
+  sent: integer("sent").notNull().default(0),
+  failed: integer("failed").notNull().default(0),
+  createdBy: uuid("created_by").notNull(),
+  createdAt: created(),
+  finishedAt: timestamp("finished_at", { withTimezone: true }),
 });

@@ -39,7 +39,7 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img src="/logo.svg" alt="" width={48} height={48} />
         <h1>Aircraft Media</h1>
-        <p className="muted">{t("Sign in with the email you were invited with.")}</p>
+        <p className="muted">{t("Sign in to your workspace.")} <Link href="/start">{t("New here? Start your 14-day free trial")}</Link></p>
         {error && <div className="flash err">{t(ERRORS[error] ?? "That account is not authorised.")}</div>}
         <form action={passwordSignInAction} className="login-email">
           <label htmlFor="email" className="small">{t("Email")}</label>

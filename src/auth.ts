@@ -4,6 +4,7 @@ import Credentials from "next-auth/providers/credentials";
 import { getDb } from "./db/client";
 import { mayUseApp } from "./domain/signInLinks";
 import { checkPassword } from "./domain/passwords";
+import { startTrial } from "./domain/signup";
 
 /** Too many wrong passwords: the sign-in page says to wait (or reset it). */
 class LockedSignin extends CredentialsSignin { code = "locked"; }
@@ -27,14 +28,19 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   pages: { signIn: "/login" },
   trustHost: true,
   callbacks: {
-    // Invite-only: the admin (OWNER_EMAIL) and anyone the admin invited, with a verified Google account or their
-    // password (only invited people can set one).
+    // The admin (OWNER_EMAIL), people the admin invited, and anyone who starts a free trial: with a verified Google
+    // account (a new one starts its trial here) or a password (set from an emailed link after /start or an invite).
     async signIn({ account, profile, user }) {
       let email: string | null | undefined;
       if (account?.provider === "password") email = user.email;
       else if (profile?.email_verified === true) email = profile.email;
       if (!email) return false;
-      const ok = await mayUseApp(await getDb(), email);
+      const db = await getDb();
+      let ok = await mayUseApp(db, email);
+      if (ok === "not_invited" && account?.provider === "google") {
+        await startTrial(db, email, typeof profile?.name === "string" ? profile.name : null);
+        ok = await mayUseApp(db, email);
+      }
       return ok === "ok" ? true : `/login?error=${ok}`;
     },
   },

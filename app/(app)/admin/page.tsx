@@ -1,9 +1,9 @@
 import Link from "next/link";
 import { headers } from "next/headers";
 import InviteCopy from "../../_components/InviteCopy";
-import { and, asc, count, eq } from "drizzle-orm";
+import { and, asc, count, desc, eq } from "drizzle-orm";
 import { getDb } from "@/db/client";
-import { aircraft, aircraftMedia, organisations, users } from "@/db/schema";
+import { aircraft, aircraftMedia, announcements, organisations, users } from "@/db/schema";
 import { requireAdmin } from "@/lib/session";
 import { serverT } from "@/lib/uiLang";
 import { TRIAL_DAYS, accessFor } from "@/domain/accounts";
@@ -14,6 +14,10 @@ import {
 } from "../../actions";
 import { Flash, Key, one, type SP } from "../../_components/ui";
 import Choice from "../../_components/Choice";
+import { activityByTenant, userOverview } from "@/domain/adminStats";
+import { sendAnnouncementAction } from "../../adminMailActions";
+import { PendingButton } from "../../_components/PendingButton";
+import LocalTime from "../../_components/LocalTime";
 
 type T = Awaited<ReturnType<typeof serverT>>;
 
@@ -43,11 +47,24 @@ export default async function Admin({ searchParams }: { searchParams: SP }) {
   const libOps = await db.select({ id: organisations.id, name: organisations.canonicalName }).from(organisations)
     .where(and(eq(organisations.tenantId, LIBRARY_TENANT_ID), eq(organisations.active, true))).orderBy(asc(organisations.canonicalName));
   const mine = me.viewingAs ? undefined : shares.get(me.actor.tenantId);
+  const activity = await activityByTenant(db);
+  const overview = await userOverview(db, me.email);
+  const sentMails = await db.select().from(announcements).orderBy(desc(announcements.createdAt)).limit(5);
 
   return (
     <>
       <div className="people-head"><h1 style={{ margin: 0 }}>{t("Users")}</h1><Link href="/admin/speed" className="btn secondary small-btn">{t("Speed")}</Link></div>
       <Flash error={one(sp.error)} ok={one(sp.ok)} />
+      <div className="card">
+        <div className="stats">
+          <div className="stat"><span className="stat-n">{overview.people}</span><span className="stat-l">{t("people")}</span></div>
+          <div className="stat"><span className="stat-n">{overview.trial}</span><span className="stat-l">{t("on a trial")}{overview.endingSoon ? ` · ${t("{n} ending in 3 days", { n: overview.endingSoon })}` : ""}</span></div>
+          <div className="stat"><span className="stat-n">{overview.ended}</span><span className="stat-l">{t("trial ended")}</span></div>
+          <div className="stat"><span className="stat-n">{overview.full}</span><span className="stat-l">{t("full access")}</span></div>
+          <div className="stat"><span className="stat-n">{overview.signups7}</span><span className="stat-l">{t("signed up this week")}</span></div>
+          <div className="stat"><span className="stat-n">{overview.active30}</span><span className="stat-l">{t("active in 30 days")}</span></div>
+        </div>
+      </div>
       <div className="card">
         <div className="people-head">
           <h3 style={{ margin: 0 }}>{t("People ({n})", { n: people.length })}</h3>
@@ -72,7 +89,7 @@ export default async function Admin({ searchParams }: { searchParams: SP }) {
             <div key={u.id} className="person">
               <div className="person-head">
                 <div style={{ minWidth: 0 }}>
-                  <b>{u.displayName}</b> <span className={`pill ${status.tone}`}>{status.label}</span>
+                  <b>{u.displayName}</b> <span className={`pill ${status.tone}`}>{status.label}</span>{u.signedUpAt ? <span className="pill"> {t("signed up themselves")}</span> : null}{u.emailOptOut ? <span className="pill off"> {t("no updates")}</span> : null}
                   <div className="small muted">{u.email}</div>
                 </div>
                 {u.firstSignInAt ? (
@@ -83,7 +100,10 @@ export default async function Admin({ searchParams }: { searchParams: SP }) {
               </div>
               <div className="stats">
                 <div className="stat"><span className="stat-n">{q?.quotes ?? 0}</span><span className="stat-l">{t("quotes shared")}{q?.last30 ? ` · ${t("{n} in 30 days", { n: q.last30 })}` : ""}</span></div>
-                <div className="stat"><span className="stat-n">{photos.get(u.tenantId) ?? 0}</span><span className="stat-l">{t("photos")}</span></div>
+                <div className="stat"><span className="stat-n">{activity.get(u.tenantId)?.saved ?? 0}</span><span className="stat-l">{t("quote versions saved")}</span></div>
+                <div className="stat"><span className="stat-n">{activity.get(u.tenantId)?.emailed ?? 0}</span><span className="stat-l">{t("quotes emailed")}</span></div>
+                <div className="stat"><span className="stat-n">{activity.get(u.tenantId)?.links ?? 0}</span><span className="stat-l">{t("client links")}{activity.get(u.tenantId)?.links ? ` · ${t("{n} opened", { n: activity.get(u.tenantId)?.opened ?? 0 })}` : ""}</span></div>
+                <div className="stat"><span className="stat-n">{photos.get(u.tenantId) ?? 0}</span><span className="stat-l">{t("photos")}{activity.get(u.tenantId)?.photos30 ? ` · ${t("{n} in 30 days", { n: activity.get(u.tenantId)?.photos30 ?? 0 })}` : ""}</span></div>
                 <div className="stat"><span className="stat-n">{planes.get(u.tenantId) ?? 0}</span><span className="stat-l">{t("aircraft")}</span></div>
                 <div className="stat"><span className="stat-n">{ops.get(u.tenantId) ?? 0}</span><span className="stat-l">{t("operators")}</span></div>
               </div>
@@ -138,6 +158,30 @@ export default async function Admin({ searchParams }: { searchParams: SP }) {
           );
         })}
       </div>
+      <form action={sendAnnouncementAction} className="card" id="announce">
+        <h3 style={{ marginTop: 0 }}>{t("Email your users")}</h3>
+        <p className="small muted">{t("For new features or notices. Each person gets their own email, with a link to stop these updates. Trial reminders (3 days before, and on the day it ends) and the welcome email go out by themselves.")}</p>
+        <label htmlFor="ann-to">{t("Send to")}</label>
+        <Choice name="audience" defaultValue="all" ariaLabel={t("Send to")} options={[{ value: "all", label: t("Everyone") }, { value: "trial", label: t("On a trial") }, { value: "full", label: t("Full access") }, { value: "active", label: t("Active in 30 days") }]} />
+        <label htmlFor="ann-subject">{t("Subject")}</label>
+        <input id="ann-subject" name="subject" required maxLength={150} placeholder={t("New in Aircraft Media: your own quote layout")} />
+        <label htmlFor="ann-body">{t("Message")}</label>
+        <textarea id="ann-body" name="body" required rows={7} maxLength={10000} placeholder={t("Leave an empty line between paragraphs. “Hi name,” is added at the top for you.")} />
+        <div style={{ display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap" }}>
+          <button type="submit" name="test" value="1" className="secondary">{t("Send me a test")}</button>
+          <PendingButton pending={t("Sending…")}>{t("Send to them")}</PendingButton>
+        </div>
+        {sentMails.length > 0 && (
+          <div className="small" style={{ marginTop: 12 }}>
+            <b>{t("Sent recently")}</b>
+            {sentMails.map((a) => (
+              <div key={a.id} className="muted">
+                <LocalTime iso={a.createdAt.toISOString()} /> · {a.subject} · {a.finishedAt ? t("{sent} of {n} sent", { sent: a.sent, n: a.recipients }) : t("sending: {sent} of {n}", { sent: a.sent, n: a.recipients })}{a.failed ? ` · ${t("{n} failed", { n: a.failed })}` : ""}
+              </div>
+            ))}
+          </div>
+        )}
+      </form>
       <div className="grid g2">
         <form action={inviteUserAction} className="card">
           <h3>{t("Invite someone")}</h3>
@@ -154,6 +198,7 @@ export default async function Admin({ searchParams }: { searchParams: SP }) {
         <div className="card">
           <h3>{t("How access works")}</h3>
           <ul className="small" style={{ paddingLeft: 18, margin: 0 }}>
+            <li>{t("Anyone can also start a {n}-day trial themselves from the website, with the shared library. They show as “signed up themselves”.", { n: TRIAL_DAYS })}</li>
             <li>{t("Each person sees only their own operators, aircraft, photos, contacts and quotes.")}</li>
             <li>{t("When a trial ends their workspace becomes read-only: they can still look and share, but not upload or change anything, until you extend it.")}</li>
             <li>{t("Turning access off keeps their work; turning it back on restores it.")}</li>
