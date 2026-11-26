@@ -9,6 +9,8 @@ import type { SiteLang } from "./welcome/copy";
  *   public/demo/captions-<lang>.vtt             en, zh-hant, zh-hans           optional caption tracks
  *   public/demo/transcript-<lang>.txt           en, zh-hant, zh-hans           optional written transcript
  *   public/brand/founder.jpg                    the founder's photo, beside "How it begins"   optional
+ *   public/brand/founder.mp4                    the founder's video, in "How it begins" (founder.jpg is its cover)   optional
+ *   public/brand/founder-captions-<lang>.vtt    en, zh-hant, zh-hans           optional caption tracks for it
  */
 const PUBLIC = path.join(process.cwd(), "public");
 const has = (f: string) => fs.existsSync(path.join(PUBLIC, f));
@@ -34,3 +36,13 @@ export function demoTranscript(lang: SiteLang): string | null {
 }
 
 export const founderPhoto = () => (has("brand/founder.jpg") ? "/brand/founder.jpg" : null);
+
+/** The founder's own video for "How it begins"; with it, the photo becomes its cover instead of a portrait. */
+export function founderVideo() {
+  if (!has("brand/founder.mp4")) return null;
+  return {
+    src: "/brand/founder.mp4",
+    poster: founderPhoto() ?? undefined,
+    captions: CAPTION_LANGS.filter((c) => has(`brand/founder-captions-${c.lang}.vtt`)),
+  };
+}

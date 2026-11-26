@@ -4,7 +4,7 @@ import Toy from "../../_components/Toy";
 import BrandSignature from "../../_components/BrandSignature";
 import LanguageMenu from "../LanguageMenu";
 import PhoneDemo from "../PhoneDemo";
-import { demoTranscript, demoVideo, founderPhoto } from "../siteMedia";
+import { demoTranscript, demoVideo, founderPhoto, founderVideo } from "../siteMedia";
 import { COPY, HTML_LANG, QUESTIONS, parseLang, parseQuestion, type QuestionKey, type SiteLang } from "./copy";
 
 // The front page: shown at "/" to visitors who are not signed in (see proxy.ts), and at /welcome.
@@ -39,6 +39,7 @@ export default async function WelcomePage({ searchParams }: { searchParams: Prom
   const video = demoVideo();
   const words = video ? demoTranscript(lang) : null;
   const founder = founderPhoto();
+  const founderFilm = founderVideo();
 
   return (
     <div className="toy-site" lang={HTML_LANG[lang]}>
@@ -91,7 +92,19 @@ export default async function WelcomePage({ searchParams }: { searchParams: Prom
                 {q === "begins" && (
                   <>
                     <BrandSignature key={lang} lead={t.begins.lead} tail={t.begins.tail} plain={t.begins.plain} takeoff />
-                    {founder && (
+                    {founderFilm ? (
+                      // The founder's own video: never starts by itself; captions on in the page's language (or English).
+                      <figure className="phone-founder">
+                        <video controls playsInline preload="metadata" poster={founderFilm.poster} aria-label={t.begins.founderVideo}>
+                          <source src={founderFilm.src} type="video/mp4" />
+                          {founderFilm.captions.map((c) => (
+                            <track key={c.lang} kind="captions" src={`/brand/founder-captions-${c.lang}.vtt`} srcLang={c.srclang} label={c.label}
+                              default={c.lang === lang || (c.lang === "en" && !founderFilm.captions.some((x) => x.lang === lang))} />
+                          ))}
+                        </video>
+                        <figcaption>{t.begins.founderVideo}</figcaption>
+                      </figure>
+                    ) : founder && (
                       // eslint-disable-next-line @next/next/no-img-element
                       <img className="home-founder" src={founder} alt="" width={72} height={72} />
                     )}

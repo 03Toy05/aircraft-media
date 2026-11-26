@@ -35,7 +35,7 @@ export type Copy = {
   /** The film section of the front page: the selling point, the video (or "coming soon"), the broker's pains and the claim. */
   demo: { intro: string; watch: string; close: string; screen: string; soon: string; soonNote: string; transcript: string; painTitle: string; pains: string[]; claim: string };
   /** The brand signature (TOY-14): `lead` + `tail`, then the airplane in place of the final period; `plain` is what screen readers hear. */
-  begins: { lead: string; tail: string; plain: string; paragraphs: string[]; vision: string };
+  begins: { lead: string; tail: string; plain: string; founderVideo: string; paragraphs: string[]; vision: string };
   price: { headline: string; body: string; soon: string };
   cta: string;
   footer: { rights: string; privacy: string; terms: string; contact: string };
@@ -87,8 +87,9 @@ export const COPY: Record<SiteLang, Copy> = {
       lead: "Everything begins as a ",
       tail: "Toy",
       plain: "Everything begins as a Toy.",
+      founderVideo: "A word from my creator",
       paragraphs: [
-        "My creator spent 14 years as an aviation charter broker. After years of preparing quotations, searching for aircraft photos and juggling platforms, he wanted to build the assistant he always wished he had.",
+        "My creator spent 14 years as an aviation charter butler. After years of preparing quotations, searching for aircraft photos and juggling platforms, he wanted to build the assistant he always wished he had.",
         "Not every broker can afford an assistant. So he decided to build one.",
         "He believes that learning begins with play. And that's how I came to be.",
         "I'm his first creation.",
@@ -149,14 +150,15 @@ export const COPY: Record<SiteLang, Copy> = {
       lead: "一切從Toy",
       tail: "開始",
       plain: "一切從Toy開始。",
+      founderVideo: "我的創造者想說幾句",
       paragraphs: [
-        "我的創造者當了 14 年航空包機經紀。多年來，他不斷製作報價、尋找飛機相片、在不同平台之間周旋，於是想打造一位他一直渴望擁有的助理。",
-        "不是每位經紀都請得起助理。所以他決定自己造一個。",
-        "他相信學習始於玩樂。我就是這樣誕生的。",
+        "我的創造者在私人飛機行業做了 14 年包機管家。多年來，他不斷準備報價單、尋找飛機相片、在不同平台之間周旋，於是想打造一位他一直希望擁有的助理。",
+        "不是每位經紀都請得起助理。所以，他決定自己造一個。",
+        "他相信，學習始於玩樂。我，就是這樣誕生的。",
         "我是他的第一個作品。",
-        "現在，我只需幾下點擊就能準備附相片的報價。",
+        "如今，我只需幾下點擊，就能準備好附有相片的報價單。",
       ],
-      vision: "小小的開始。實用可靠的產品。更大的可能。",
+      vision: "小小的開始，紮實的腳步，邁向無限可能。",
     },
     price: {
       headline: "一點協助，不必花很多錢。",
@@ -211,14 +213,15 @@ export const COPY: Record<SiteLang, Copy> = {
       lead: "一切从Toy",
       tail: "开始",
       plain: "一切从Toy开始。",
+      founderVideo: "我的创造者想说几句",
       paragraphs: [
-        "我的创造者当了 14 年航空包机经纪。多年来，他不断制作报价、寻找飞机照片、在不同平台之间周旋，于是想打造一位他一直渴望拥有的助理。",
-        "不是每位经纪都请得起助理。所以他决定自己造一个。",
-        "他相信学习始于玩乐。我就是这样诞生的。",
+        "我的创造者在私人飞机行业做了 14 年包机管家。多年来，他不断准备报价单、寻找飞机照片、在不同平台之间周旋，于是想打造一位他一直希望拥有的助理。",
+        "不是每位经纪都请得起助理。所以，他决定自己造一个。",
+        "他相信，学习始于玩乐。我，就是这样诞生的。",
         "我是他的第一个作品。",
-        "现在，我只需几下点击就能准备附照片的报价。",
+        "如今，我只需几下点击，就能准备好附有照片的报价单。",
       ],
-      vision: "小小的开始。实用可靠的产品。更大的可能。",
+      vision: "小小的开始，扎实的脚步，迈向无限可能。",
     },
     price: {
       headline: "一点协助，不必花很多钱。",
