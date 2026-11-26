@@ -15,7 +15,8 @@ import { ingestUpload } from "@/domain/media";
 import { applyChatProposal, changeAircraftFields, suggestClassification, type ApplyResult } from "@/domain/chat";
 import { parseChatLang, tr, trStep } from "@/domain/toyText";
 import { serverT } from "@/lib/uiLang";
-import { converse, emptyDraft, quoteReply, type ToyReply, type Draft, type DraftPhoto } from "@/domain/toy";
+import { RESTART, converse, emptyDraft, quoteReply, type ToyReply, type Draft, type DraftPhoto } from "@/domain/toy";
+import { clearConversation, loadConversation, saveConversation, type SavedMessage } from "@/domain/toyMemory";
 
 export interface TurnResult {
   draft: Draft;
@@ -38,8 +39,44 @@ async function photoFor(db: Awaited<ReturnType<typeof getDb>>, tenantId: string,
  */
 export async function toyTurnAction(fd: FormData): Promise<TurnResult> {
   const started = performance.now();
+  // Toy's memory is kept with the account: the saved conversation is what this turn reads (not the browser's copy), so
+  // it carries on in another tab or on the phone. Not while the admin looks at someone else's workspace.
+  const session = await requireUser();
+  const remember = !session.viewingAs;
+  const db = await getDb();
+  const message = String(fd.get("text") ?? "");
+  const restart = RESTART.test(message.trim());
+  if (remember) {
+    if (restart) await clearConversation(db, session.actor.id);
+    else {
+      const saved = await loadConversation(db, session.actor.id, session.actor.tenantId).catch(() => null);
+      if (saved) fd.set("draft", JSON.stringify(saved.draft));
+    }
+  }
   const r = await turn(fd);
+  if (remember && !restart) {
+    const files = fd.getAll("files").filter((f): f is File => f instanceof File && f.size > 0).map((f) => f.name);
+    const user: SavedMessage = { id: randomUUID(), role: "user", text: String(fd.get("label") ?? "") || message, files };
+    const toy: SavedMessage = { id: randomUUID(), role: "toy", say: r.reply.say, chips: r.reply.chips, done: r.reply.done, aircraftId: r.applied?.aircraftId ?? null, failures: r.failures, share: r.reply.share, link: r.reply.link, photos: r.reply.photos, copy: r.reply.copy, options: r.reply.options, kinds: r.reply.kinds };
+    await saveConversation(db, session.actor.id, session.actor.tenantId, r.draft, [user, toy]).catch((e) => console.error("Toy memory not saved", e));
+  }
   return { ...r, serverMs: Math.round(performance.now() - started) };
+}
+
+/** The saved conversation, to show when the chat opens. */
+export async function loadToyChatAction(): Promise<{ draft: Draft; messages: SavedMessage[] } | null> {
+  const session = await requireUser();
+  if (session.viewingAs) return null;
+  const saved = await loadConversation(await getDb(), session.actor.id, session.actor.tenantId).catch(() => null);
+  if (!saved || !saved.messages.length) return null;
+  return { draft: { ...emptyDraft(randomUUID()), ...(saved.draft as Partial<Draft>) }, messages: saved.messages };
+}
+
+/** "New chat": forgets the conversation (choices made before are kept). */
+export async function clearToyChatAction(): Promise<void> {
+  const session = await requireUser();
+  if (session.viewingAs) return;
+  await clearConversation(await getDb(), session.actor.id);
 }
 
 async function turn(fd: FormData): Promise<TurnResult> {
@@ -99,7 +136,8 @@ async function turn(fd: FormData): Promise<TurnResult> {
     }
   }
 
-  const turn = await converse(db, actor.tenantId, draft, message, photos, { library: await libraryScope(db, session) });
+  const ctx = { library: await libraryScope(db, session), userId: session.viewingAs ? undefined : actor.id };
+  const turn = await converse(db, actor.tenantId, draft, message, photos, ctx);
   if (turn.edits) {
     // The broker said yes to changing an aircraft's record from the chat; then the quote is shown again with it.
     if (readOnlyWhy) return { draft: turn.draft, reply: { say: [readOnlyWhy], chips: [], ready: false }, failures };
@@ -118,7 +156,7 @@ async function turn(fd: FormData): Promise<TurnResult> {
     revalidatePath("/", "layout");
     const d = turn.draft;
     if (!d.quote?.ids.length) return { draft: d, reply: { say: done, chips: [], ready: false }, failures };
-    const reply = await quoteReply(db, actor.tenantId, d, { library: await libraryScope(db, session) }, done, Object.keys(d.quote.prices).length > 0);
+    const reply = await quoteReply(db, actor.tenantId, d, ctx, done, Object.keys(d.quote.prices).length > 0);
     return { draft: d, reply, failures };
   }
   revalidatePath("/", "layout");

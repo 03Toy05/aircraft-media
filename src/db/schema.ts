@@ -7,6 +7,7 @@ import {
   jsonb,
   pgEnum,
   pgTable,
+  primaryKey,
   text,
   timestamp,
   uniqueIndex,
@@ -725,3 +726,30 @@ export const announcements = pgTable("announcements", {
   createdAt: created(),
   finishedAt: timestamp("finished_at", { withTimezone: true }),
 });
+
+/** Toy's conversation with each person, so it carries on across tabs and devices (cleared after 90 days, or on "start over"). */
+export const toyConversations = pgTable("toy_conversations", {
+  userId: uuid("user_id").primaryKey(),
+  tenantId: uuid("tenant_id").notNull(),
+  /** The conversation's state (what Toy asked, the quote in progress), JSON. */
+  draft: text("draft").notNull(),
+  /** The messages shown in the chat, JSON (the most recent ones). */
+  messages: text("messages").notNull(),
+  updatedAt: updated(),
+});
+
+/** What each person chose before, so Toy can do it again: "Lux 7X" means OO-AIE; the photo kinds they send. */
+export const toyChoices = pgTable(
+  "toy_choices",
+  {
+    userId: uuid("user_id").notNull(),
+    /** aircraft | photos */
+    kind: text("kind").notNull(),
+    /** What was typed, normalised ("lux7x"); "" for photos. */
+    key: text("key").notNull(),
+    /** JSON: aircraft ids, or photo kinds. */
+    value: text("value").notNull(),
+    updatedAt: updated(),
+  },
+  (t) => [primaryKey({ columns: [t.userId, t.kind, t.key] })],
+);

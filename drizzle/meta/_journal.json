@@ -197,6 +197,13 @@
       "when": 1796200000000,
       "tag": "0027_signup_emails",
       "breakpoints": true
+    },
+    {
+      "idx": 28,
+      "version": "7",
+      "when": 1796300000000,
+      "tag": "0028_toy_memory",
+      "breakpoints": true
     }
   ]
 }

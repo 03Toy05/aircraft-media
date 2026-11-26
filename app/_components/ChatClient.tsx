@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { rememberUiLang, uiLangChosen, useUiLang } from "./uiLang";
 import { useEffect, useRef, useState, useTransition } from "react";
-import { toyTurnAction, type TurnResult } from "../chatActions";
+import { clearToyChatAction, loadToyChatAction, toyTurnAction, type TurnResult } from "../chatActions";
 import { recordQuoteShareAction } from "../actions";
 import { report } from "./speedClock";
 import type { ToyPhoto, Draft } from "@/domain/toy";
@@ -31,7 +31,7 @@ const UI_EN = {
   quoteHint: "Fill in what you have; blank lines are skipped. Opening and Closing replace your standard opening and closing lines. Airports by ICAO or IATA code, e.g. HKG or VHHH. Add more legs or options with the same format.",
   placeholderNew: "Ask Toy, or tap Template…",
   placeholderReply: "Reply to Toy, or add more details…",
-  templateBtn: "Template", speak: "Speak", stop: "Stop", send: "Send", attach: "Photos", voiceOptions: "Voice options", clear: "Clear",
+  templateBtn: "Template", speak: "Speak", stop: "Stop", send: "Send", attach: "Photos", voiceOptions: "Voice options", clear: "Clear", newChat: "New chat", newChatHint: "Start a new conversation. Toy still remembers the choices you made.",
   readAloud: "Toy reads replies aloud", autoSend: "Send when I stop speaking", voiceLanguage: "Voice language", language: "Language",
   listening: "Listening… keep talking, pauses are fine. Press Stop listening when you are done (or tick “Send when I stop speaking”). Say something like “Operator Advanced Aviation, aircraft type G280, capacity 10”.",
   noVoice: "Voice input isn't available in this browser. Chrome or Edge work best.",
@@ -66,7 +66,7 @@ const UI_HANT: UI = {
   quoteHint: "填上你有的資料，空白的行會略過。開場白及結尾語會取代你的標準開場白及結尾語。機場用 ICAO 或 IATA 代碼，例如 HKG 或 VHHH。可用相同格式加入更多航段或選項。",
   placeholderNew: "問 Toy，或按「範本」…",
   placeholderReply: "回覆 Toy，或補充更多資料…",
-  templateBtn: "範本", speak: "語音輸入", stop: "停止", send: "傳送", attach: "相片", voiceOptions: "語音選項", clear: "清除",
+  templateBtn: "範本", speak: "語音輸入", stop: "停止", send: "傳送", attach: "相片", voiceOptions: "語音選項", clear: "清除", newChat: "新對話", newChatHint: "開始新的對話。Toy 仍會記得你之前的選擇。",
   readAloud: "由 Toy 朗讀回覆", autoSend: "停止說話後自動傳送", voiceLanguage: "語音語言", language: "語言",
   listening: "正在收音…請繼續說，停頓沒關係。說完後按「停止收音」（或勾選「停止說話後自動傳送」）。可以這樣說：「營運商 Advanced Aviation，機型 G280，載客量 10」。",
   noVoice: "此瀏覽器不支援語音輸入。建議使用 Chrome 或 Edge。",
@@ -337,6 +337,17 @@ export default function ChatClient() {
   // The last quote, or Toy's open "Which 7X?" question, survives a reload or a visit to another page (in this tab), so
   // prices and changes can still be typed, and the answer still finishes the quote.
   useEffect(() => {
+    // The conversation saved with the account comes first (it carries over from another tab or device).
+    let cancelled = false;
+    loadToyChatAction().then((c) => {
+      if (cancelled || !c?.messages.length) return;
+      const lastToy = [...c.messages].reverse().find((m) => m.role === "toy")?.id;
+      setDraft(JSON.stringify(c.draft));
+      setMsgs(c.messages.map((m) => (m.role === "toy" ? { ...m, draft: m.id === lastToy ? c.draft : ({ photos: [] } as unknown as Draft) } : m) as Msg));
+    }).catch(() => { /* the tab's own copy below is used */ });
+    return () => { cancelled = true; };
+  }, []);
+  useEffect(() => {
     try {
       const saved = JSON.parse(window.sessionStorage.getItem(QUOTE_KEY) ?? "null") as { quote: Draft["quote"]; asked?: Draft["asked"]; msg: Msg } | null;
       if (saved?.msg && (saved.msg.role as string) === "chocks") saved.msg.role = "toy"; // saved before the rename
@@ -359,6 +370,7 @@ export default function ChatClient() {
     fd.set("text", t);
     fd.set("draft", draft);
     fd.set("lang", chatLangRef.current);
+    if (override?.label) fd.set("label", override.label);
     for (const f of files) fd.append("files", f);
     setMsgs((m) => [...m, { id: crypto.randomUUID(), role: "user", text: override?.label ?? t, files: files.map((f) => f.name) }]);
     if (!override) setText("");
@@ -505,10 +517,18 @@ export default function ChatClient() {
             <Toy state={toyState} size={44} className="chat-toy" />
             <p style={{ margin: 0 }}><b><Greeting text={ui.hi} /></b>{ui.intro}</p>
           </div>
+          <span style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap", justifyContent: "flex-end" }}>
+          {msgs.length > 0 && (
+            <button type="button" className="secondary small-btn" title={ui.newChatHint} disabled={pending}
+              onClick={() => { setMsgs([]); setDraft(""); try { window.sessionStorage.removeItem(QUOTE_KEY); } catch { /* ignore */ } clearToyChatAction().catch(() => {}); }}>
+              {ui.newChat}
+            </button>
+          )}
           <span className="seg" role="radiogroup" aria-label={ui.language}>
             {CHAT_LANGUAGES.map((l) => (
               <button key={l.id} type="button" role="radio" aria-checked={chatLang === l.id} className={chatLang === l.id ? "on" : ""} onClick={() => changeChatLang(l.id)}>{l.id === "en" ? "EN" : l.id === "zh-Hant" ? "繁" : "简"}</button>
             ))}
+          </span>
           </span>
         </div>
         <div className="welcome-actions">

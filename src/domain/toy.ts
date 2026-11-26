@@ -10,13 +10,15 @@ import { answerFleet, answerLookup, fleetBasics, isLookupQuestion, quotePreview 
 import { LIBRARY_TENANT_ID, scopeHasAircraft, withinLibraryScope, type LibraryScope } from "./library";
 
 /** What of the library Toy may use for this person: true (tests) = all of it; null/false = none. */
-type LibraryCtx = { library?: boolean | LibraryScope | null };
+/** userId: whose memory to read and add to (choices made before); without it Toy remembers nothing beyond this chat. */
+type LibraryCtx = { library?: boolean | LibraryScope | null; userId?: string };
 const scopeOf = (ctx: LibraryCtx): LibraryScope | null => (ctx.library === true ? { all: true } : ctx.library || null);
 import { operatorAliasesByName } from "./catalogue";
 import { findAirport } from "./airports";
 import type { Leg } from "./routing";
 import { parseFleetQuery } from "./fleetQuery";
 import { findContacts } from "./contacts";
+import { getChoice, recentQuotes, setChoice } from "./toyMemory";
 import { parseQuoteFollowUp, validEdit, type EditField, type FieldEdit } from "./toyQuoteEdit";
 import { findAircraftByTail, findAircraftWithoutTail, getAircraftCard, orgAliasesFor, typeAliasesFor, resolveAircraftTypes, resolveAircraftTypesExact, resolveOrganisations, resolveOrganisationsExact } from "./directory";
 
@@ -37,7 +39,7 @@ export type Asked =
   | { kind: "classify"; mediaId: string }
   | { kind: "edit"; edits: AircraftEdit[] }
   /** A quote named an aircraft that fits several ("Lux 7X"): which of them. The request is kept, to finish it after the answer. */
-  | { kind: "quote_pick"; message: string; index: number; what: string; options: Option[]; picks: Record<number, string[]> }
+  | { kind: "quote_pick"; message: string; index: number; what: string; options: Option[]; picks: Record<number, string[]>; /** What was typed, normalised, to remember the answer by. */ key?: string }
   | { kind: "confirm" };
 
 /** What Toy may change on an aircraft's record from the chat. */
@@ -140,10 +142,20 @@ const YES = new RegExp("^(?:(?:yes|yep|yeah|y|ok(?:ay)?|sure|correct|right|confi
 const NEW = new RegExp("^(?:(?:new|it'?s new|a new one|new one|new operator|create(?: it| one)?|add(?: it)?|yes|yep|yeah|y)\\b|(?:新增|新的|新營運商|新运营商|新建|建立|創建|创建|是新的|是)" + END + ")", "i");
 const SKIP = new RegExp("^(?:(?:skip|none|no operator|blank|leave(?: it)?(?: blank| out)?|later|not now|no tail|no|nope|n)\\b|(?:跳過|跳过|略過|略过|不用|不需要|留空|無|无|沒有|没有|稍後|稍后|之後|之后|否|不是|不要)" + END + ")", "i");
 const UNSURE = /(don'?t know|do not know|not sure|unsure|no idea|dunno|unknown|i'?m not certain|不知道|不確定|不确定|唔知|不清楚|未必)/i;
-const RESTART = new RegExp("^(?:(?:cancel|start over|reset|forget (?:it|that)|never ?mind)\\b|(?:取消|重來|重来|重新開始|重新开始|算了|不用了)" + END + ")", "i");
+export const RESTART = new RegExp("^(?:(?:cancel|start over|reset|forget (?:it|that)|never ?mind)\\b|(?:取消|重來|重来|重新開始|重新开始|算了|不用了)" + END + ")", "i");
 const SAME = /^(use|same as|it'?s|its|that'?s|choose|pick|用|選|选|揀)(?:\s+|(?<=[用選选揀]))(.+)$/i;
 
 const WANTS_ALL = /\b(?:all|every|each)\b|全部|所有|每一?架/i;
+/** "other Lux 7X": choose again rather than use the one remembered. */
+const OTHER = /\b(?:other|another|different)\b|另一架|另外一架|其他|別的|别的|第二架/i;
+/** "Same as last time", "same again", "AM-2611-004 again", "上次一樣". */
+const SAME_AGAIN = /^(?:(?:the\s+)?same(?:\s+(?:as\s+(?:last\s+time|before)|again|quote))?|(?:repeat|redo)\s+(?:the\s+|my\s+)?last\s+quote|last\s+quote\s+again|(?:quote\s+)?am-\d{4}-\d{3}\s+again|again\s+am-\d{4}-\d{3}|(?:同|跟|和|與|与)上次一樣|(?:同|跟|和|與|与)上次一样|(?:同|跟|和|與|与)上次一?樣|再來一次|再来一次|上次的報價|上次的报价)[.!。！]?$/i;
+const REFERENCE = /\bAM-\d{4}-\d{3}\b/i;
+/** "My recent quotes", "yesterday's quotes", "最近的報價". */
+const RECENT_QUOTES = /^(?:(?:show\s+(?:me\s+)?)?(?:my\s+)?(?:recent|last|previous|past|yesterday'?s?)\s+quotes|quotes?\s+(?:i\s+(?:made|sent|saved)\s+)?(?:yesterday|recently|this\s+week)|(?:my\s+)?quotes\s+from\s+yesterday|最近的?報價|最近的?报价|昨天的?報價|昨天的?报价|琴日嘅?報價)[.!?。！？]?$/i;
+/** "it", "that", "this quote": the aircraft of the quote in this conversation. */
+const IT = /^(?:it|that|this|them|these|the\s+quote|this\s+quote|that\s+quote|the\s+same|它|佢|這個|这个|呢個|那個|那个|報價|报价)$/i;
+const shortDate = (L: ChatLang | undefined, d: Date) => new Intl.DateTimeFormat(isChinese(L) ? "zh-HK" : "en-GB", { day: "numeric", month: "short", timeZone: "Asia/Hong_Kong" }).format(d);
 const ALL_ANSWER = /^(?:all|all of them|all \d+|every one|both|全部|所有|全部都要|都要|兩架都要|两架都要)[.!。！]?$/i;
 
 /** The broker's answer to "Which 7X?": numbers ("2", "1 and 3"), tails or names ("FSX", "OO-AIE and F-HECD"), or "all". */
@@ -236,13 +248,56 @@ export async function converse(
   let quoteText = message;
   if (asked?.kind === "quote_pick" && message) {
     const ids = pickQuoteOptions(message, asked.options);
-    if (ids) { picks = { ...asked.picks, [asked.index]: ids }; quoteText = asked.message; }
-    else if (!parseQuoteRequest(message)) { d.asked = asked; return { draft: d, reply: quotePickReply(L, asked, true), confirm: false }; }
+    if (ids) {
+      picks = { ...asked.picks, [asked.index]: ids };
+      quoteText = asked.message;
+      // Remembered for next time: "Lux 7X" means this one.
+      if (ctx.userId && asked.key) await setChoice(db, ctx.userId, "aircraft", asked.key, ids);
+    }
+    else if (!parseQuoteRequest(message) && !SAME_AGAIN.test(message)) { d.asked = asked; return { draft: d, reply: quotePickReply(L, asked, true), confirm: false }; }
+  }
+
+  // "Same as last time": the last quote in this conversation, or the last one saved; "AM-2611-004 again": that one.
+  if (d.photos.length === 0 && asked?.kind !== "confirm" && message && SAME_AGAIN.test(message)) {
+    const ref = message.match(REFERENCE)?.[0]?.toUpperCase();
+    let lead: string;
+    if (!ref && d.quote?.ids.length) lead = tr(L, "Here is the last quote again:");
+    else {
+      const past = (await recentQuotes(db, tenantId, ref ? 50 : 1)).find((q) => !ref || q.reference.toUpperCase() === ref);
+      if (!past) return { draft: d, reply: { say: [ref ? tr(L, "I couldn't find a saved quote {ref}.", { ref }) : tr(L, "There's no earlier quote yet. Ask me for one, e.g. “G650 quote HKG-NRT 12 Dec”.")], chips: [], ready: false, notFound: true }, confirm: false };
+      const c = past.content;
+      const ids = (c.options ?? []).map((o) => o.aircraftId).filter(Boolean);
+      const prices = Object.fromEntries((c.options ?? []).filter((o) => o.price).map((o) => [o.aircraftId, o.price]));
+      d.quote = { ids, prices, ...(c.legs?.length ? { legs: c.legs } : {}), ...(c.greeting ? { greeting: c.greeting } : {}), ...(c.closing ? { closing: c.closing } : {}) };
+      lead = tr(L, "Here is {ref} v{n} again (saved {date}):", { ref: past.reference, n: past.version, date: shortDate(L, past.savedAt) });
+    }
+    const q = d.quote!;
+    const reply = await quoteReply(db, tenantId, d, ctx, [lead], Object.keys(q.prices).length > 0);
+    return { draft: d, reply, confirm: false };
+  }
+
+  // "My recent quotes", "yesterday's quotes": the last ones saved, each with a button to make it again.
+  if (d.photos.length === 0 && asked?.kind !== "confirm" && message && RECENT_QUOTES.test(message)) {
+    const yesterday = /yesterday|昨天|昨日|琴日/i.test(message);
+    let past = await recentQuotes(db, tenantId, yesterday ? 30 : 5);
+    if (yesterday) {
+      const y = new Date(Date.now() - 86_400_000).toDateString();
+      past = past.filter((q) => q.savedAt.toDateString() === y).slice(0, 5);
+    }
+    if (!past.length) return { draft: d, reply: { say: [yesterday ? tr(L, "No quotes were saved yesterday.") : tr(L, "No quotes have been saved yet.")], chips: [], ready: false, link: { href: "/requests", label: tr(L, "Open the requests") } }, confirm: false };
+    const nl = String.fromCharCode(10);
+    const lines = past.map((q) => `• ${[`${q.reference} v${q.version}`, shortDate(L, q.savedAt), q.route, (q.content.options ?? []).map((o) => o.type).join(", ")].filter(Boolean).join(" · ")}`);
+    return {
+      draft: d,
+      reply: { say: [[tr(L, "Your recent quotes:"), ...lines].join(nl)], chips: past.map((q) => ({ label: tr(L, "{ref} again", { ref: q.reference }), send: `${q.reference} again` })), ready: false, link: { href: "/requests", label: tr(L, "Open the requests") } },
+      confirm: false,
+    };
   }
 
   // "Make a quote for the G650 and B-KXX": open the Quote page with those aircraft already chosen. Nothing is saved.
   const quoteReq = d.photos.length === 0 && asked?.kind !== "confirm" ? parseQuoteRequest(quoteText) : null;
   if (quoteReq) {
+    const memory: string[] = [];
     const ids: string[] = [];
     const names: string[] = [];
     const missing: string[] = [];
@@ -250,14 +305,22 @@ export async function converse(
     for (const [i, what] of quoteReq.what.entries()) {
       // "all Lux 7X": every one of them; otherwise Toy asks which one when several fit.
       const wantsAll = WANTS_ALL.test(what);
-      const term = wantsAll ? what.replace(new RegExp(WANTS_ALL.source, "gi"), " ").replace(/\s+/g, " ").trim() : what;
+      // "other Lux 7X": ask again instead of using the one chosen last time.
+      const other = OTHER.test(what);
+      const term = what.replace(new RegExp(WANTS_ALL.source, "gi"), " ").replace(new RegExp(OTHER.source, "gi"), " ").replace(/\s+/g, " ").trim() || what;
+      const key = normalizeKey(term);
       // The broker's own aircraft first; the platform library when they have none by that name.
       let found = await findAircraftsForShare(db, tenantId, term);
       if (!found.length && ctx.library) found = (await findAircraftsForShare(db, LIBRARY_TENANT_ID, term, await operatorAliasesByName(db, [tenantId, LIBRARY_TENANT_ID])))
         .filter((f) => scopeHasAircraft(scopeOf(ctx), f.id)).map((f) => ({ ...f, label: `${f.label} (library)` }));
+      // The one chosen last time for the same words, while it is still there.
+      const remembered = !picks[i] && !wantsAll && !other && found.length > 1 && ctx.userId ? (await getChoice<string[]>(db, ctx.userId, "aircraft", key))?.filter((id) => found.some((f) => f.id === id)) : null;
       if (picks[i]) found = found.filter((f) => picks[i].includes(f.id));
-      else if (found.length > 1 && !wantsAll) {
-        const ask: Extract<Asked, { kind: "quote_pick" }> = { kind: "quote_pick", message: quoteText, index: i, what, options: found.slice(0, 12).map((f) => ({ id: f.id, name: f.label })), picks };
+      else if (remembered?.length) {
+        found = found.filter((f) => remembered.includes(f.id));
+        memory.push(tr(L, "Using {names}, as last time. Say “other {what}” to choose again.", { names: found.map((f) => f.label).join(", "), what: term }));
+      } else if (found.length > 1 && !wantsAll) {
+        const ask: Extract<Asked, { kind: "quote_pick" }> = { kind: "quote_pick", message: quoteText, index: i, what: term, key, options: found.slice(0, 12).map((f) => ({ id: f.id, name: f.label })), picks };
         d.asked = ask;
         return { draft: d, reply: quotePickReply(L, ask, false), confirm: false };
       }
@@ -273,7 +336,16 @@ export async function converse(
     // The routing typed with the request: legs with an airport we don't know are left out, and Toy says which code.
     const unknownAirports = quoteReq.unknownAirports ?? [];
     const legs = (quoteReq.legs ?? []).filter((l) => findAirport(l.from) && findAirport(l.to));
-    if (ids.length) d.quote = { ids, prices, ...(quoteReq.kinds ? { kinds: quoteReq.kinds } : {}), ...(legs.length ? { legs } : {}), ...(quoteReq.greeting ? { greeting: quoteReq.greeting } : {}), ...(quoteReq.closing ? { closing: quoteReq.closing } : {}) };
+    // The photo kinds: as asked (and remembered), or as asked last time.
+    let kinds = quoteReq.kinds;
+    if (ctx.userId && ids.length) {
+      if (kinds) await setChoice(db, ctx.userId, "photos", "", kinds);
+      else {
+        const usual = await getChoice<Classification[]>(db, ctx.userId, "photos", "");
+        if (usual) { kinds = usual; memory.push(usual.length ? tr(L, "Photos as last time: {kinds}.", { kinds: usual.map((k) => trClassification(L, k, CLASSIFICATION_LABEL[k])).join(", ") }) : tr(L, "No photos, as last time.")); }
+      }
+    }
+    if (ids.length) d.quote = { ids, prices, ...(kinds ? { kinds } : {}), ...(legs.length ? { legs } : {}), ...(quoteReq.greeting ? { greeting: quoteReq.greeting } : {}), ...(quoteReq.closing ? { closing: quoteReq.closing } : {}) };
     const nl = String.fromCharCode(10);
     const routeSay = legs.length ? [[tr(L, "Routing:"), ...legs.map((l) => `• ${legLine(L, l)}`)].join(nl)] : [];
     const airportSay = unknownAirports.length ? [tr(L, "I don't know the airport code {codes}. Check it (ICAO like VHHH or IATA like HKG), or fix it on the Quote page.", { codes: unknownAirports.join(", ") })] : [];
@@ -285,6 +357,7 @@ export async function converse(
           link: { href: legs.length ? `/quote?legs=${encodeURIComponent(JSON.stringify(legs))}` : "/quote", label: tr(L, "Open the quote") },
           notFound: quoteReq.what.length > 0,
         };
+    if (ids.length && memory.length) reply.say.splice(1, 0, ...memory);
     if (ids.length && missing.length) reply.say.push(tr(L, "I couldn't find: {names}.", { names: missing.join(", ") }));
     // Say which word matched nothing at all ("Vista": no such operator here or in the library), so the broker knows to
     // add the aircraft or check the spelling, rather than rephrase.
@@ -384,7 +457,10 @@ export async function converse(
     if (people.length === 0) {
       return { draft: d, reply: { say: [tr(L, "I don't have a contact called “{who}”. Add them on the Contacts page first, with the messenger they prefer, then ask me again.", { who: shareReq.who })], chips: [], ready: false, notFound: true }, confirm: false };
     }
-    const planes = await findAircraftsForShare(db, tenantId, shareReq.what);
+    // "Send it to Mr Chan (again)": the aircraft of the quote in this conversation.
+    const planes = IT.test(shareReq.what.trim()) && d.quote?.ids.length
+      ? (await Promise.all(d.quote.ids.map((id) => getAircraftCard(db, id)))).filter((c): c is NonNullable<typeof c> => !!c).map((c) => ({ id: c.aircraftId, label: [c.operator, c.aircraft, c.tailNumber].filter(Boolean).join(" · ") }))
+      : await findAircraftsForShare(db, tenantId, shareReq.what);
     if (planes.length === 0) return { draft: d, reply: { say: [tr(L, "I couldn't find an aircraft matching “{what}”. Try the tail number, the operator or the aircraft type.", { what: shareReq.what })], chips: [], ready: false, notFound: true }, confirm: false };
     if (planes.length > 1) {
       const options = planes.slice(0, 6).map((a) => ({ id: a.id, name: a.label }));
