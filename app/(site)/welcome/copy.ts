@@ -108,7 +108,7 @@ export const COPY: Record<SiteLang, Copy> = {
   "zh-hant": {
     tagline: "為航空業帶來一點幫助。",
     greeting: { lead: "我是", plain: "我是Toy。" },
-    promise: "每位經紀都值得擁有一位助理。",
+    promise: "每位代理都值得擁有一位助理。",
     signIn: "登入",
     languageLabel: "語言",
     backToStart: "回到開始",
@@ -153,7 +153,7 @@ export const COPY: Record<SiteLang, Copy> = {
       founderVideo: "我的創造者想說幾句",
       paragraphs: [
         "我的創造者在私人飛機行業做了 14 年包機管家。多年來，他不斷準備報價單、尋找飛機相片、在不同平台之間周旋，於是想打造一位他一直希望擁有的助理。",
-        "不是每位經紀都請得起助理。所以，他決定自己造一個。",
+        "不是每位代理都請得起助理。所以，他決定自己造一個。",
         "他相信，學習始於玩樂。我，就是這樣誕生的。",
         "我是他的第一個作品。",
         "如今，我只需幾下點擊，就能準備好附有相片的報價單。",
@@ -171,7 +171,7 @@ export const COPY: Record<SiteLang, Copy> = {
   "zh-hans": {
     tagline: "为航空业带来一点帮助。",
     greeting: { lead: "我是", plain: "我是Toy。" },
-    promise: "每位经纪都值得拥有一位助理。",
+    promise: "每位代理都值得拥有一位助理。",
     signIn: "登录",
     languageLabel: "语言",
     backToStart: "回到开始",
@@ -216,7 +216,7 @@ export const COPY: Record<SiteLang, Copy> = {
       founderVideo: "我的创造者想说几句",
       paragraphs: [
         "我的创造者在私人飞机行业做了 14 年包机管家。多年来，他不断准备报价单、寻找飞机照片、在不同平台之间周旋，于是想打造一位他一直希望拥有的助理。",
-        "不是每位经纪都请得起助理。所以，他决定自己造一个。",
+        "不是每位代理都请得起助理。所以，他决定自己造一个。",
         "他相信，学习始于玩乐。我，就是这样诞生的。",
         "我是他的第一个作品。",
         "如今，我只需几下点击，就能准备好附有照片的报价单。",
