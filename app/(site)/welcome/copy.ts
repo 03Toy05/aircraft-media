@@ -31,7 +31,9 @@ export type Copy = {
   initial: { title: string; body: string };
   questions: Record<QuestionKey, string>;
   what: { headline: string; items: string[]; next: string };
-  show: { headline: string; soon: string; caption: string };
+  show: { headline: string; soon: string; caption: string; link: string };
+  /** The demo page (/demo). Steps describe what the video shows; each is a feature that exists today. */
+  demo: { title: string; intro: string; painTitle: string; pains: string[]; claim: string; steps: string[]; soonNote: string; transcript: string; back: string };
   /** The brand signature (TOY-14): `lead` + `tail`, then the airplane in place of the final period; `plain` is what screen readers hear. */
   begins: { lead: string; tail: string; plain: string; paragraphs: string[]; vision: string };
   price: { headline: string; body: string; soon: string };
@@ -65,7 +67,22 @@ export const COPY: Record<SiteLang, Copy> = {
       ],
       next: "Coming next: itineraries for confirmed trips.",
     },
-    show: { headline: "Watch me at work.", soon: "Demo coming soon", caption: "Upload. Organize. Ask. Quote." },
+    show: { headline: "Watch me at work.", soon: "Demo coming soon", caption: "Upload. Organize. Ask. Quote.", link: "Open the demo page" },
+    demo: {
+      title: "Toy's first creation",
+      intro: "Generate a text, weblink or PDF quotation with photos in just a few clicks!",
+      painTitle: "Have you experienced this?",
+      pains: [
+        "Ummm… what's the YOM and capacity of this aircraft?",
+        "Ohhhh man… I forgot where I saved the photos again!!",
+        "It's so late now. I still have 2 more quotes to generate.",
+      ],
+      claim: "A quotation can take up to 5–10 minutes. With Toy's help, you can have your quote in seconds!",
+      steps: ["Quote", "Upload", "Search"],
+      soonNote: "The video is being made. It will play here, with captions.",
+      transcript: "Read the transcript",
+      back: "Back to Toy",
+    },
     begins: {
       lead: "Everything begins as a ",
       tail: "Toy",
@@ -111,7 +128,22 @@ export const COPY: Record<SiteLang, Copy> = {
       ],
       next: "即將推出：已確認行程的行程表。",
     },
-    show: { headline: "看我工作。", soon: "示範影片即將推出", caption: "上載。整理。詢問。報價。" },
+    show: { headline: "看我工作。", soon: "示範影片即將推出", caption: "上載。整理。詢問。報價。", link: "打開示範頁" },
+    demo: {
+      title: "Toy 的第一個作品",
+      intro: "只需幾下點擊，就能生成附相片的文字、網頁連結或 PDF 報價！",
+      painTitle: "你也遇過這些情況嗎？",
+      pains: [
+        "嗯……這架飛機的出廠年份和座位數是多少？",
+        "哎呀……我又忘了相片存在哪裡了！！",
+        "已經這麼晚了，我還有兩份報價要做。",
+      ],
+      claim: "一份報價可能要花 5 至 10 分鐘。有 Toy 幫忙，幾秒就能完成！",
+      steps: ["報價", "上載", "搜尋"],
+      soonNote: "影片製作中，完成後會在這裡播放，並附字幕。",
+      transcript: "閱讀文字稿",
+      back: "回到 Toy",
+    },
     begins: {
       lead: "一切從Toy",
       tail: "開始",
@@ -129,7 +161,7 @@ export const COPY: Record<SiteLang, Copy> = {
       body: "專屬於你的工作空間、飛機資料庫、報價工具和個人助理。",
       soon: "收費資訊即將公布。",
     },
-    cta: "讓 Toy 屬於你",
+    cta: "擁有Toy吧!",
     footer: { rights: "© 2026 Aircraft Media", privacy: "私隱", terms: "條款", contact: "聯絡我們" },
   },
   "zh-hans": {
@@ -157,7 +189,22 @@ export const COPY: Record<SiteLang, Copy> = {
       ],
       next: "即将推出：已确认行程的行程表。",
     },
-    show: { headline: "看我工作。", soon: "演示视频即将推出", caption: "上传。整理。询问。报价。" },
+    show: { headline: "看我工作。", soon: "演示视频即将推出", caption: "上传。整理。询问。报价。", link: "打开演示页" },
+    demo: {
+      title: "Toy 的第一个作品",
+      intro: "只需几下点击，就能生成附照片的文字、网页链接或 PDF 报价！",
+      painTitle: "你也遇过这些情况吗？",
+      pains: [
+        "嗯……这架飞机的出厂年份和座位数是多少？",
+        "哎呀……我又忘了照片存在哪里了！！",
+        "已经这么晚了，我还有两份报价要做。",
+      ],
+      claim: "一份报价可能要花 5 至 10 分钟。有 Toy 帮忙，几秒就能完成！",
+      steps: ["报价", "上传", "搜索"],
+      soonNote: "视频制作中，完成后会在这里播放，并附字幕。",
+      transcript: "阅读文字稿",
+      back: "回到 Toy",
+    },
     begins: {
       lead: "一切从Toy",
       tail: "开始",
@@ -175,7 +222,7 @@ export const COPY: Record<SiteLang, Copy> = {
       body: "专属于你的工作空间、飞机资料库、报价工具和个人助理。",
       soon: "收费信息即将公布。",
     },
-    cta: "让 Toy 属于你",
+    cta: "拥有Toy吧!",
     footer: { rights: "© 2026 Aircraft Media", privacy: "隐私", terms: "条款", contact: "联系我们" },
   },
 };

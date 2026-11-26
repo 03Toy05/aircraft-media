@@ -83,6 +83,7 @@ export default async function WelcomePage({ searchParams }: { searchParams: Prom
                 <span>{t.show.soon}</span>
               </div>
               <p className="site-next">{t.show.caption}</p>
+              <Link className="site-demo-link" href={lang === "en" ? "/demo" : `/demo?lang=${lang}`}>{t.show.link} →</Link>
             </>
           )}
           {q === "begins" && (
