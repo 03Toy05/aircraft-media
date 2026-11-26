@@ -15,7 +15,7 @@ export const metadata: Metadata = {
   alternates: { canonical: process.env.APP_URL ? new URL("/", process.env.APP_URL).toString() : "/" },
 };
 
-/** Where "Make Toy yours" and "Contact" go. Set NEXT_PUBLIC_CONTACT_EMAIL once the support address is confirmed; until then they open the privacy page, which says who to ask. */
+/** Where "Contact" goes. Set NEXT_PUBLIC_CONTACT_EMAIL once the support address is confirmed; until then they open the privacy page, which says who to ask. */
 function contactHref(): string {
   const email = process.env.NEXT_PUBLIC_CONTACT_EMAIL?.trim();
   return email ? `mailto:${email}` : "/privacy";
@@ -117,7 +117,8 @@ export default async function WelcomePage({ searchParams }: { searchParams: Prom
                   </Link>
                 ))}
               </nav>
-              <a className="site-btn site-btn-sage home-cta" href={mail}>{t.cta}</a>
+              {/* "Make Toy yours" starts the 14-day free trial (/start). */}
+              <Link className="site-btn site-btn-sage home-cta" href={lang === "en" ? "/start" : `/start?lang=${lang}`}>{t.cta}</Link>
             </aside>
           </div>
           {words && (
