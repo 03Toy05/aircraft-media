@@ -17,7 +17,7 @@ import { useT } from "./uiLang";
 
 /** Languages the PDF can be made in (see quotePdf.ts); the client link shows every language. */
 const PDF_LANGS: string[] = ["en", "zh-Hant", "ja", "vi", "fr", "de", "id", "ru"];
-import { QUOTE_LANGUAGES, QUOTE_LOCALE, QUOTE_SUBJECT, QUOTE_WORDS, buildQuoteParts, defaultQuoteTemplate, priceInText, renumberBlock, type QuoteLanguage, type QuoteTemplate } from "@/domain/quote";
+import { OWNER_APPROVAL, needsOwnerApproval, withoutOwnerApproval, QUOTE_LANGUAGES, QUOTE_LOCALE, QUOTE_SUBJECT, QUOTE_WORDS, buildQuoteParts, defaultQuoteTemplate, priceInText, renumberBlock, type QuoteLanguage, type QuoteTemplate } from "@/domain/quote";
 import { forOtherApps, parseStyled } from "@/domain/textStyle";
 import { parseQuoteCommands, type QuoteCommand } from "@/domain/quoteCommands";
 import { COMBINED_NEEDS, type WifiStatus, type YesNoStatus } from "@/domain/constants";
@@ -76,10 +76,10 @@ type Sort = "name" | "aircraft" | "recent";
  * closing line. Every box has Bold / Italic / Underline and a microphone. The Ask Toy microphone runs spoken
  * commands on this page ("add the G280, Chinese, price 40,000").
  */
-export default function QuoteBuilder({ aircraft, operators, preferred: preferredInitial, initialIds, initialPrices, initialKinds, templates, request, airports, opened, fresh, initialLegs, initialEdits }: {
+export default function QuoteBuilder({ aircraft, operators, preferred: preferredInitial, initialIds, initialPrices, initialExtras, initialKinds, templates, request, airports, opened, fresh, initialLegs, initialEdits }: {
   aircraft: QuoteAircraftOption[]; operators: QuoteOperator[]; preferred: string[]; initialIds: string[]; templates: SavedTemplates;
   /** From Toy: prices per aircraft, and the photo kinds asked for ([] = no photos). */
-  initialPrices?: Record<string, string>; initialKinds?: string[];
+  initialPrices?: Record<string, string>; initialExtras?: Record<string, string>; initialKinds?: string[];
   /** A quote for a saved request: its routing, and whether a version exists (then its airports and dates are fixed). */
   request?: { id: string; reference: string; legs: Leg[]; locked: boolean };
   /** The airports named in the routing (more are looked up as the broker types). */
@@ -110,7 +110,7 @@ export default function QuoteBuilder({ aircraft, operators, preferred: preferred
   const [inc, setInc] = useState({ operator: false, tail: false, base: false, notes: false, greeting: true, closing: true, routing: true });
   // Typed for this quote, per aircraft. They are values, not text, so they survive changing the details or the language.
   const [prices, setPrices] = useState<Record<string, string>>(initialPrices ?? {});
-  const [extras, setExtras] = useState<Record<string, string>>({});
+  const [extras, setExtras] = useState<Record<string, string>>(initialExtras ?? {});
   const [edits, setEdits] = useState<Record<string, string>>(initialEdits ?? {}); // "greeting" | "closing" | "block:<aircraftId>" -> the broker's own text
   // Photos ("<aircraftId>|<photo url>") ticked or unticked by hand, against their default (singles on, combined off).
   // Toy may ask for some kinds only; an aircraft without the combined photo asked for sends its single photos.
@@ -214,9 +214,11 @@ export default function QuoteBuilder({ aircraft, operators, preferred: preferred
     .filter((o) => (fromSource(o.library) || (source === "library" && o.alsoLibrary)) && (!withAircraft || countOf(o) > 0) && (!region || o.region === region) && (!q || o.name.toLowerCase().includes(q)))
     .sort((a, b) => sort === "aircraft" ? b.count - a.count || a.name.localeCompare(b.name) : sort === "recent" ? b.addedAt.localeCompare(a.addedAt) : a.name.localeCompare(b.name));
   const rank = (a: QuoteAircraftOption) => { const i = a.operatorId ? preferred.indexOf(a.operatorId) : -1; return i < 0 ? 99 : i; };
+  const chosenRank = (a: QuoteAircraftOption) => { const i = ids.indexOf(a.id); return i < 0 ? 1e6 : i; };
   const shown = aircraft
     .filter((a) => fromSource(a.library) && (!opId || a.operatorId === opId) && (!q || `${a.type} ${a.tail ?? ""} ${a.operator ?? ""}`.toLowerCase().includes(q)))
-    .sort((a, b) => rank(a) - rank(b) || (a.operator ?? "~").localeCompare(b.operator ?? "~") || a.type.localeCompare(b.type));
+    // The chosen aircraft first, in the order they were chosen; then preferred operators, then by name.
+    .sort((a, b) => chosenRank(a) - chosenRank(b) || rank(a) - rank(b) || (a.operator ?? "~").localeCompare(b.operator ?? "~") || a.type.localeCompare(b.type));
   const opChosen = (id: string) => ids.some((x) => aircraft.find((a) => a.id === x)?.operatorId === id);
   const pickOp = (id: string) => setOpId((cur) => (cur === id ? "" : id));
 
@@ -745,6 +747,17 @@ export default function QuoteBuilder({ aircraft, operators, preferred: preferred
                       <div className="group-row field"><span>{t("Extra line")}</span>
                         <TextBox dir={dir} speechLang={speech} rows={1} value={extras[a.id] ?? ""} onChange={(v) => setExtras((p) => ({ ...p, [a.id]: v }))} placeholder={t("From 12 Dec")} ariaLabel={t("Extra line")} />
                       </div>
+                      {/* Owner's approval for this quote: adds the words to its extra line (in the quote's language), which puts
+                          the "Owner's approval required" sticker on the PDF and the client's page. Saved on the aircraft, it shows every time. */}
+                      <label className="small" style={{ display: "flex", gap: 6, alignItems: "center", margin: "2px 0 0" }}>
+                        <input type="checkbox" checked={needsOwnerApproval(extras[a.id]) || needsOwnerApproval(a.notes)} disabled={needsOwnerApproval(a.notes)}
+                          onChange={(e) => setExtras((p) => {
+                            const cur = p[a.id] ?? "";
+                            const next = e.target.checked ? [cur.trim(), OWNER_APPROVAL[lang as QuoteLanguage] ?? OWNER_APPROVAL.en].filter(Boolean).join(" · ") : withoutOwnerApproval(cur);
+                            return { ...p, [a.id]: next };
+                          })} />
+                        {needsOwnerApproval(a.notes) ? t("Owner's approval required (on this aircraft's record)") : t("Owner's approval required")}
+                      </label>
                     </div>
                   )}
               </div>

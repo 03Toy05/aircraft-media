@@ -3,6 +3,7 @@ import { getAircraftNames, operatorAliasesByName } from "./catalogue";
 import { normalizeKey, type Classification } from "./constants";
 import { mentions } from "./toyLookup";
 import { parseRoutingLine } from "./toyRouting";
+import { needsOwnerApproval } from "./requests";
 import { typeAliasesFor } from "./directory";
 import type { Leg } from "./routing";
 
@@ -84,6 +85,8 @@ export interface QuoteRequest {
   legs?: Leg[];
   /** Airport codes in the routing that we don't know. */
   unknownAirports?: string[];
+  /** A note for each option, as typed ("Subject to owner's approval"); "" when none. Only present when one was given. */
+  notes?: string[];
   /** The template's "Opening:" and "Closing:" lines, when filled in: they replace the standard opening and closing lines. */
   greeting?: string;
   closing?: string;
@@ -91,6 +94,8 @@ export interface QuoteRequest {
 
 /** The quote template's own opening and closing lines ("Opening: Dear Mr Chan, …" / "開場白：…"). */
 const OPENING_LINE = /^\s*(?:opening(?:\s+line)?|greeting|開場白|开场白)\s*[:：]\s*(.*)$/i;
+/** "Note: …" / "Remarks: …" / "備註：…" on a line of its own. */
+const NOTE_LINE = /^\s*(?:notes?|remarks?|備註|备注)\s*[:：]\s*(.*)$/i;
 const CLOSING_LINE = /^\s*(?:closing(?:\s+line)?|結尾語|结尾语|結尾|结尾)\s*[:：]\s*(.*)$/i;
 
 const CURRENCY = "USD|US\\$|HKD|HK\\$|EUR|GBP|SGD|RMB|CNY|JPY|AUD|CAD|CHF|AED|THB|€|£|¥|\\$";
@@ -163,11 +168,12 @@ const FIELD_LABELS: [string, RegExp][] = [
   ["operator", /^(?:operator|營運商|营运商|運營商|运营商)$/i],
   ["aircraft", /^(?:aircraft|aircraft type|type|jet|tail|tail number|飛機|飞机|機型|机型)$/i],
   ["price", /^(?:price|cost|rate|價格|价格|價錢|价钱)$/i],
+  ["note", /^(?:notes?|remarks?|備註|备注)$/i],
 ];
-const LABEL_WORDS = "date|day|from|to|dep(?:arture)?|arr(?:ival)?|time|etd|pax|passengers?|operator|aircraft(?: type)?|type|tail(?: number)?|price|cost|日期|出發|出发|到達|到达|時間|时间|乘客|營運商|营运商|飛機|飞机|機型|机型|價格|价格";
+const LABEL_WORDS = "date|day|from|to|dep(?:arture)?|arr(?:ival)?|time|etd|pax|passengers?|operator|aircraft(?: type)?|type|tail(?: number)?|price|cost|notes?|remarks?|備註|备注|日期|出發|出发|到達|到达|時間|时间|乘客|營運商|营运商|飛機|飞机|機型|机型|價格|价格";
 const LABELLED_SPLIT = new RegExp(`\\s*[|｜;；]\\s*|[,，]\\s*(?=(?:${LABEL_WORDS})\\s*[:：])`, "i");
 
-type Labelled = { route?: string; operator?: string; aircraft?: string; price?: string; blank?: boolean };
+type Labelled = { route?: string; operator?: string; aircraft?: string; price?: string; note?: string; blank?: boolean };
 
 /** A line of labelled fields, or null when it has none. Blank fields ("Date: | From: |") give { blank: true }. */
 function readLabelled(line: string): Labelled | null {
@@ -188,7 +194,7 @@ function readLabelled(line: string): Labelled | null {
     if (!f.from || !f.to) return { blank: true };
     return { route: [`${f.from}-${f.to}`, f.date ?? "", f.time ?? "", f.pax ? `${f.pax.replace(/\D+$/, "")} pax` : ""].filter(Boolean).join(" ") };
   }
-  return { operator: f.operator, aircraft: f.aircraft, price: f.price };
+  return { operator: f.operator, aircraft: f.aircraft, price: f.price, note: f.note };
 }
 
 /** "8 pax" / "Pax: 8" / "8人" on a line of its own. */
@@ -223,11 +229,21 @@ export function parseQuoteRequest(message: string, today = new Date()): QuoteReq
   let allPax: number | null = null; // "8 pax" on a line of its own: for every leg
   let greeting = "";
   let closing = "";
+  const notes: string[] = [];
+  const addNote = (text: string) => {
+    const i = what.length - 1;
+    if (i < 0 || !text.trim()) return;
+    notes[i] = [notes[i], text.trim()].filter(Boolean).join(" ");
+  };
   for (const rawLine of lines) {
     const open = rawLine.match(OPENING_LINE);
     if (open) { greeting = open[1].trim(); continue; }
     const close = rawLine.match(CLOSING_LINE);
     if (close) { closing = close[1].trim(); continue; }
+    // "Note: subject to owner's approval" (or that phrase on its own) belongs to the option above it, not a new aircraft.
+    const note = rawLine.match(NOTE_LINE);
+    if (note && started) { addNote(note[1]); continue; }
+    if (started && what.length && needsOwnerApproval(rawLine) && !readLabelled(rawLine)?.aircraft) { addNote(rawLine); continue; }
     const paxLine = rawLine.match(PAX_LINE);
     if (paxLine) { allPax = Number(paxLine[1] ?? paxLine[2]); continue; }
     // The template's labelled lines: a leg ("Date: 12 Dec | From: HKG | To: LHR") or an option ("Operator: … | Aircraft: … | Price: …").
@@ -240,6 +256,7 @@ export function parseQuoteRequest(message: string, today = new Date()): QuoteReq
       if (!lab.aircraft) { pendingOperator = lab.operator ?? null; if (lab.price) pending = lab.price; continue; }
       what.push([lab.operator ?? pendingOperator ?? "", lab.aircraft].filter(Boolean).join(" "));
       prices.push(lab.price ?? pending ?? "");
+      if (lab.note) addNote(lab.note);
       pendingOperator = null; pending = null;
       continue;
     } else if (lab?.price) raw = `Price: ${lab.price}`;
@@ -274,6 +291,7 @@ export function parseQuoteRequest(message: string, today = new Date()): QuoteReq
     ...(prices.some(Boolean) ? { prices } : {}),
     ...(kinds ? { kinds } : {}),
     ...(legs.length || unknown.length ? { legs, ...(unknown.length ? { unknownAirports: [...new Set(unknown)] } : {}) } : {}),
+    ...(notes.some(Boolean) ? { notes: what.map((_, i) => notes[i] ?? "") } : {}),
     ...(greeting ? { greeting } : {}),
     ...(closing ? { closing } : {}),
   };

@@ -2,7 +2,8 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { setup, key } from "./helpers";
 import { createAircraft, createAircraftType, createOrganisation } from "../src/domain/directory";
 import { converse, emptyDraft, pickQuoteOptions } from "../src/domain/toy";
-import { typeShortNames } from "../src/domain/toyShare";
+import { parseQuoteRequest, typeShortNames } from "../src/domain/toyShare";
+import { optionNeedsApproval, withoutOwnerApproval } from "../src/domain/quote";
 
 let t: Awaited<ReturnType<typeof setup>>;
 const sevenX: Record<string, string> = {};
@@ -83,5 +84,26 @@ describe("Toy asks which aircraft when several fit", () => {
     expect(pickQuoteOptions("全部", opts)).toEqual(["a", "b"]);
     expect(pickQuoteOptions("7X", opts)).toBeNull(); // still both
     expect(pickQuoteOptions("5", opts)).toBeNull();
+  });
+});
+
+describe("Owner's approval in a quote", () => {
+  it("reads a Note line as that option's note, not another aircraft", () => {
+    const r = parseQuoteRequest("Quote\nLeg 1 – Date: 12.12 | From: hkg | To: pek | Time:  | Pax: 8\nOption 1 – Operator: vista | Aircraft: cl605 | Price: USD 80k\nOption 2 – Operator: phenix | Aircraft: global 7500 | Price: usd 200k\nnote: subject to owner's approval\nClosing: price excludes VIP catering");
+    expect(r?.what).toEqual(["vista cl605", "phenix global 7500"]);
+    expect(r?.notes).toEqual(["", "subject to owner's approval"]);
+    expect(parseQuoteRequest("Quote\nOption 1 – Operator: lux | Aircraft: 7X | Price: USD 1 | Note: owner's approval required")?.notes).toEqual(["owner's approval required"]);
+    expect(parseQuoteRequest("Lux 7X quote\nSubject to owner's approval")?.notes).toEqual(["Subject to owner's approval"]);
+  });
+
+  it("puts the note under that aircraft, with the sticker on the PDF, link and Quote page", async () => {
+    const r = await converse(t.db, t.actor.tenantId, emptyDraft("oa"), "Quote\nOption 1 – Operator: lux | Aircraft: OO-FSX | Price: USD 90k\nnote: subject to owner's approval", []);
+    expect(r.reply.copy).toContain("subject to owner's approval");
+    expect(r.reply.say.join(" ")).not.toContain("couldn't find");
+    expect(JSON.parse(new URL(r.reply.link!.href, "http://x").searchParams.get("extras")!)).toEqual({ [sevenX["OO-FSX"]]: "subject to owner's approval" });
+    expect(optionNeedsApproval({ notes: null, extra: "subject to owner's approval" })).toBe(true);
+    expect(optionNeedsApproval({ notes: null, extra: "需經機主批准" })).toBe(true);
+    expect(optionNeedsApproval({ notes: null, extra: "From 12 Dec" })).toBe(false);
+    expect(withoutOwnerApproval("From 12 Dec · Owner's approval required")).toBe("From 12 Dec");
   });
 });

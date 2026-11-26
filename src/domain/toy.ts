@@ -48,7 +48,7 @@ export interface AircraftChanges { yom?: number; yor?: number; capacity?: number
 export interface AircraftEdit { aircraftId: string; label: string; change: string; set: AircraftChanges }
 
 /** The last quote Toy showed, so "For 605, price is USD 70k" can change it. */
-export interface DraftQuote { ids: string[]; prices: Record<string, string>; kinds?: Classification[]; /** The routing typed in the chat. */ legs?: Leg[]; /** The template's own opening and closing lines. */ greeting?: string; closing?: string }
+export interface DraftQuote { ids: string[]; prices: Record<string, string>; kinds?: Classification[]; /** The routing typed in the chat. */ legs?: Leg[]; /** The template's own opening and closing lines. */ greeting?: string; closing?: string; /** A note per aircraft, as typed ("Subject to owner's approval"): the extra line under it. */ extras?: Record<string, string> }
 
 export interface DraftPhoto { mediaId: string; name: string; contentVersionId: string | null; classification: Classification; note?: string }
 
@@ -268,7 +268,8 @@ export async function converse(
       const c = past.content;
       const ids = (c.options ?? []).map((o) => o.aircraftId).filter(Boolean);
       const prices = Object.fromEntries((c.options ?? []).filter((o) => o.price).map((o) => [o.aircraftId, o.price]));
-      d.quote = { ids, prices, ...(c.legs?.length ? { legs: c.legs } : {}), ...(c.greeting ? { greeting: c.greeting } : {}), ...(c.closing ? { closing: c.closing } : {}) };
+      const extras = Object.fromEntries((c.options ?? []).filter((o) => o.extra).map((o) => [o.aircraftId, o.extra]));
+      d.quote = { ids, prices, ...(Object.keys(extras).length ? { extras } : {}), ...(c.legs?.length ? { legs: c.legs } : {}), ...(c.greeting ? { greeting: c.greeting } : {}), ...(c.closing ? { closing: c.closing } : {}) };
       lead = tr(L, "Here is {ref} v{n} again (saved {date}):", { ref: past.reference, n: past.version, date: shortDate(L, past.savedAt) });
     }
     const q = d.quote!;
@@ -302,6 +303,7 @@ export async function converse(
     const names: string[] = [];
     const missing: string[] = [];
     const prices: Record<string, string> = {};
+    const extras: Record<string, string> = {};
     for (const [i, what] of quoteReq.what.entries()) {
       // "all Lux 7X": every one of them; otherwise Toy asks which one when several fit.
       const wantsAll = WANTS_ALL.test(what);
@@ -329,6 +331,8 @@ export async function converse(
         if (!ids.includes(f.id)) { ids.push(f.id); names.push(f.label); }
         const price = quoteReq.prices?.[i];
         if (price) prices[f.id] = price;
+        const note = quoteReq.notes?.[i];
+        if (note) extras[f.id] = note;
       }
     }
     if (asked && asked.kind !== "quote_pick") d.asked = asked;
@@ -345,7 +349,7 @@ export async function converse(
         if (usual) { kinds = usual; memory.push(usual.length ? tr(L, "Photos as last time: {kinds}.", { kinds: usual.map((k) => trClassification(L, k, CLASSIFICATION_LABEL[k])).join(", ") }) : tr(L, "No photos, as last time.")); }
       }
     }
-    if (ids.length) d.quote = { ids, prices, ...(kinds ? { kinds } : {}), ...(legs.length ? { legs } : {}), ...(quoteReq.greeting ? { greeting: quoteReq.greeting } : {}), ...(quoteReq.closing ? { closing: quoteReq.closing } : {}) };
+    if (ids.length) d.quote = { ids, prices, ...(Object.keys(extras).length ? { extras } : {}), ...(kinds ? { kinds } : {}), ...(legs.length ? { legs } : {}), ...(quoteReq.greeting ? { greeting: quoteReq.greeting } : {}), ...(quoteReq.closing ? { closing: quoteReq.closing } : {}) };
     const nl = String.fromCharCode(10);
     const routeSay = legs.length ? [[tr(L, "Routing:"), ...legs.map((l) => `• ${legLine(L, l)}`)].join(nl)] : [];
     const airportSay = unknownAirports.length ? [tr(L, "I don't know the airport code {codes}. Check it (ICAO like VHHH or IATA like HKG), or fix it on the Quote page.", { codes: unknownAirports.join(", ") })] : [];
@@ -630,7 +634,7 @@ export async function quoteReply(db: Db, tenantId: string, d: Draft, ctx: Librar
   const L = d.lang;
   const q = d.quote!;
   const ids = await withinLibraryScope(db, scopeOf(ctx), q.ids);
-  const preview = await quotePreview(db, tenantId, ids, L, q.prices, ctx.library ? [LIBRARY_TENANT_ID] : [], { greeting: q.greeting, closing: q.closing });
+  const preview = await quotePreview(db, tenantId, ids, L, q.prices, ctx.library ? [LIBRARY_TENANT_ID] : [], { greeting: q.greeting, closing: q.closing }, q.extras);
   const kinds = q.kinds;
   const kindsLine = !kinds ? null : kinds.length === 0 ? tr(L, "No photos, just the message.")
     : tr(L, "Photos ticked: {kinds}.", { kinds: kinds.map((k) => trClassification(L, k, CLASSIFICATION_LABEL[k])).join(isChinese(L) ? "、" : ", ") });
@@ -650,6 +654,7 @@ export async function quoteReply(db: Db, tenantId: string, d: Draft, ctx: Librar
   if (q.legs?.length) p.set("legs", JSON.stringify(q.legs));
   if (q.greeting) p.set("greeting", q.greeting);
   if (q.closing) p.set("closing", q.closing);
+  if (q.extras && Object.keys(q.extras).length) p.set("extras", JSON.stringify(q.extras));
   const href = `/quote?${p.toString().replace(/%2C/g, ",")}`;
   return { say, chips: [], ready: false, photos: preview.photos, copy: preview.text, options: preview.options, kinds, link: { href, label: tr(L, "View the quote") } };
 }

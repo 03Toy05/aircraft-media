@@ -112,6 +112,12 @@ export default async function Quote({ searchParams }: { searchParams: SP }) {
     const p = JSON.parse(one(sp.prices) ?? "{}") as unknown;
     if (p && typeof p === "object") initialPrices = Object.fromEntries(Object.entries(p).filter(([id, v]) => initial.includes(id) && typeof v === "string").map(([id, v]) => [id, (v as string).slice(0, 80)]));
   } catch { /* ignore a broken link */ }
+  // From Toy: a note for each aircraft ("Subject to owner's approval"), shown as its extra line.
+  let initialExtras: Record<string, string> = {};
+  try {
+    const x = JSON.parse(one(sp.extras) ?? "{}") as unknown;
+    if (x && typeof x === "object") initialExtras = Object.fromEntries(Object.entries(x).filter(([id, v]) => initial.includes(id) && typeof v === "string").map(([id, v]) => [id, (v as string).slice(0, 300)]));
+  } catch { /* ignore a broken link */ }
   // For a request: its routing, and a saved version to reopen (or a fresh start).
   const r = one(sp.request) ? await getRequest(db, actor.tenantId, one(sp.request)!) : null;
   const versions = r ? await listVersions(db, actor.tenantId, r.id) : [];
@@ -133,7 +139,7 @@ export default async function Quote({ searchParams }: { searchParams: SP }) {
     <>
       <h1>{t("Quote")}</h1>
       <p className="muted">{t("Enter the client's routing, find the operator, tick the aircraft, then edit and send the message with the photos.")} <a href="/quote/template">{t("Change the standard wording")}</a> · <Link href="/requests">{t("Saved requests")}</Link></p>
-      <QuoteBuilder key={`${request?.id ?? ""}:${opened?.version ?? ""}:${one(sp.fresh) ?? ""}:${one(sp.legs) ?? ""}:${one(sp.greeting) ?? ""}:${one(sp.closing) ?? ""}`} aircraft={options} operators={operators} preferred={preferred} initialIds={initial} initialPrices={initialPrices} initialKinds={initialKinds} templates={await getQuoteTemplates(db, actor.tenantId)}
+      <QuoteBuilder key={`${request?.id ?? ""}:${opened?.version ?? ""}:${one(sp.fresh) ?? ""}:${one(sp.legs) ?? ""}:${one(sp.greeting) ?? ""}:${one(sp.closing) ?? ""}`} aircraft={options} operators={operators} preferred={preferred} initialIds={initial} initialPrices={initialPrices} initialExtras={initialExtras} initialKinds={initialKinds} templates={await getQuoteTemplates(db, actor.tenantId)}
         request={request} airports={airports} opened={opened} fresh={one(sp.fresh) === "1"} initialLegs={toyLegs} initialEdits={initialEdits} />
     </>
   );

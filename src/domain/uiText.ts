@@ -1355,6 +1355,7 @@ export const UI_HANT: Record<string, string> = {
   "Everything else (terms, bank details, signature) stays exactly as written.": "其他內容（條款、銀行資料、簽名）會完全保留原文。",
   "For an exact place, type a tag instead: {tags}.": "如要指定位置，可改為輸入標籤：{tags}。",
   "Download a sample with tags": "下載附有標籤的範本",
+  "Owner's approval required (on this aircraft's record)": "需要機主批准（已記錄在這架飛機的資料中）",
   // Free trial sign-up, emails to users, the admin's numbers
   "Sign in to your workspace.": "登入你的工作區。",
   "New here? Start your 14-day free trial": "第一次使用？開始 14 天免費試用",
