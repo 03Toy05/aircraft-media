@@ -10,6 +10,7 @@ export const TRANSLATED = [
   "app/(app)/page.tsx",
   "app/(app)/quote/page.tsx",
   "app/_components/MobileNav.tsx",
+  "app/_components/TopNav.tsx",
   "app/_components/QuoteBuilder.tsx",
   "app/_components/RoutingPanel.tsx",
   "app/_components/ClientLinkButtons.tsx",

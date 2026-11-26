@@ -4,6 +4,7 @@ import { getDb } from "@/db/client";
 import { aircraftMedia } from "@/db/schema";
 import { requireOwner } from "@/lib/session";
 import ChatClient from "../_components/ChatClient";
+import Toy from "../_components/Toy";
 import Icon from "../_components/Icon";
 import { listRequests } from "@/domain/requests";
 import { serverT } from "@/lib/uiLang";
@@ -34,38 +35,50 @@ export default async function Dashboard() {
 
   return (
     <div className="dash">
-      <div style={{ minWidth: 0 }}>
+      <div className="dash-main">
         <ChatClient sample={sample} firstSteps={firstSteps} />
+
+        <section className="dash-requests" aria-labelledby="dash-req-title">
+          <div className="dash-head">
+            <h2 id="dash-req-title">{t("Recent requests")}</h2>
+            {requests.length > 0 && <Link href="/requests">{t("All requests")} →</Link>}
+          </div>
+          {requests.length === 0 ? (
+            <div className="dash-invite">
+              <Toy size={44} />
+              <p><b>{t("No requests yet.")}</b><br /><span className="muted">{t("Your first quote takes a few clicks.")}</span></p>
+              <Link className="btn dash-invite-btn" href="/quote?fresh=1">{t("Draft your first quote")}</Link>
+            </div>
+          ) : (
+            <div className="dash-request-cards">
+              {requests.map((r) => (
+                <Link key={r.id} href={`/requests/${r.id}`} className="dash-request-card">
+                  <span className="dash-request-top"><b>{r.reference}</b><span className={`dash-badge ${r.versions ? "is-quoted" : "is-new"}`}>{r.versions ? `v${r.versions}` : t("no quote yet")}</span></span>
+                  <span className="muted small">{r.label}</span>
+                </Link>
+              ))}
+            </div>
+          )}
+        </section>
       </div>
-      <aside style={{ minWidth: 0 }}>
-        <div className="card qa-card">
-          <h3>{t("Quick actions")}</h3>
-          <div className="qa" style={{ display: "grid", gap: 8 }}>
-            <Link className="btn" href="/review"><Icon name="review" />{t("Review photos")}{needsReview > 0 ? ` (${needsReview})` : ""}</Link>
-            <Link className="btn" href="/intake"><Icon name="upload" />{t("Upload photos")}</Link>
-            <Link className="btn" href="/quote?fresh=1"><Icon name="quote" />{t("New quote")}</Link>
-            <Link className="btn" href="/fleet?add=aircraft#add-aircraft"><Icon name="plane" />{t("Add aircraft")}</Link>
-            <Link className="btn" href="/fleet?add=operator#add-operator"><Icon name="operator" />{t("Add operator")}</Link>
-            <Link className="btn secondary" style={{ color: "var(--accent)", background: "transparent" }} href="/fleet"><Icon name="list" />{t("View operators & aircraft")}</Link>
+
+      <aside className="dash-side">
+        <div className="card">
+          <h3>{t("Shortcuts")}</h3>
+          <div className="dash-shortcuts">
+            <Link className="btn secondary" href="/review"><Icon name="review" />{t("Review photos")}{needsReview > 0 && <span className="dash-count">{t("{n} waiting", { n: needsReview })}</span>}</Link>
+            <Link className="btn secondary" href="/intake"><Icon name="upload" />{t("Upload photos")}</Link>
+            <Link className="btn secondary" href="/fleet?add=aircraft#add-aircraft"><Icon name="plane" />{t("Add aircraft or operator")}</Link>
           </div>
         </div>
         <div className="card">
-          <h3>{t("Recent requests")}</h3>
-          {requests.length === 0 ? <p className="muted small" style={{ margin: 0 }}>{t("None yet. Enter a routing at the top of a quote and save it.")}</p> : (
-            <>
-              {requests.map((r) => (
-                <Link key={r.id} href={`/requests/${r.id}`} className="dash-request">
-                  <b>{r.reference}</b> <span className="muted small">{r.label}</span>
-                  <span className="muted small"> · {r.versions ? `v${r.versions}` : t("no quote yet")}</span>
-                </Link>
-              ))}
-              <p className="small" style={{ marginBottom: 0 }}><Link href="/requests"><Icon name="list" />{t("All requests")}</Link></p>
-            </>
-          )}
-        </div>
-        <div className="card">
           <h3>{t("Recently approved")}</h3>
-          {recent.length === 0 ? <p className="muted">{t("Nothing approved yet.")}</p> : (
+          {recent.length === 0 ? (
+            <>
+              <p className="muted small" style={{ marginTop: 0 }}>{t("Photos you approve show up here.")}</p>
+              <Link className="btn secondary dash-wide" href="/intake"><Icon name="upload" />{t("Upload your first photos")}</Link>
+            </>
+          ) : (
             <>
               <div className="thumbs">
                 {recent.map((m) => (

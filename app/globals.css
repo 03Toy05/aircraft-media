@@ -539,3 +539,64 @@ ul.history li:last-child { border-bottom: 0; }
 .ex-chips .small-btn { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .welcome-card { position: relative; border: 1.5px solid var(--sage); background: #f4f8f5; }
 .welcome-close { position: absolute; top: 8px; right: 8px; border: 0; background: transparent; color: var(--muted); font-size: 1rem; cursor: pointer; min-height: 0; padding: 4px 8px; }
+
+/* Top bar, one row (owner-approved redesign, 26 Nov 2026): Toy and the name, the daily five, "More", then the trial
+   badge, language and the account menu. The phone hides the links and account here and uses the bottom bar. */
+nav.top { flex-wrap: nowrap; gap: 4px; min-height: 64px; box-sizing: border-box; padding: 10px 24px; }
+nav.top > a.brand { display: flex; align-items: center; gap: 10px; margin-right: 16px; padding: 4px 6px; font-weight: 700; font-size: 15px; white-space: nowrap; color: var(--text); }
+nav.top .nav-links { display: flex; align-items: center; gap: 2px; min-width: 0; }
+nav.top .nav-links > a, .nav-menu > summary { padding: 8px 12px; border-radius: 10px; white-space: nowrap; color: var(--text); }
+nav.top .nav-links > a[aria-current="page"], .nav-menu > summary.is-current { background: color-mix(in srgb, var(--sage) 32%, transparent); font-weight: 700; }
+.nav-menu { position: relative; }
+.nav-menu > summary { list-style: none; cursor: pointer; display: flex; align-items: center; gap: 6px; min-height: 40px; box-sizing: border-box; }
+.nav-menu > summary::-webkit-details-marker { display: none; }
+.nav-menu > summary:hover { background: var(--bg); }
+.nav-menu-list { position: absolute; top: calc(100% + 6px); left: 0; z-index: 30; min-width: 200px; padding: 6px; background: var(--card); border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 10px 28px rgba(41, 60, 67, 0.14); display: flex; flex-direction: column; }
+.nav-menu-list a, .nav-menu-list button { display: flex; align-items: center; gap: 8px; width: 100%; padding: 10px 12px; border: 0; border-radius: 8px; background: none; color: var(--text); font: inherit; text-align: left; cursor: pointer; }
+.nav-menu-list a:hover, .nav-menu-list button:hover { background: var(--bg); text-decoration: none; }
+.nav-menu-list a[aria-current="page"] { font-weight: 700; }
+.nav-menu-list form { margin: 0; }
+.nav-account { margin-left: 8px; }
+.nav-account .nav-menu-list { left: auto; right: 0; min-width: 240px; }
+.nav-account > summary { width: 40px; height: 40px; padding: 0; justify-content: center; border-radius: 50%; border: 2px solid var(--text); background: var(--sage); color: #293C43; font-weight: 700; }
+.nav-account > summary:hover { background: var(--sage); filter: brightness(0.95); }
+.nav-email { padding: 10px 12px; color: var(--muted); font-size: 13px; overflow-wrap: anywhere; border-bottom: 1px solid var(--line); margin-bottom: 4px; }
+nav.top .nav-lang { margin-left: 8px; }
+@media (max-width: 1080px) { nav.top .brand-name { display: none; } nav.top > a.brand { margin-right: 6px; } }
+@media (max-width: 720px) {
+  nav.top { min-height: 0; padding: 8px 12px; padding-top: calc(8px + env(safe-area-inset-top)); }
+  nav.top > a.brand { display: flex; }
+  nav.top .brand-name { display: inline; }
+  nav.top .nav-links, nav.top .nav-account { display: none; }
+}
+
+/* Dashboard (owner-approved redesign, 26 Nov 2026): Toy's panel leads with one quote action; recent requests sit under
+   it as cards; the side holds outlined shortcuts and recent photos; empty boxes invite the next step. */
+.dash { gap: 24px; }
+.dash-main { min-width: 0; display: flex; flex-direction: column; gap: 20px; }
+.dash-side { min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.card { border-radius: 16px; }
+.toy-hello { display: flex; gap: 16px; align-items: center; min-width: 0; }
+.toy-hello p { margin: 0; display: flex; flex-direction: column; }
+.toy-hello b { font-size: 20px; line-height: 1.25; }
+.welcome-actions .toy-primary { min-height: 48px; padding: 0 22px; font-size: 16px; font-weight: 700; border-radius: 12px; }
+.dash-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; margin-bottom: 10px; }
+.dash-head h2 { margin: 0; font-size: 18px; }
+.dash-head a { font-weight: 600; font-size: 14px; }
+.dash-request-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; }
+.dash-request-card { display: flex; flex-direction: column; gap: 6px; padding: 14px 16px; background: var(--card); border: 1px solid var(--line); border-radius: 16px; color: inherit; }
+.dash-request-card:hover { border-color: var(--sage); text-decoration: none; }
+.dash-request-top { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.dash-badge { padding: 2px 10px; border-radius: 999px; font-size: 12px; font-weight: 700; white-space: nowrap; }
+.dash-badge.is-quoted { background: color-mix(in srgb, var(--ok) 16%, transparent); color: var(--ok); }
+.dash-badge.is-new { background: color-mix(in srgb, var(--toy) 32%, transparent); color: var(--warn); }
+.dash-invite { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; padding: 18px 20px; background: var(--card); border: 1.5px dashed var(--sage); border-radius: 16px; }
+.dash-invite p { margin: 0; flex: 1 1 200px; }
+.dash-invite-btn { background: var(--sage); color: #293C43; border: 2px solid #293C43; font-weight: 700; min-height: 44px; }
+.dash-shortcuts { display: grid; gap: 8px; }
+.dash-shortcuts .btn { justify-content: flex-start; min-height: 44px; border-radius: 12px; }
+.dash-count { margin-left: auto; padding: 1px 10px; border-radius: 999px; background: var(--toy); color: #293C43; font-size: 12px; font-weight: 700; }
+.dash-wide { width: 100%; justify-content: center; }
+.nav-menu-note { padding: 6px 12px 10px; color: var(--warn); font-size: 13px; font-weight: 600; border-bottom: 1px solid var(--line); margin-bottom: 4px; }
+/* Tablet widths: no room for the trial badge beside the five links; it stays in the account menu. */
+@media (min-width: 721px) and (max-width: 960px) { nav.top .nav-trial { display: none; } }

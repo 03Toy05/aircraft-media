@@ -545,9 +545,9 @@ export default function ChatClient({ sample, firstSteps }: { sample?: string; fi
     <div>
       <div className="card" style={{ marginBottom: 12 }}>
         <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "start" }}>
-          <div style={{ display: "flex", gap: 12, alignItems: "center", minWidth: 0 }}>
-            <Toy state={toyState} size={44} className="chat-toy" />
-            <p style={{ margin: 0 }}><b><Greeting text={ui.hi} /></b>{ui.intro}</p>
+          <div className="toy-hello">
+            <Toy state={toyState} size={64} shadow className="chat-toy" />
+            <p><b><Greeting text={ui.hi} /></b><span className="muted">{ui.intro}</span></p>
           </div>
           {/* Toy speaks the site's language (EN / 繁 / 简 in the top bar), so the chat has no switch of its own. */}
           {msgs.length > 0 && (
@@ -557,10 +557,10 @@ export default function ChatClient({ sample, firstSteps }: { sample?: string; fi
             </button>
           )}
         </div>
+        {/* One main action (quotes are what Toy is for); adding goes through Toy's own steps. Finding aircraft is in the top bar. */}
         <div className="welcome-actions">
-          <Link href="/quote" className="btn"><Icon name="quote" />{ui.doQuote}</Link>
+          <Link href="/quote" className="btn toy-primary"><Icon name="quote" />{ui.doQuote}</Link>
           <button type="button" className="secondary" onClick={startAdd} aria-pressed={adding}><Icon name="upload" />{ui.doAdd}</button>
-          <Link href="/fleet" className="btn secondary"><Icon name="search" />{ui.doFind}</Link>
         </div>
         <p className="small muted" style={{ margin: "8px 0 0" }}>{adding ? ui.addHint : quoting ? ui.quoteHint : ui.askHint}</p>
         {/* Examples to tap while the chat is empty: they fill the box, nothing is sent until Send. */}
