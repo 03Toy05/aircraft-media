@@ -1,0 +1,26 @@
+/* Sign-in pages, in the approved Toy design (canvas, ink, sage, white card). Always light, like the public site. */
+.signin-page { min-height: 100vh; min-height: 100dvh; display: flex; background: #F8F7F2; color: #293C43; color-scheme: light; font-family: system-ui, -apple-system, "Segoe UI", "Noto Sans TC", "Noto Sans SC", sans-serif; }
+.signin-main { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px; padding: 32px 16px; box-sizing: border-box; }
+.signin-card { position: relative; width: 100%; max-width: 420px; box-sizing: border-box; background: #fff; border: 1px solid #E3E1D8; border-radius: 18px; padding: 28px; display: flex; flex-direction: column; gap: 14px; }
+.signin-lang { position: absolute; top: 14px; right: 14px; }
+.signin-head { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 6px; }
+.signin-toy { display: block; border-radius: 20px; }
+.signin-head h1 { margin: 4px 0 0; font-size: 24px; line-height: 1.2; color: #293C43; }
+.signin-intro { margin: 0; color: #4A5D64; font-size: 15px; line-height: 1.5; }
+.signin-intro a { color: #293C43; font-weight: 600; }
+.signin-page :focus-visible { outline: 3px solid #293C43; outline-offset: 3px; }
+.signin-page .flash { margin: 0; }
+
+.signin-form { display: flex; flex-direction: column; gap: 4px; margin: 0; }
+.signin-form label { margin: 8px 0 2px; font-size: 13px; color: #4A5D64; text-align: left; }
+.signin-form input:not([type="hidden"]) { min-height: 44px; padding: 0 12px; border: 1px solid #C9CCC2; border-radius: 10px; background: #F8F7F2; color: #293C43; font: inherit; font-size: 16px; box-sizing: border-box; width: 100%; }
+.signin-btn { display: flex; align-items: center; justify-content: center; gap: 10px; width: 100%; min-height: 48px; margin-top: 10px; border-radius: 12px; border: 2px solid #293C43; font: inherit; font-weight: 600; cursor: pointer; }
+.signin-page .signin-btn.is-ink { background: #293C43; color: #F8F7F2; }
+.signin-page .signin-btn.is-outline { background: #fff; color: #293C43; }
+.signin-btn:hover { filter: brightness(0.96); }
+.signin-or { display: flex; align-items: center; gap: 10px; margin: 4px 0 0; color: #4A5D64; font-size: 13px; }
+.signin-or::before, .signin-or::after { content: ""; flex: 1; height: 1px; background: #E3E1D8; }
+.signin-links { margin: 2px 0 0; font-size: 14px; text-align: center; }
+.signin-links a { color: #293C43; font-weight: 600; }
+.signin-foot { margin: 0; font-size: 13px; color: #4A5D64; }
+.signin-foot a { color: #4A5D64; }

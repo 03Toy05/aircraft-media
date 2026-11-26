@@ -6,7 +6,7 @@ import { LINK_MINUTES, createSignInLink } from "@/domain/signInLinks";
 import { sendMail } from "@/lib/mail";
 import { siteAddress } from "@/lib/site";
 import { serverT } from "@/lib/uiLang";
-import { LangSwitch } from "../../_components/uiLang";
+import SignInShell from "../SignInShell";
 
 async function sendPasswordLinkAction(fd: FormData) {
   "use server";
@@ -37,22 +37,19 @@ export default async function PasswordLinkPage({ searchParams }: { searchParams:
   const { email, sent, error } = await searchParams;
   const t = await serverT();
   return (
-    <main style={{ maxWidth: 420, margin: "12vh auto", padding: 16 }}>
-      <div className="card">
-        <div style={{ float: "right" }}><LangSwitch /></div>
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src="/logo.svg" alt="" width={48} height={48} />
-        <h1>{t("Set your password")}</h1>
-        <p className="muted">{t("First time here, or forgot your password? We'll email you a link to set one.")}</p>
-        {error === "mail" && <div className="flash err">{t("The email couldn't be sent just now. Try again in a minute.")}</div>}
-        {sent && <div className="flash ok">{t("If {email} has been invited, the email is on its way. Check your inbox (and junk folder). The link works for {n} minutes.", { email: sent, n: LINK_MINUTES })}</div>}
-        <form action={sendPasswordLinkAction} className="login-email">
-          <label htmlFor="email" className="small">{t("Your email")}</label>
-          <input id="email" name="email" type="email" required autoComplete="email" placeholder="name@company.com" defaultValue={sent ?? email ?? ""} />
-          <button type="submit" style={{ width: "100%" }}>{t("Email me a link")}</button>
-        </form>
-        <p className="small" style={{ margin: "10px 0 0" }}><Link href="/login">{t("Back to sign in")}</Link></p>
-      </div>
-    </main>
+    <SignInShell
+      title={t("Set your password")}
+      intro={t("First time here, or forgot your password? We'll email you a link to set one.")}
+      footer={{ privacy: t("Privacy"), terms: t("Terms") }}
+    >
+      {error === "mail" && <div className="flash err">{t("The email couldn't be sent just now. Try again in a minute.")}</div>}
+      {sent && <div className="flash ok">{t("If {email} has been invited, the email is on its way. Check your inbox (and junk folder). The link works for {n} minutes.", { email: sent, n: LINK_MINUTES })}</div>}
+      <form action={sendPasswordLinkAction} className="signin-form login-email">
+        <label htmlFor="email">{t("Your email")}</label>
+        <input id="email" name="email" type="email" required autoComplete="email" placeholder="name@company.com" defaultValue={sent ?? email ?? ""} />
+        <button type="submit" className="signin-btn is-ink">{t("Email me a link")}</button>
+      </form>
+      <p className="signin-links"><Link href="/login">{t("Back to sign in")}</Link></p>
+    </SignInShell>
   );
 }

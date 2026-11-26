@@ -1393,6 +1393,7 @@ export const UI_HANT: Record<string, string> = {
   "Questions or ideas?": "有問題或建議？",
   "Free trial: {n} days, then look-only until you choose a plan.": "免費試用 {n} 天，之後在選擇方案前只能查看。",
   // Free trial sign-up, emails to users, the admin's numbers
+  "Welcome back": "歡迎回來",
   "Sign in to your workspace.": "登入你的工作區。",
   "New here? Start your 14-day free trial": "第一次使用？開始 14 天免費試用",
   "Start your {n}-day free trial": "開始 {n} 天免費試用",
