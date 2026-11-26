@@ -16,6 +16,8 @@ import { LangSwitch } from "../_components/uiLang";
 import { serverT } from "@/lib/uiLang";
 import { after } from "next/server";
 import { maybeSendDueEmails } from "@/domain/userEmails";
+import { maybeRecheckUnavailable } from "@/domain/media";
+import { getFileStore } from "@/storage";
 import { sendMail } from "@/lib/mail";
 import { siteAddress } from "@/lib/site";
 
@@ -34,6 +36,8 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   // Welcome and trial-ending emails go out from ordinary page loads (at most every 15 minutes), after the page is sent.
   const site = await siteAddress().catch(() => null);
   after(async () => maybeSendDueEmails(await getDb(), site, sendMail));
+  // Photos whose file couldn't be read (storage was down for a while) are read again, so they come back by themselves.
+  after(async () => maybeRecheckUnavailable(await getDb(), getFileStore()));
   let libraryOn = s.isAdmin;
   try { libraryOn = await hasLibraryAccess(await getDb(), s); } catch { /* the menu must not fail */ }
   return (

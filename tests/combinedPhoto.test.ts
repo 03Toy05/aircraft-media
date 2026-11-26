@@ -2,7 +2,9 @@ import { beforeEach, describe, expect, it } from "vitest";
 import sharp from "sharp";
 import { setup, key, makeImage } from "./helpers";
 import { createAircraft, createAircraftType, createOrganisation } from "../src/domain/directory";
-import { approveMedia, getLineup, getMediaDetail, ingestUpload, setMediaAssociation, updateMediaMetadata } from "../src/domain/media";
+import { approveMedia, getLineup, getMediaDetail, ingestUpload, recheckUnavailable, setMediaAssociation, updateMediaMetadata } from "../src/domain/media";
+import { eq } from "drizzle-orm";
+import { mediaContentVersions } from "../src/db/schema";
 import { COMBINED_WIDTH, buildCombinedPhoto, ensureCombinedPhotos, existingCombined, makeCombinedPhoto, type CombinedScope } from "../src/domain/combinedPhoto";
 import { listExportRows } from "../src/domain/cbosExport";
 import { parseClassification, type Classification } from "../src/domain/constants";
@@ -111,6 +113,20 @@ describe("combined photo in the gallery", () => {
     const lineup = await getLineup(t.db, { aircraftId: acId, aircraftTypeId: typeId });
     expect(lineup.map((l) => l.classification).sort()).toEqual(["cabin", "cabin", "combined", "exterior", "floor_plan"]);
     expect(lineup.find((l) => l.classification === "combined")?.mediaId).toBe((made as { mediaId: string }).mediaId); // the newest
+  });
+
+  it("a photo that couldn't be read is set aside only briefly, and the recheck brings it back", async () => {
+    const ext = await approved(1, "exterior");
+    const cv = (await getMediaDetail(t.db, t.actor.tenantId, ext))!.media.currentContentVersionId!;
+    const mark = (at: Date) => t.db.update(mediaContentVersions).set({ unavailableAt: at }).where(eq(mediaContentVersions.id, cv));
+    const shown = async () => (await getLineup(t.db, { aircraftId: acId, aircraftTypeId: typeId })).some((l) => l.mediaId === ext);
+    await mark(new Date());
+    expect(await shown()).toBe(false); // just failed: not offered for a moment
+    await mark(new Date(Date.now() - 11 * 60_000));
+    expect(await shown()).toBe(true); // tried again after 10 minutes
+    expect(await recheckUnavailable(t.db, t.store)).toEqual({ back: 1, still: 0 }); // the file loads: the mark is gone
+    const [row] = await t.db.select({ u: mediaContentVersions.unavailableAt }).from(mediaContentVersions).where(eq(mediaContentVersions.id, cv));
+    expect(row.u).toBeNull();
   });
 
   it("remaking replaces the old one", async () => {

@@ -5,7 +5,7 @@ import type { Db } from "../db/client";
 import { aircraft, aircraftMedia, mediaAssociations, mediaContentVersions, sourceEvidence } from "../db/schema";
 import type { FileStore } from "../storage";
 import type { Actor } from "./action";
-import { approveMedia, ingestUpload, readContentBytes, retireMedia, setMediaAssociation, updateMediaMetadata } from "./media";
+import { approveMedia, ingestUpload, readContentBytes, retireMedia, setMediaAssociation, stillUnavailable, updateMediaMetadata } from "./media";
 
 /**
  * The combined photo: one picture of an aircraft made from four approved photos, with no AI (it only places them):
@@ -81,7 +81,7 @@ async function scopePhotos(db: Db, tenantId: string, scope: CombinedScope) {
         : and(eq(mediaAssociations.associationStatus, "representative_type"), eq(mediaAssociations.aircraftTypeId, scope.aircraftTypeId)),
     ))
     .orderBy(asc(aircraftMedia.displayOrder), asc(aircraftMedia.createdAt));
-  return rows.filter((r) => r.m.rightsStatus !== "restricted" && !r.cv.unavailableAt);
+  return rows.filter((r) => r.m.rightsStatus !== "restricted" && !stillUnavailable(r.cv));
 }
 
 const isGenerated = (ev: { metadata: unknown } | null) => (ev?.metadata as { uploadedVia?: string } | null)?.uploadedVia === "generated";

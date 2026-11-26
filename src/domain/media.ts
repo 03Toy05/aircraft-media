@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, inArray, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNotNull, or, sql } from "drizzle-orm";
 import sharp from "sharp";
 import {
   aircraft,
@@ -570,6 +570,38 @@ export function extractCropAsMedia(db: Db, store: FileStore, actor: Actor, input
 // ---------------------------------------------------------------- bytes
 
 /**
+ * A photo whose file could not be read is set aside for a short while only, then offered (and read) again: storage can
+ * fail for a moment (Google Drive's sign-in lapsed on 24 Nov 2026), and a photo hidden for good would never be read
+ * again to clear the mark.
+ */
+export const UNAVAILABLE_RETRY_MS = 10 * 60_000;
+export const stillUnavailable = (cv: { unavailableAt: Date | null } | null | undefined, now = Date.now()) =>
+  !!cv?.unavailableAt && now - cv.unavailableAt.getTime() < UNAVAILABLE_RETRY_MS;
+
+/** Reads photos marked unavailable again (a few at a time): those that load now are back everywhere. */
+export async function recheckUnavailable(db: Db, store: FileStore, limit = 40): Promise<{ back: number; still: number }> {
+  const rows = await db.select({ id: mediaContentVersions.id }).from(mediaContentVersions).where(isNotNull(mediaContentVersions.unavailableAt)).limit(limit);
+  let back = 0, still = 0;
+  for (const r of rows) {
+    try { await readContentBytes(db, store, r.id); back++; } catch { still++; }
+  }
+  return { back, still };
+}
+
+let lastRecheck = 0;
+/** From ordinary page loads, at most every 15 minutes per server (there is no scheduler); never throws. */
+export async function maybeRecheckUnavailable(db: Db, store: FileStore, now = Date.now()) {
+  if (now - lastRecheck < 15 * 60_000) return;
+  lastRecheck = now;
+  try {
+    const r = await recheckUnavailable(db, store);
+    if (r.back || r.still) console.log(`Photo recheck: ${r.back} back, ${r.still} still unavailable`);
+  } catch (e) {
+    console.error("Photo recheck failed", e);
+  }
+}
+
+/**
  * Read exact stored bytes. If they cannot be retrieved the version is flagged unavailable
  * (so it stops counting as available); a later successful read clears the flag.
  */
@@ -680,13 +712,13 @@ function lineupFrom(rows: LineupRow[], opts: { aircraftId: string; aircraftTypeI
   const isActual = (r: LineupRow) => r.a.associationStatus === "actual_aircraft" && r.a.aircraftId === opts.aircraftId;
   // One combined picture per aircraft: its own newest one, else the type's newest (older copies, from making it again
   // or a broker's upload as well, stay in the gallery but are not offered twice).
-  const usable = (r: LineupRow) => r.m.rightsStatus !== "restricted" && !r.cv.unavailableAt
+  const usable = (r: LineupRow) => r.m.rightsStatus !== "restricted" && !stillUnavailable(r.cv)
     && (isActual(r) || (r.a.associationStatus === "representative_type" && r.a.aircraftTypeId === opts.aircraftTypeId));
   const combined = rows.filter((r) => r.m.primaryClassification === "combined" && usable(r));
   const keepCombined = [...combined.filter(isActual), ...combined.filter((r) => !isActual(r))]
     .reduce<LineupRow | null>((best, r) => (!best || (isActual(r) === isActual(best) && r.m.createdAt > best.m.createdAt) ? r : best), null);
   for (const r of rows) {
-    if (r.m.rightsStatus === "restricted" || r.cv.unavailableAt) continue;
+    if (r.m.rightsStatus === "restricted" || stillUnavailable(r.cv)) continue;
     const actual = isActual(r);
     const repr = r.a.associationStatus === "representative_type" && r.a.aircraftTypeId === opts.aircraftTypeId;
     if (!actual && !repr) continue;
