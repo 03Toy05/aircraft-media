@@ -35,7 +35,7 @@ export type Copy = {
   /** The film section of the front page: the selling point, the video (or "coming soon"), the broker's pains and the claim. */
   demo: { intro: string; watch: string; close: string; draft: string; again: string; screen: string; soon: string; soonNote: string; transcript: string; painTitle: string; pains: string[]; claim: string };
   /** The brand signature (TOY-14): `lead` + `tail`, then the airplane in place of the final period; `plain` is what screen readers hear. */
-  begins: { lead: string; tail: string; plain: string; founderVideo: string; paragraphs: string[]; vision: string };
+  begins: { lead: string; tail: string; plain: string; founderVideo: string; founderCta: string; paragraphs: string[]; vision: string };
   price: { headline: string; body: string; soon: string };
   cta: string;
   footer: { rights: string; privacy: string; terms: string; contact: string };
@@ -90,6 +90,7 @@ export const COPY: Record<SiteLang, Copy> = {
       tail: "Toy",
       plain: "Everything begins as a Toy.",
       founderVideo: "A word from my creator",
+      founderCta: "See Toy draft a quote",
       paragraphs: [
         "My creator spent 14 years as an aviation charter butler. After years of preparing quotations, searching for aircraft photos and juggling platforms, he wanted to build the assistant he always wished he had.",
         "Not every broker can afford an assistant. So he decided to build one.",
@@ -155,6 +156,7 @@ export const COPY: Record<SiteLang, Copy> = {
       tail: "開始",
       plain: "一切從Toy開始。",
       founderVideo: "我的創造者想說幾句",
+      founderCta: "看 Toy 草擬報價",
       paragraphs: [
         "我的創造者在私人飛機行業做了 14 年包機管家。多年來，他不斷準備報價單、尋找飛機相片、在不同平台之間周旋，於是想打造一位他一直希望擁有的助理。",
         "不是每位代理都請得起助理。所以，他決定自己造一個。",
@@ -220,6 +222,7 @@ export const COPY: Record<SiteLang, Copy> = {
       tail: "开始",
       plain: "一切从Toy开始。",
       founderVideo: "我的创造者想说几句",
+      founderCta: "看 Toy 起草报价",
       paragraphs: [
         "我的创造者在私人飞机行业做了 14 年包机管家。多年来，他不断准备报价单、寻找飞机照片、在不同平台之间周旋，于是想打造一位他一直希望拥有的助理。",
         "不是每位代理都请得起助理。所以，他决定自己造一个。",

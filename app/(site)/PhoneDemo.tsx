@@ -13,11 +13,13 @@ type Video = { src: string; poster?: string; captions: { lang: string; srclang: 
  * "Watch again" under it. Without a film there is no play button, only a plain "coming soon" label (no fake controls).
  * The film never starts by itself.
  */
-export default function PhoneDemo({ video, lang, labels, draftHref, children }: {
+export default function PhoneDemo({ video, lang, labels, draftHref, hidePlay = false, children }: {
   video: Video | null;
   lang: string;
   labels: { watch: string; close: string; soon: string; screen: string; draft: string; again: string };
   draftHref: string;
+  /** Hide the "Watch the demo" button (e.g. while the founder clip is showing); the player can still be opened by event. */
+  hidePlay?: boolean;
   children: React.ReactNode;
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
@@ -36,6 +38,15 @@ export default function PhoneDemo({ video, lang, labels, draftHref, children }: 
     dialog.current?.showModal(); if (v) v.currentTime = 0; play();
   };
   const close = () => dialog.current?.close();
+  // Other parts of the page (the founder clip's end link) can ask for the demo with a "toy:watch-demo" event.
+  const openRef = useRef(open);
+  openRef.current = open;
+  useEffect(() => {
+    if (!video) return;
+    const onAsk = () => openRef.current();
+    window.addEventListener("toy:watch-demo", onAsk);
+    return () => window.removeEventListener("toy:watch-demo", onAsk);
+  }, [video]);
   const stop = () => { const v = film.current; if (v) { v.pause(); v.currentTime = 0; } setEnded(false); };
 
   return (
@@ -43,7 +54,7 @@ export default function PhoneDemo({ video, lang, labels, draftHref, children }: 
       <span className="phone-notch" aria-hidden="true" />
       <div className="phone-screen">
         <div className="phone-content">{children}</div>
-        {video ? (
+        {hidePlay ? null : video ? (
           <button type="button" className="phone-play" onClick={open}>
             <svg aria-hidden="true" focusable="false" width="14" height="14" viewBox="0 0 14 14"><path d="M3 1.5 L12 7 L3 12.5 Z" fill="currentColor" /></svg>
             {labels.watch}

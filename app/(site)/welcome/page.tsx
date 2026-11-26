@@ -4,6 +4,7 @@ import Toy from "../../_components/Toy";
 import BrandSignature from "../../_components/BrandSignature";
 import LanguageMenu from "../LanguageMenu";
 import PhoneDemo from "../PhoneDemo";
+import FounderClip from "../FounderClip";
 import { demoTranscript, demoVideo, founderPhoto, founderVideo } from "../siteMedia";
 import { COPY, HTML_LANG, QUESTIONS, parseLang, parseQuestion, type QuestionKey, type SiteLang } from "./copy";
 
@@ -69,6 +70,7 @@ export default async function WelcomePage({ searchParams }: { searchParams: Prom
           <div className="stage-row">
             {/* The phone: Toy's notes on its screen until the demo plays (keyed by question, so a new question stops the film). */}
             <PhoneDemo key={q ?? "start"} video={video} lang={lang}
+              hidePlay={q === "begins" && !!founderFilm}
               labels={{ watch: t.demo.watch, close: t.demo.close, soon: t.demo.soon, screen: t.demo.screen, draft: t.demo.draft, again: t.demo.again }}
               draftHref={lang === "en" ? "/start" : `/start?lang=${lang}`}>
               <div aria-live="polite">
@@ -94,17 +96,7 @@ export default async function WelcomePage({ searchParams }: { searchParams: Prom
                   <>
                     <BrandSignature key={lang} lead={t.begins.lead} tail={t.begins.tail} plain={t.begins.plain} takeoff />
                     {founderFilm ? (
-                      // The founder's own video: never starts by itself; captions on in the page's language (or English).
-                      <figure className="phone-founder">
-                        <video controls playsInline preload="metadata" poster={founderFilm.poster} aria-label={t.begins.founderVideo}>
-                          <source src={founderFilm.src} type="video/mp4" />
-                          {founderFilm.captions.map((c) => (
-                            <track key={c.lang} kind="captions" src={`/brand/founder-captions-${c.lang}.vtt`} srcLang={c.srclang} label={c.label}
-                              default={c.lang === lang || (c.lang === "en" && !founderFilm.captions.some((x) => x.lang === lang))} />
-                          ))}
-                        </video>
-                        <figcaption>{t.begins.founderVideo}</figcaption>
-                      </figure>
+                      <FounderClip video={founderFilm} lang={lang} label={t.begins.founderVideo} cta={t.begins.founderCta} hasDemo={!!video} />
                     ) : founder && (
                       // eslint-disable-next-line @next/next/no-img-element
                       <img className="home-founder" src={founder} alt="" width={72} height={72} />
