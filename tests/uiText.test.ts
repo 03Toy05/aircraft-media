@@ -53,6 +53,8 @@ export const TRANSLATED = [
   "app/_components/BrandForm.tsx",
   "app/_components/QuoteTemplateEditor.tsx",
   "app/chatActions.ts",
+  "app/supportActions.ts",
+  "app/(app)/support/page.tsx",
   "app/api/quote/preview-pdf/route.ts",
   "app/(app)/admin/page.tsx",
   "app/(app)/admin/speed/page.tsx",

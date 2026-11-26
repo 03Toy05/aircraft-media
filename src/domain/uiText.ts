@@ -1288,6 +1288,25 @@ export const UI_HANT: Record<string, string> = {
   "The preview couldn't be made. Try again.": "未能製作預覽。請再試一次。",
   "There is no PDF in this language yet; send the client link instead.": "此語言暫時未有 PDF，請改為傳送客戶連結。",
   "Add the routing first: a PDF needs at least one leg.": "請先加入行程：PDF 需要最少一個航段。",
+  // Feedback and support
+  "Support": "支援",
+  "Feedback and support": "意見及支援",
+  "Write your message first.": "請先輸入訊息。",
+  "That message is too long (at most {n} characters).": "訊息太長（最多 {n} 個字元）。",
+  "Support email is not set up yet. Please try again later.": "支援電郵尚未設定，請稍後再試。",
+  "Your message couldn't be sent. Try again in a minute.": "未能傳送訊息，請一分鐘後再試。",
+  "Thanks, your message was sent. We'll reply to {email}.": "謝謝，訊息已傳送。我們會回覆至 {email}。",
+  "Something isn't working": "有功能無法正常運作",
+  "A question": "查詢",
+  "An idea or feedback": "建議或意見",
+  "Billing or my plan": "收費或我的計劃",
+  "Tell us what's not working, ask a question, or suggest something. We reply by email to {email}.": "告訴我們哪裡出了問題、提出查詢或建議。我們會以電郵回覆至 {email}。",
+  "What is it about?": "關於甚麼？",
+  "Which page or aircraft? (optional)": "哪個頁面或飛機？（選填）",
+  "For example: Quote page, G650ER B-LDE": "例如：報價頁面、G650ER B-LDE",
+  "Your message": "你的訊息",
+  "What happened, and what did you expect? Screenshots can be sent as a reply to our email.": "發生了甚麼事？你原本預期是怎樣？截圖可在回覆我們的電郵時附上。",
+  "Send": "傳送",
 };
 
 /** Simplified Chinese written out where mainland usage differs from a character-by-character conversion. */
