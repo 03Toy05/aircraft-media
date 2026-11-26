@@ -43,6 +43,7 @@ export default function MobileNav({ email, signOut, isAdmin = false, library = f
           <Link href="/photos"><Icon name="photos" />{t("Approved photos")}</Link>
           <Link href="/intake"><Icon name="upload" />{t("Upload photos")}</Link>
           <Link href="/settings"><Icon name="settings" />{t("Settings")}</Link>
+          <Link href="/guide"><Icon name="review" />{t("Getting started with Toy")}</Link>
           <Link href="/support"><Icon name="send" />{t("Feedback and support")}</Link>
           {library && <Link href="/library"><Icon name="plane" />{t("Library")}</Link>}
           {isAdmin && <Link href="/admin"><Icon name="contacts" />{t("Users")}</Link>}
