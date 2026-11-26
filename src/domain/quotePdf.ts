@@ -6,7 +6,7 @@ import fontkit from "@pdf-lib/fontkit";
 import { airportsFor } from "./airports";
 import { airportPlace, legTimes, type Leg } from "./routing";
 import { OWNER_APPROVAL, PROPOSAL_TITLE, QUOTE_LANGUAGES, QUOTE_LOCALE, QUOTE_WORDS, type QuoteLanguage } from "./quote";
-import { needsOwnerApproval } from "./requests";
+import { optionNeedsApproval } from "./requests";
 import { aircraftNameZh, quoteAircraftName } from "./aircraftNamesZh";
 import { DEFAULT_VERSION_FORMAT, formatVersion, versionFileName } from "./branding";
 import type { QuoteSnapshot } from "./requests";
@@ -229,7 +229,7 @@ export async function quotePdf(q: PdfQuote, loadPhoto: PhotoLoader): Promise<Uin
     [{ label: "", frac: 0.04 }, { label: w.aircraft, frac: 0.27 }, { label: w.capacity, frac: 0.09 }, { label: "YOM / YOR", frac: 0.12 }, { label: w.wifi, frac: 0.08 }, { label: w.smoking, frac: 0.1 }, { label: w.pets, frac: 0.09 }, { label: w.price, frac: 0.21, right: true }],
     options.map((o, i) => [
       { text: String(i + 1) },
-      { text: quoteAircraftName(lang, o.type), warn: needsOwnerApproval(o.notes) ? OWNER_APPROVAL[lang] : undefined, sub: o.extra || undefined },
+      { text: quoteAircraftName(lang, o.type), warn: optionNeedsApproval(o) ? OWNER_APPROVAL[lang] : undefined, sub: o.extra || undefined },
       { text: o.capacity ? String(o.capacity) : "–" },
       { text: [o.yom, o.yor].filter(Boolean).join(" / ") || "–" },
       { text: yesNo(o.wifi) },
@@ -268,7 +268,7 @@ export async function quotePdf(q: PdfQuote, loadPhoto: PhotoLoader): Promise<Uin
     at(wrap(aircraftNameZh(lang, o.type) ?? o.type, F, 14, W - priceW - 24)[0], M + 12, y - 32, 14, ON_ACCENT);
     if (o.price) atRight(o.price, M + W - 12, y - 27, 13, ON_ACCENT);
     y -= 54;
-    if (needsOwnerApproval(o.notes)) {
+    if (optionNeedsApproval(o)) {
       const txt = OWNER_APPROVAL[lang];
       const tw = F.widthOfTextAtSize(txt, 9.5) + 20;
       page.drawRectangle({ x: M, y: y - 20, width: tw, height: 20, color: rgb(1, 0.95, 0.82), borderColor: rgb(0.85, 0.6, 0.1), borderWidth: 0.8 });

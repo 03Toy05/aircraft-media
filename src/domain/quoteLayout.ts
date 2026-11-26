@@ -2,7 +2,7 @@ import { unzipSync } from "fflate";
 import { airportPlace, legTimes, routeLabel, routingLines, maxPax, type Leg } from "./routing";
 import { airportsFor } from "./airports";
 import { OWNER_APPROVAL, QUOTE_LANGUAGES, QUOTE_LOCALE, QUOTE_WORDS, type QuoteLanguage } from "./quote";
-import { needsOwnerApproval } from "./requests";
+import { optionNeedsApproval } from "./requests";
 import { quoteAircraftName } from "./aircraftNamesZh";
 import { DEFAULT_VERSION_FORMAT, formatVersion } from "./branding";
 import { photoSlots, type PdfQuote } from "./quotePdf";
@@ -98,7 +98,7 @@ export function layoutValues(q: PdfQuote): LayoutValues {
       price: o.price ?? "",
       notes: inc.notes ? o.notes?.trim() ?? "" : "",
       extra: o.extra ?? "",
-      owner_approval: needsOwnerApproval(o.notes) ? OWNER_APPROVAL[lang] : "",
+      owner_approval: optionNeedsApproval(o) ? OWNER_APPROVAL[lang] : "",
     };
     for (const [k, val] of Object.entries(v)) text[`${k}_${n}`] = val;
     const s = photoSlots(o.photos);

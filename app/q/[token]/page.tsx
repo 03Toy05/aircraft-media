@@ -5,7 +5,7 @@ import { noteOpened, openLink } from "@/domain/quoteLinks";
 import { airportsFor } from "@/domain/airports";
 import { airportPlace, legTimes, type Leg } from "@/domain/routing";
 import { OWNER_APPROVAL, PROPOSAL_TITLE, QUOTE_LANGUAGES, QUOTE_LOCALE, QUOTE_SUBJECT, QUOTE_WORDS, type QuoteLanguage } from "@/domain/quote";
-import { needsOwnerApproval } from "@/domain/requests";
+import { optionNeedsApproval } from "@/domain/requests";
 import { formatVersion, versionFileName } from "@/domain/branding";
 import { pdfSupported, photoSlots } from "@/domain/quotePdf";
 import { logoDataUrl, textOn } from "@/domain/branding";
@@ -109,7 +109,7 @@ export default async function ClientQuote({ params, searchParams }: { params: Pr
               {q.quote.options.map((o, i) => (
                 <tr key={i}>
                   <td><a href={`#option-${i + 1}`}>{i + 1}</a></td>
-                  <td><a href={`#option-${i + 1}`}>{quoteAircraftName(lang, o.type)}</a>{needsOwnerApproval(o.notes) && <span className="cq-sticker">{OWNER_APPROVAL[lang]}</span>}{o.extra ? <small>{o.extra}</small> : null}</td>
+                  <td><a href={`#option-${i + 1}`}>{quoteAircraftName(lang, o.type)}</a>{optionNeedsApproval(o) && <span className="cq-sticker">{OWNER_APPROVAL[lang]}</span>}{o.extra ? <small>{o.extra}</small> : null}</td>
                   <td>{o.capacity ?? "–"}</td>
                   <td>{[o.yom, o.yor].filter(Boolean).join(" / ") || "–"}</td>
                   <td>{yesNo(o.wifi)}</td>
@@ -140,7 +140,7 @@ export default async function ClientQuote({ params, searchParams }: { params: Pr
               <div><small>{w.option} {i + 1}</small><h2>{quoteAircraftName(lang, o.type)}</h2></div>
               {o.price && <div className="cq-price">{o.price}</div>}
             </div>
-            {needsOwnerApproval(o.notes) && <div className="cq-sticker cq-sticker-big">{OWNER_APPROVAL[lang]}</div>}
+            {optionNeedsApproval(o) && <div className="cq-sticker cq-sticker-big">{OWNER_APPROVAL[lang]}</div>}
             <div className="cq-facts">
               {inc.operator && fact(w.operator, o.operator)}
               {inc.tail && fact(w.tail, o.tail)}

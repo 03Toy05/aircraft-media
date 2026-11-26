@@ -359,3 +359,17 @@ export function priceInText(block: string | undefined, priceWord: string): strin
   const m = block.match(new RegExp(`^[\\s*_~]*${esc}[\\s*_~]*[:：][\\s*_~]*(.+?)[\\s*_~]*$`, "mi"));
   return m ? m[1].trim().slice(0, 120) : "";
 }
+
+/** Whether the aircraft's notes say the owner must approve the flight ("Owner's approval required", "subject to owner's approval"). */
+export const needsOwnerApproval = (notes: string | null | undefined) =>
+  !!notes && (/owner'?s?\s+approv|subject\s+to\s+owner|owner\s+approval|機主批准|机主批准|機主同意|机主同意|業主批准|业主批准/i.test(notes) || Object.values(OWNER_APPROVAL).some((s) => notes.includes(s)));
+
+/** An option of a quote needs the owner's approval: said on the aircraft's record, or in this quote's note for it. */
+export const optionNeedsApproval = (o: { notes?: string | null; extra?: string | null }) => needsOwnerApproval(o.notes) || needsOwnerApproval(o.extra);
+
+/** The note with the owner's-approval words taken out (the Quote page's tick, turned off). */
+export function withoutOwnerApproval(text: string): string {
+  let out = text;
+  for (const s of Object.values(OWNER_APPROVAL)) out = out.split(s).join("");
+  return out.replace(/\(?\s*(?:subject\s+to\s+)?owner'?s?\s+approval(?:\s+required)?\s*\)?\.?/gi, "").replace(/[ \t]{2,}/g, " ").replace(/^[\s,;.·|-]+|[\s,;·|-]+$/g, "").trim();
+}

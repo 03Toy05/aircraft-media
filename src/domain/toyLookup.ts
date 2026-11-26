@@ -155,7 +155,9 @@ export async function fleetBasics(db: Db, tenantId: string) {
  */
 export async function quotePreview(db: Db, tenantId: string, ids: string[], lang?: ChatLang, prices: Record<string, string> = {}, alsoTenants: string[] = [],
   /** The broker's own opening and closing lines for this quote, in place of the saved wording's. */
-  own: { greeting?: string; closing?: string } = {}): Promise<{
+  own: { greeting?: string; closing?: string } = {},
+  /** A note per aircraft for this quote ("Subject to owner's approval"), added under its block. */
+  extras: Record<string, string> = {}): Promise<{
   text: string;
   photos: { id: string; label: string; classification: Classification; option: number }[];
   /** Each option's own message (opening line on the first, closing line on the last), to send option by option. */
@@ -172,7 +174,7 @@ export async function quotePreview(db: Db, tenantId: string, ids: string[], lang
     const card = await getAircraftCard(db, id);
     if (!r || !card) continue;
     const option = items.length;
-    items.push({ type: card.aircraft, yom: card.yom, yor: card.yor, capacity: card.capacity, wifi: card.wifi, wifiDetail: card.wifiDetail, smoking: card.smoking, pets: card.pets, cleaningFee: card.cleaningFee, price: prices[id] ?? "" });
+    items.push({ type: card.aircraft, yom: card.yom, yor: card.yor, capacity: card.capacity, wifi: card.wifi, wifiDetail: card.wifiDetail, smoking: card.smoking, pets: card.pets, cleaningFee: card.cleaningFee, price: prices[id] ?? "", extra: extras[id] ?? "" });
     const lineup = await getLineup(db, { aircraftId: id, aircraftTypeId: r.aircraftTypeId });
     // Every approved photo of each aircraft (the combined photo among them); the broker picks which kinds to send.
     for (const l of lineup) photos.push({ id: l.contentVersionId, label: `${card.aircraft} ${l.label}`, classification: l.classification, option });

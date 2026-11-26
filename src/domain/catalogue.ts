@@ -14,6 +14,7 @@ import {
 import { normalizeKey as nk } from "./constants";
 import type { Db } from "../db/client";
 import { resolveAircraftTypes, resolveOrganisations } from "./directory";
+import { stillUnavailable } from "./media";
 import { CLASSIFICATIONS, REQUIRED_CLASSES, normalizeKey, normalizeRegistration, type Classification } from "./constants";
 
 export const AVAILABILITY_STATUSES = [
@@ -130,7 +131,7 @@ export async function getCatalogue(db: Db, tenantId: string, filters: CatalogueF
       const cell = cells[m.primaryClassification];
       if (m.reviewState === "approved") {
         if (m.rightsStatus === "restricted") continue;
-        if (!cv?.id || cv.unavailableAt) {
+        if (!cv?.id || stillUnavailable(cv)) {
           unavailable.add(m.primaryClassification);
           continue;
         }

@@ -164,5 +164,4 @@ export async function getVersion(db: Db, tenantId: string, requestId: string, ve
   return v ? { version: v.version, createdAt: v.createdAt, content: v.content as unknown as QuoteSnapshot } : null;
 }
 
-/** Whether the aircraft's notes say the owner must approve the flight ("Owner's approval required", "subject to owner's approval"). */
-export const needsOwnerApproval = (notes: string | null | undefined) => !!notes && /owner'?s?\s+approv|subject\s+to\s+owner|owner\s+approval/i.test(notes);
+export { needsOwnerApproval, optionNeedsApproval } from "./quote";
