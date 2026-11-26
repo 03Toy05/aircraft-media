@@ -1,4 +1,5 @@
 import type { WifiStatus, YesNoStatus } from "./constants";
+import { quoteAircraftName } from "./aircraftNamesZh";
 
 /**
  * Quotation text for a client. Pure and client-safe: the page builds it live, the broker edits it, copies it,
@@ -280,7 +281,7 @@ export function buildQuoteParts(items: QuoteAircraft[], opts: QuoteOptions): Quo
     const wifi = word ? (a.wifiDetail?.trim() && a.wifi !== "tbc" ? `${word}, ${a.wifiDetail.trim()}` : word) : "";
     const values: Record<string, string> = {
       n: items.length > 1 ? ` ${i + 1}` : "",
-      aircraft: a.type,
+      aircraft: quoteAircraftName(opts.language, a.type), // Chinese quotes: "灣流 G650ER（Gulfstream G650ER）"
       tail: opts.includeTail && a.tail ? a.tail : "",
       operator: opts.includeOperator && a.operator ? a.operator : "",
       base: opts.includeBase && a.base ? a.base : "",

@@ -431,11 +431,11 @@ describe("Quotation message", () => {
     expect(all).toMatch(/Operator: Metrojet/); expect(all).toMatch(/Tail number: B-XYZ/); expect(all).toMatch(/Base: Hong Kong/); expect(all).toMatch(/Notes: Owner's approval required/);
   });
 
-  it("numbers several aircraft, adds prices, and translates the labels but not the names", () => {
+  it("numbers several aircraft, adds prices, translates the labels, and gives the maker in Chinese with the English name kept", () => {
     const text = buildQuote([{ ...g650, price: "USD 5,200/hr" }, { ...g650, type: "Bombardier Global 6000", yom: 2015, capacity: 14, wifi: "no" }], { language: "zh-Hant", greeting: true });
     expect(text).toMatch(/^您好/);
-    expect(text).toMatch(/飛機 1：Gulfstream G650ER\n出廠年份：2019\n翻新年份：2025\n載客量：12 座\nWIFI：有\n價格：USD 5,200\/hr/);
-    expect(text).toMatch(/飛機 2：Bombardier Global 6000\n出廠年份：2015/);
+    expect(text).toMatch(/飛機 1：灣流 G650ER（Gulfstream G650ER）\n出廠年份：2019\n翻新年份：2025\n載客量：12 座\nWIFI：有\n價格：USD 5,200\/hr/);
+    expect(text).toMatch(/飛機 2：環球 6000（Bombardier Global 6000）\n出廠年份：2015/);
     expect(text).toMatch(/WIFI：無/);
   });
 

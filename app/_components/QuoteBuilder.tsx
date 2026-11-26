@@ -664,7 +664,7 @@ export default function QuoteBuilder({ aircraft, operators, preferred: preferred
             ))}
           </div>
           <p className="small muted" style={{ margin: "8px 0 0" }}>
-            {templates[lang] ? t("Wording: your own.") : t("Wording: standard.")} <Link href={`/quote/template?lang=${lang}`}>{t("Edit the wording →")}</Link> {t("Aircraft names, tail numbers and notes are never translated.")}
+            {templates[lang] ? t("Wording: your own.") : t("Wording: standard.")} <Link href={`/quote/template?lang=${lang}`}>{t("Edit the wording →")}</Link> {t("Tail numbers and notes are never translated. In Chinese, the maker's Chinese name comes first, with the English name in brackets.")}
           </p>
           {editedBlocks && <p className="small muted">{t("An aircraft you rewrote by hand keeps your text when you change these. Press “Back to automatic” on it to follow them again.")}</p>}
         </details>

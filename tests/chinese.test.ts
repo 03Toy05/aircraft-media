@@ -135,8 +135,8 @@ describe("Toy in Traditional and Simplified Chinese", () => {
     expect(r.reply.copy).toBe(
       [
         "您好，以下是飛機選項：",
-        ["飛機 1：Gulfstream G550", "出廠年份：2013", "翻新年份：2020", "載客量：13 座", "WIFI：有, at USD 10/MB", "價格："].join("\n"),
-        ["飛機 2：Gulfstream G650ER", "出廠年份：2017", "載客量：15 座", "WIFI：無", "價格："].join("\n"),
+        ["飛機 1：灣流 G550（Gulfstream G550）", "出廠年份：2013", "翻新年份：2020", "載客量：13 座", "WIFI：有, at USD 10/MB", "價格："].join("\n"),
+        ["飛機 2：灣流 G650ER（Gulfstream G650ER）", "出廠年份：2017", "載客量：15 座", "WIFI：無", "價格："].join("\n"),
         "如需更多資料或照片，請隨時告訴我。",
       ].join("\n\n"),
     );

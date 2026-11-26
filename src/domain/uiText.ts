@@ -185,7 +185,7 @@ export const UI_HANT: Record<string, string> = {
   "Wording: your own.": "字眼：你自己的。",
   "Wording: standard.": "字眼：標準。",
   "Edit the wording →": "編輯字眼 →",
-  "Aircraft names, tail numbers and notes are never translated.": "飛機名稱、機尾號及備註不會被翻譯。",
+  "Tail numbers and notes are never translated. In Chinese, the maker's Chinese name comes first, with the English name in brackets.": "機尾號及備註不會被翻譯。中文報價會先列出製造商的中文名稱，英文名稱放在括號內。",
   "An aircraft you rewrote by hand keeps your text when you change these. Press “Back to automatic” on it to follow them again.": "你親手改寫過的飛機會保留你的文字，不受這些設定影響。按該飛機的「回復自動」便會再次跟隨。",
   "Edit message ↓": "編輯訊息 ↓",
   "4. Check and edit the message": "4. 檢查及編輯訊息",
@@ -1297,7 +1297,7 @@ const HANS_SWAPS: [string, string][] = [
   ["设定", "设置"], ["登入", "登录"], ["搜寻", "搜索"], ["连结", "链接"], ["储存空间", "存储空间"], ["储存", "保存"],
   ["私隐", "隐私"], ["唯读", "只读"], ["选单", "菜单"], ["批核", "批准"], ["收件匣", "收件箱"], ["装置", "设备"],
   ["底线", "下划线"], ["字眼", "措辞"], ["一次过", "一次性"], ["传送", "发送"], ["联络", "联系"],
-  ["字元", "字符"], ["传到", "发到"], ["「", "“"], ["」", "”"],
+  ["字元", "字符"], ["传到", "发到"], ["「", "“"], ["」", "”"], ["喷射机", "喷气机"],
 ];
 
 export function toHansUi(hant: string): string {

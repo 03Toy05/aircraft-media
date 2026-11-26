@@ -7,6 +7,7 @@ import { airportsFor } from "./airports";
 import { airportPlace, legTimes, type Leg } from "./routing";
 import { OWNER_APPROVAL, PROPOSAL_TITLE, QUOTE_LANGUAGES, QUOTE_LOCALE, QUOTE_WORDS, type QuoteLanguage } from "./quote";
 import { needsOwnerApproval } from "./requests";
+import { aircraftNameZh, quoteAircraftName } from "./aircraftNamesZh";
 import { DEFAULT_VERSION_FORMAT, formatVersion, versionFileName } from "./branding";
 import type { QuoteSnapshot } from "./requests";
 import { textOn } from "./branding";
@@ -218,7 +219,7 @@ export async function quotePdf(q: PdfQuote, loadPhoto: PhotoLoader): Promise<Uin
     [{ label: "", frac: 0.04 }, { label: w.aircraft, frac: 0.27 }, { label: w.capacity, frac: 0.09 }, { label: "YOM / YOR", frac: 0.12 }, { label: w.wifi, frac: 0.08 }, { label: w.smoking, frac: 0.1 }, { label: w.pets, frac: 0.09 }, { label: w.price, frac: 0.21, right: true }],
     options.map((o, i) => [
       { text: String(i + 1) },
-      { text: o.type, warn: needsOwnerApproval(o.notes) ? OWNER_APPROVAL[lang] : undefined, sub: o.extra || undefined },
+      { text: quoteAircraftName(lang, o.type), warn: needsOwnerApproval(o.notes) ? OWNER_APPROVAL[lang] : undefined, sub: o.extra || undefined },
       { text: o.capacity ? String(o.capacity) : "–" },
       { text: [o.yom, o.yor].filter(Boolean).join(" / ") || "–" },
       { text: yesNo(o.wifi) },
@@ -254,7 +255,7 @@ export async function quotePdf(q: PdfQuote, loadPhoto: PhotoLoader): Promise<Uin
     page.drawRectangle({ x: M, y: y - 40, width: W, height: 40, color: ACCENT });
     at(`${w.option} ${i + 1}`, M + 12, y - 15, 8.5, ON_ACCENT);
     const priceW = o.price ? F.widthOfTextAtSize(o.price, 13) + 24 : 0;
-    at(wrap(o.type, F, 14, W - priceW - 24)[0], M + 12, y - 32, 14, ON_ACCENT);
+    at(wrap(aircraftNameZh(lang, o.type) ?? o.type, F, 14, W - priceW - 24)[0], M + 12, y - 32, 14, ON_ACCENT);
     if (o.price) atRight(o.price, M + W - 12, y - 27, 13, ON_ACCENT);
     y -= 54;
     if (needsOwnerApproval(o.notes)) {
