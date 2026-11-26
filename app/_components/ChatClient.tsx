@@ -334,13 +334,15 @@ export default function ChatClient() {
   };
   // Also when Toy starts working, so the "working on it" note is in view.
   useEffect(() => { endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" }); }, [msgs, pending]);
-  // The last quote survives a reload or a visit to another page (in this tab), so prices and changes can still be typed.
+  // The last quote, or Toy's open "Which 7X?" question, survives a reload or a visit to another page (in this tab), so
+  // prices and changes can still be typed, and the answer still finishes the quote.
   useEffect(() => {
     try {
-      const saved = JSON.parse(window.sessionStorage.getItem(QUOTE_KEY) ?? "null") as { quote: Draft["quote"]; msg: Msg } | null;
+      const saved = JSON.parse(window.sessionStorage.getItem(QUOTE_KEY) ?? "null") as { quote: Draft["quote"]; asked?: Draft["asked"]; msg: Msg } | null;
       if (saved?.msg && (saved.msg.role as string) === "chocks") saved.msg.role = "toy"; // saved before the rename
-      if (!saved?.quote?.ids?.length || saved.msg?.role !== "toy") return;
-      setDraft(JSON.stringify({ photos: [], quote: saved.quote }));
+      const picking = saved?.asked?.kind === "quote_pick";
+      if ((!saved?.quote?.ids?.length && !picking) || saved?.msg?.role !== "toy") return;
+      setDraft(JSON.stringify({ photos: [], quote: saved.quote, ...(picking ? { asked: saved.asked } : {}) }));
       setMsgs([saved.msg]);
     } catch { /* storage blocked or old data: start fresh */ }
   }, []);
@@ -384,7 +386,8 @@ export default function ChatClient() {
       const confirmed = !!(r.applied || r.reply.done || r.reply.options?.length || r.reply.photos?.length || r.reply.share || r.reply.link);
       settleToy(toyNo, r.failures.length > 0 || r.reply.notFound ? "needsHelp" : confirmed ? "success" : "ready");
       try {
-        if (!r.draft.quote) window.sessionStorage.removeItem(QUOTE_KEY);
+        if (r.draft.asked?.kind === "quote_pick") window.sessionStorage.setItem(QUOTE_KEY, JSON.stringify({ quote: r.draft.quote, asked: r.draft.asked, msg: reply }));
+        else if (!r.draft.quote) window.sessionStorage.removeItem(QUOTE_KEY);
         else if (r.reply.options?.length) window.sessionStorage.setItem(QUOTE_KEY, JSON.stringify({ quote: r.draft.quote, msg: { ...reply, chips: [] } }));
       } catch { /* storage full or blocked: the quote just won't survive a reload */ }
       if (speak && "speechSynthesis" in window) {

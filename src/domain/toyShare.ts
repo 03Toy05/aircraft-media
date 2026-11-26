@@ -3,6 +3,7 @@ import { getAircraftNames, operatorAliasesByName } from "./catalogue";
 import { normalizeKey, type Classification } from "./constants";
 import { mentions } from "./toyLookup";
 import { parseRoutingLine } from "./toyRouting";
+import { typeAliasesFor } from "./directory";
 import type { Leg } from "./routing";
 
 /** "send the G280 photos to Mr Chan" -> { what: "G280", who: "Mr Chan" }. Single-line messages only. */
@@ -21,12 +22,35 @@ export function parseShareRequest(message: string): { what: string; who: string 
 }
 
 /**
+ * The short names brokers type for a type, as the words of its full name: "CL605" is the Challenger 605, "F7X" the
+ * Falcon 7X, "G7500" the Global 7500, "GLEX" the Global Express, "LJ45" the Learjet 45, "P300" the Phenom 300.
+ * (A Gulfstream's own short name, "G650", is already in its name.)
+ */
+export function typeShortNames(word: string): string[] {
+  const w = normalizeKey(word);
+  const out: string[] = [];
+  let m: RegExpMatchArray | null;
+  if ((m = w.match(/^cl(\d{3}[a-z]*)$/))) out.push(`challenger${m[1]}`);
+  if ((m = w.match(/^(?:g|gl)(\d{4})$/))) out.push(`global${m[1]}`);
+  if (/^(?:glex|gex|bd700|globalex)$/.test(w)) out.push("globalexpress");
+  if ((m = w.match(/^(?:f|fa)(\d{1,4}[a-z]*)$/)) && /x$|^(?:50|900|2000)/.test(m[1])) out.push(`falcon${m[1]}`);
+  if ((m = w.match(/^(?:lj|lr|lear)(\d{2}[a-z]*)$/))) out.push(`learjet${m[1]}`);
+  if ((m = w.match(/^(?:p|ph|emb)(100|300)(e|ev)?$/))) out.push(`phenom${m[1]}${m[2] ?? ""}`);
+  if ((m = w.match(/^(?:l|leg|erj)(600|650)$/))) out.push(`legacy${m[1]}`);
+  if ((m = w.match(/^(?:hawker|hs|h)(\d{3}[a-z]*)$/)) && /^(?:400|750|800|850|900|4000)/.test(m[1])) out.push(`hawker${m[1]}`);
+  return out;
+}
+
+/**
  * Aircraft whose tail, type or operator (or one of the operator's other names, like "VJ") contains every word of the
  * request. aliases: other names to use instead of this workspace's own (the library is searched with the broker's).
  */
 export async function findAircraftsForShare(db: Db, tenantId: string, text: string, aliases?: Map<string, string[]>) {
   const rows = await getAircraftNames(db, tenantId);
   const other = aliases ?? await operatorAliasesByName(db, [tenantId]);
+  // The type's other names saved in the directory ("CL605" set as an alias), alongside its full name.
+  const typeAlias = new Map<string, string[]>();
+  for (const a of await typeAliasesFor(db, tenantId)) typeAlias.set(a.aircraftTypeId, [...(typeAlias.get(a.aircraftTypeId) ?? []), a.normalizedAlias]);
   // Chinese filler ("的", "飛機", "一架") is dropped and Latin names are separated from Chinese characters next to them.
   const cleaned = text
     .replace(/['’]s\b/gi, "")
@@ -36,9 +60,9 @@ export async function findAircraftsForShare(db: Db, tenantId: string, text: stri
   const words = cleaned.split(/\s+/).map(normalizeKey).filter((w) => w.length >= 2);
   const STOP = ["the", "of", "for", "aircraft", "plane", "jet"];
   const find = (ws: string[]) => ws.length === 0 ? [] : rows.filter((r) => {
-    const hay = normalizeKey(`${r.tail ?? ""} ${r.aircraft} ${r.operator ?? ""} ${(r.operator ? other.get(normalizeKey(r.operator)) ?? [] : []).join(" ")}`);
-    // A word matches when it is in the name, or is one typo away from it ("CapacJet" finds CapaJet).
-    return ws.every((w) => hay.includes(w) || mentions(hay, w));
+    const hay = normalizeKey(`${r.tail ?? ""} ${r.aircraft} ${r.operator ?? ""} ${(r.operator ? other.get(normalizeKey(r.operator)) ?? [] : []).join(" ")} ${(typeAlias.get(r.aircraftTypeId) ?? []).join(" ")}`);
+    // A word matches when it is in the name, is a short name for the type ("CL605"), or is one typo away ("CapacJet" finds CapaJet).
+    return ws.every((w) => hay.includes(w) || typeShortNames(w).some((v) => hay.includes(v)) || mentions(hay, w));
   });
   // Every word first ("Jet Aviation" is a name); without filler words only when that finds nothing ("the G280 jet").
   const exact = find(words);

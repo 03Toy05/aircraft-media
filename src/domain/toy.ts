@@ -36,6 +36,8 @@ export type Asked =
   | { kind: "share_contact"; options: Option[]; aircraftId: string }
   | { kind: "classify"; mediaId: string }
   | { kind: "edit"; edits: AircraftEdit[] }
+  /** A quote named an aircraft that fits several ("Lux 7X"): which of them. The request is kept, to finish it after the answer. */
+  | { kind: "quote_pick"; message: string; index: number; what: string; options: Option[]; picks: Record<number, string[]> }
   | { kind: "confirm" };
 
 /** What Toy may change on an aircraft's record from the chat. */
@@ -141,6 +143,37 @@ const UNSURE = /(don'?t know|do not know|not sure|unsure|no idea|dunno|unknown|i
 const RESTART = new RegExp("^(?:(?:cancel|start over|reset|forget (?:it|that)|never ?mind)\\b|(?:取消|重來|重来|重新開始|重新开始|算了|不用了)" + END + ")", "i");
 const SAME = /^(use|same as|it'?s|its|that'?s|choose|pick|用|選|选|揀)(?:\s+|(?<=[用選选揀]))(.+)$/i;
 
+const WANTS_ALL = /\b(?:all|every|each)\b|全部|所有|每一?架/i;
+const ALL_ANSWER = /^(?:all|all of them|all \d+|every one|both|全部|所有|全部都要|都要|兩架都要|两架都要)[.!。！]?$/i;
+
+/** The broker's answer to "Which 7X?": numbers ("2", "1 and 3"), tails or names ("FSX", "OO-AIE and F-HECD"), or "all". */
+export function pickQuoteOptions(text: string, options: Option[]): string[] | null {
+  const t = text.trim().replace(SAME, "$2").trim();
+  if (ALL_ANSWER.test(t)) return options.map((o) => o.id);
+  if (/^[#第\d\s,，、&+]*(?:(?:and|和|及|同)[#第\d\s,，、&+]*)*(?:個|个|架)?$/i.test(t) && /\d/.test(t)) {
+    const picked = (t.match(/\d+/g) ?? []).map((n) => options[Number(n) - 1]);
+    return picked.length && picked.every(Boolean) ? [...new Set(picked.map((o) => o!.id))] : null;
+  }
+  const ids: string[] = [];
+  for (const piece of t.split(/\s*(?:,|，|、|&|\+|\band\b|和|及|同)\s*/i).filter(Boolean)) {
+    const words = piece.split(/\s+/).map(normalizeKey).filter((w) => w.length >= 2);
+    if (!words.length) return null;
+    const hits = options.filter((o) => { const n = normalizeKey(o.name); return words.every((w) => n.includes(w)); });
+    if (hits.length !== 1) return null;
+    ids.push(hits[0].id);
+  }
+  return ids.length ? [...new Set(ids)] : null;
+}
+
+function quotePickReply(L: ChatLang | undefined, ask: Extract<Asked, { kind: "quote_pick" }>, again: boolean): ToyReply {
+  const list = ask.options.map((o, k) => `${k + 1}. ${o.name}`).join(String.fromCharCode(10));
+  return {
+    say: [again ? tr(L, "Which one? Reply with its number or tail number, or “all”.") : tr(L, "“{what}” matches {n} aircraft. Which one should I quote?", { what: ask.what, n: ask.options.length }), list],
+    chips: [...ask.options.map((o, k) => ({ label: o.name, send: String(k + 1) })), { label: tr(L, "All of them"), send: "all" }],
+    ready: false,
+  };
+}
+
 function pickOption(text: string, options: Option[]): Option | null {
   const t = text.trim().replace(SAME, "$2").trim();
   const num = t.match(/^(?:#|第)?(\d)(?:個|个)?$/);
@@ -197,26 +230,45 @@ export async function converse(
     }
   }
 
+  // "Which 7X?": the answer picks the aircraft, and the quote request it belongs to is built again with that choice.
+  // Something that is neither an answer nor a new request gets the question again, so the quote isn't lost.
+  let picks: Record<number, string[]> = {};
+  let quoteText = message;
+  if (asked?.kind === "quote_pick" && message) {
+    const ids = pickQuoteOptions(message, asked.options);
+    if (ids) { picks = { ...asked.picks, [asked.index]: ids }; quoteText = asked.message; }
+    else if (!parseQuoteRequest(message)) { d.asked = asked; return { draft: d, reply: quotePickReply(L, asked, true), confirm: false }; }
+  }
+
   // "Make a quote for the G650 and B-KXX": open the Quote page with those aircraft already chosen. Nothing is saved.
-  const quoteReq = d.photos.length === 0 && asked?.kind !== "confirm" ? parseQuoteRequest(message) : null;
+  const quoteReq = d.photos.length === 0 && asked?.kind !== "confirm" ? parseQuoteRequest(quoteText) : null;
   if (quoteReq) {
     const ids: string[] = [];
     const names: string[] = [];
     const missing: string[] = [];
     const prices: Record<string, string> = {};
     for (const [i, what] of quoteReq.what.entries()) {
+      // "all Lux 7X": every one of them; otherwise Toy asks which one when several fit.
+      const wantsAll = WANTS_ALL.test(what);
+      const term = wantsAll ? what.replace(new RegExp(WANTS_ALL.source, "gi"), " ").replace(/\s+/g, " ").trim() : what;
       // The broker's own aircraft first; the platform library when they have none by that name.
-      let found = await findAircraftsForShare(db, tenantId, what);
-      if (!found.length && ctx.library) found = (await findAircraftsForShare(db, LIBRARY_TENANT_ID, what, await operatorAliasesByName(db, [tenantId, LIBRARY_TENANT_ID])))
+      let found = await findAircraftsForShare(db, tenantId, term);
+      if (!found.length && ctx.library) found = (await findAircraftsForShare(db, LIBRARY_TENANT_ID, term, await operatorAliasesByName(db, [tenantId, LIBRARY_TENANT_ID])))
         .filter((f) => scopeHasAircraft(scopeOf(ctx), f.id)).map((f) => ({ ...f, label: `${f.label} (library)` }));
+      if (picks[i]) found = found.filter((f) => picks[i].includes(f.id));
+      else if (found.length > 1 && !wantsAll) {
+        const ask: Extract<Asked, { kind: "quote_pick" }> = { kind: "quote_pick", message: quoteText, index: i, what, options: found.slice(0, 12).map((f) => ({ id: f.id, name: f.label })), picks };
+        d.asked = ask;
+        return { draft: d, reply: quotePickReply(L, ask, false), confirm: false };
+      }
       if (!found.length) missing.push(what);
-      for (const f of found.slice(0, 4)) {
+      for (const f of found.slice(0, 12)) {
         if (!ids.includes(f.id)) { ids.push(f.id); names.push(f.label); }
         const price = quoteReq.prices?.[i];
         if (price) prices[f.id] = price;
       }
     }
-    if (asked) d.asked = asked;
+    if (asked && asked.kind !== "quote_pick") d.asked = asked;
     const priced = Object.keys(prices).length > 0;
     // The routing typed with the request: legs with an airport we don't know are left out, and Toy says which code.
     const unknownAirports = quoteReq.unknownAirports ?? [];
@@ -234,6 +286,18 @@ export async function converse(
           notFound: quoteReq.what.length > 0,
         };
     if (ids.length && missing.length) reply.say.push(tr(L, "I couldn't find: {names}.", { names: missing.join(", ") }));
+    // Say which word matched nothing at all ("Vista": no such operator here or in the library), so the broker knows to
+    // add the aircraft or check the spelling, rather than rephrase.
+    if (missing.length) {
+      const libAliases = ctx.library ? await operatorAliasesByName(db, [tenantId, LIBRARY_TENANT_ID]) : null;
+      const unknown: string[] = [];
+      for (const w of [...new Set(missing.flatMap((m) => m.split(/\s+/)).filter((w) => normalizeKey(w).length >= 2))]) {
+        if ((await findAircraftsForShare(db, tenantId, w)).length) continue;
+        if (libAliases && (await findAircraftsForShare(db, LIBRARY_TENANT_ID, w, libAliases)).some((f) => scopeHasAircraft(scopeOf(ctx), f.id))) continue;
+        unknown.push(w);
+      }
+      if (unknown.length) reply.say.push(tr(L, "Nothing in your fleet or the library matches “{words}”. Add the aircraft first, or check the spelling.", { words: unknown.join("”, “") }));
+    }
     return { draft: d, reply, confirm: false };
   }
 
