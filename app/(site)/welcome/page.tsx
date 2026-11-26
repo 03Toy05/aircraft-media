@@ -68,7 +68,8 @@ export default async function WelcomePage({ searchParams }: { searchParams: Prom
           <div className="stage-row">
             {/* The phone: Toy's notes on its screen until the demo plays (keyed by question, so a new question stops the film). */}
             <PhoneDemo key={q ?? "start"} video={video} lang={lang}
-              labels={{ watch: t.demo.watch, close: t.demo.close, soon: t.demo.soon, screen: t.demo.screen }}>
+              labels={{ watch: t.demo.watch, close: t.demo.close, soon: t.demo.soon, screen: t.demo.screen, draft: t.demo.draft, again: t.demo.again }}
+              draftHref={lang === "en" ? "/start" : `/start?lang=${lang}`}>
               <div aria-live="polite">
                 {q === null && (
                   <>
