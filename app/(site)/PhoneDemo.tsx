@@ -40,7 +40,7 @@ export default function PhoneDemo({ video, lang, labels, children }: {
         ) : (
           <span className="phone-play is-soon">{labels.soon}</span>
         )}
-        <span className="phone-toy" aria-hidden="true"><Toy size={40} shadow /></span>
+        <span className="phone-toy" aria-hidden="true"><Toy size={52} shadow /></span>
       </div>
       {video && (
         // Clicking the dimmed area around the film closes it too.
