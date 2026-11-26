@@ -393,20 +393,40 @@ export default function QuoteBuilder({ aircraft, operators, preferred: preferred
   const [saved, setSaved] = useState<SaveResult | null>(null);
   /** The version on screen as saved (just saved, or reopened): the one a PDF is made of. */
   const savedVersion = saved?.ok && saved.version ? saved.version : opened?.version ?? null;
+  /** The quote on screen as it is saved (and as the preview PDF is made). */
+  const snapshotNow = () => ({
+    lang, text: textFor("whatsapp"), legs: fullLegs, greeting, closing, utc: tpl.times !== "local", label: versionName,
+    options: chosen.map((a, i) => ({
+      aircraftId: a.id, type: a.type, operator: a.operator, tail: a.tail, base: a.base, yom: a.yom, yor: a.yor, capacity: a.capacity,
+      wifi: a.wifi, smoking: a.smoking, pets: a.pets, notes: a.notes,
+      // A block rewritten by hand may carry the price only in its text ("Price: USD 90,000").
+      price: prices[a.id]?.trim() || (`block:${a.id}` in edits ? priceInText(blocks[i], QUOTE_WORDS[lang].price) : ""), extra: extras[a.id] ?? "",
+      photos: photos.filter((x) => x.i === i).map(({ p }) => ({ id: p.url.replace(/^.*\/api\/media\//, ""), label: p.label, classification: p.classification })),
+    })),
+    builder: { ids, lang, inc, prices, extras, edits, flip: [...flip], app, opId, emailTo, subject, copyMe, legs: fullLegs },
+  });
+  /** Preview PDF: the PDF of the quote on screen, before saving. Opens in a new tab; nothing is saved. */
+  const [previewing, setPreviewing] = useState(false);
+  const [previewMsg, setPreviewMsg] = useState<string | null>(null);
+  async function previewPdf() {
+    setPreviewing(true); setPreviewMsg(null);
+    // Opened now, while the tap still counts, so the browser doesn't block it; filled when the PDF is ready.
+    const tab = window.open("", "_blank");
+    try {
+      const res = await fetch("/api/quote/preview-pdf", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ snapshot: snapshotNow(), requestId: req?.id ?? null }) });
+      if (!res.ok) { tab?.close(); setPreviewMsg((await res.text()) || t("The preview couldn't be made. Try again.")); return; }
+      const url = URL.createObjectURL(await res.blob());
+      if (tab) tab.location.href = url; else window.location.href = url;
+      setTimeout(() => URL.revokeObjectURL(url), 5 * 60_000);
+    } catch {
+      tab?.close();
+      setPreviewMsg(t("The preview couldn't be made. Try again."));
+    } finally { setPreviewing(false); }
+  }
   async function saveVersion(asNew = false) {
     setBusy(true); setSaved(null);
     try {
-      const snapshot = {
-        lang, text: textFor("whatsapp"), legs: fullLegs, greeting, closing, utc: tpl.times !== "local", label: versionName,
-        options: chosen.map((a, i) => ({
-          aircraftId: a.id, type: a.type, operator: a.operator, tail: a.tail, base: a.base, yom: a.yom, yor: a.yor, capacity: a.capacity,
-          wifi: a.wifi, smoking: a.smoking, pets: a.pets, notes: a.notes,
-          // A block rewritten by hand may carry the price only in its text ("Price: USD 90,000").
-          price: prices[a.id]?.trim() || (`block:${a.id}` in edits ? priceInText(blocks[i], QUOTE_WORDS[lang].price) : ""), extra: extras[a.id] ?? "",
-          photos: photos.filter((x) => x.i === i).map(({ p }) => ({ id: p.url.replace(/^.*\/api\/media\//, ""), label: p.label, classification: p.classification })),
-        })),
-        builder: { ids, lang, inc, prices, extras, edits, flip: [...flip], app, opId, emailTo, subject, copyMe, legs: fullLegs },
-      };
+      const snapshot = snapshotNow();
       const r = await saveQuoteVersionAction(asNew ? null : req?.id ?? null, fullLegs, snapshot);
       setSaved(r);
       // Saving refreshes the page into the new version; the confirmation is shown again after that.
@@ -746,6 +766,12 @@ export default function QuoteBuilder({ aircraft, operators, preferred: preferred
             <div className="save-version">
               <input type="text" className="version-name" value={versionName} onChange={(e) => setVersionName(e.target.value)} maxLength={80} placeholder={t("Version name (optional), e.g. Revised price")} aria-label={t("Version name")} />
               <button type="button" onClick={() => { saveVersion(); setVersionName(""); }} disabled={busy || !text.trim()}>{busy ? t("Saving…") : req ? t("Save as next version") : t("Save as request")}</button>
+              {PDF_LANGS.includes(lang) && (
+                <button type="button" className="secondary" onClick={previewPdf} disabled={previewing || !text.trim()} title={t("See the PDF before saving. Nothing is saved.")}>
+                  {previewing ? t("Making the PDF…") : t("Preview PDF")}
+                </button>
+              )}
+              {previewMsg && <span className="small" role="status" style={{ color: "var(--warn)" }}>{previewMsg}</span>}
               {saved ? (
                 <span className="small" role="status">
                   {saved.message} {saved.ok && saved.requestId && <a href={`/requests/${saved.requestId}`}>{t("See all versions")}</a>}

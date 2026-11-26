@@ -353,3 +353,39 @@ export async function brokerQuotePdf(
   const brand = await getBrand(db, who.actor.tenantId);
   return { bytes, filename: versionFileName(brand.versionFormat, r.reference, v.version), reference: r.reference, version: v.version };
 }
+
+/**
+ * A preview of the quote on screen, before it is saved: the same PDF, marked PREVIEW, nothing stored. Under a request it
+ * carries the request's reference and the version it would become; otherwise the reference reads PREVIEW.
+ */
+export async function brokerPreviewPdf(
+  db: import("../db/client").Db,
+  store: import("../storage").FileStore,
+  who: { isAdmin: boolean; actor: { id: string; tenantId: string }; email: string },
+  snapshot: unknown,
+  requestId?: string | null,
+): Promise<{ bytes: Uint8Array; filename: string } | { error: "language" | "routing" }> {
+  const { cleanSnapshot, getRequest, listVersions } = await import("./requests");
+  const { photoAllowed } = await import("./photoAccess");
+  const { readContentBytes } = await import("./media");
+  const { users } = await import("../db/schema");
+  const { eq } = await import("drizzle-orm");
+  const { getBrand } = await import("./branding");
+  const { cleanLegs } = await import("./routing");
+  const { findAirport } = await import("./airports");
+  // The legs are checked as saving checks them (cleanSnapshot leaves them to the save).
+  const snap = { ...cleanSnapshot(snapshot), legs: cleanLegs((snapshot as { legs?: unknown } | null)?.legs, findAirport) };
+  if (!pdfSupported(snap.lang)) return { error: "language" };
+  if (!snap.legs?.length) return { error: "routing" };
+  const r = requestId ? await getRequest(db, who.actor.tenantId, requestId) : null;
+  const version = r ? ((await listVersions(db, who.actor.tenantId, r.id))[0]?.version ?? 0) + 1 : 1;
+  const reference = r?.reference ?? "PREVIEW";
+  const quote = { ...snap, label: snap.label ? `PREVIEW · ${snap.label}` : "PREVIEW" };
+  const [by] = await db.select({ name: users.displayName, email: users.email }).from(users).where(eq(users.id, who.actor.id));
+  const brand = await getBrand(db, who.actor.tenantId);
+  const bytes = await quotePdf(
+    { reference, version, savedAt: new Date(), quote, broker: { name: by?.name ?? "", email: by?.email ?? who.email }, brand },
+    async (pid) => ((await photoAllowed(db, who, pid)) ? readContentBytes(db, store, pid) : null),
+  );
+  return { bytes, filename: r ? `PREVIEW ${versionFileName(brand.versionFormat, reference, version)}` : "PREVIEW.pdf" };
+}

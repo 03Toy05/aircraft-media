@@ -1280,6 +1280,14 @@ export const UI_HANT: Record<string, string> = {
   "Trial access ends on its end date unless extended. The admin can turn off an account that misuses the service.": "除非獲延長，試用權限於其結束日期終止。管理員可停用濫用本服務的帳戶。",
   "These terms may change; the date above shows the latest version.": "本條款可能會更改；上方日期即表示最新版本。",
   "For questions about these terms, contact the Aircraft Media admin who invited you.": "如對本條款有任何疑問，請聯絡邀請你的 Aircraft Media 管理員。",
+
+  // ---- preview PDF
+  "Preview PDF": "預覽 PDF",
+  "Making the PDF…": "正在製作 PDF…",
+  "See the PDF before saving. Nothing is saved.": "儲存前先查看 PDF，不會儲存任何內容。",
+  "The preview couldn't be made. Try again.": "未能製作預覽。請再試一次。",
+  "There is no PDF in this language yet; send the client link instead.": "此語言暫時未有 PDF，請改為傳送客戶連結。",
+  "Add the routing first: a PDF needs at least one leg.": "請先加入行程：PDF 需要最少一個航段。",
 };
 
 /** Simplified Chinese written out where mainland usage differs from a character-by-character conversion. */
