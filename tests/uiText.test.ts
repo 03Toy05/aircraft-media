@@ -56,6 +56,7 @@ export const TRANSLATED = [
   "app/supportActions.ts",
   "app/layoutActions.ts",
   "app/start/page.tsx",
+  "app/(app)/guide/page.tsx",
   "app/unsubscribe/page.tsx",
   "app/adminMailActions.ts",
   "app/_components/QuoteLayoutCard.tsx",

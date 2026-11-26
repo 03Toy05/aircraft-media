@@ -529,3 +529,13 @@ ul.history li:last-child { border-bottom: 0; }
 .ui-lang-menu ul button[aria-current="true"] { font-weight: 700; }
 /* In the phone menu the switch sits low at the left edge: open the list upwards, to the right. */
 .sheet .ui-lang-menu ul { left: 0; right: auto; top: auto; bottom: calc(100% + 6px); }
+
+/* Getting started: numbered steps. */
+.guide { list-style: none; padding: 0; margin: 0 0 12px; display: grid; gap: 12px; }
+.guide-n { display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 26px; border-radius: 50%; background: var(--accent); color: var(--on-accent); font-size: 0.85rem; margin-right: 4px; }
+.guide code { white-space: normal; word-break: break-word; }
+/* Toy's examples while the chat is empty, and the first-time welcome card. */
+.ex-chips { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 8px; }
+.ex-chips .small-btn { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.welcome-card { position: relative; border: 1.5px solid var(--sage); background: #f4f8f5; }
+.welcome-close { position: absolute; top: 8px; right: 8px; border: 0; background: transparent; color: var(--muted); font-size: 1rem; cursor: pointer; min-height: 0; padding: 4px 8px; }

@@ -51,6 +51,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         <Link href="/requests"><Icon name="list" />{t("Requests")}</Link>
         <Link href="/contacts"><Icon name="contacts" />{t("Contacts")}</Link>
         <Link href="/settings"><Icon name="settings" />{t("Settings")}</Link>
+        <Link href="/guide"><Icon name="review" />{t("Guide")}</Link>
         <Link href="/support"><Icon name="send" />{t("Support")}</Link>
         {libraryOn && <Link href="/library"><Icon name="plane" />{t("Library")}</Link>}
         {s.isAdmin && <Link href="/admin"><Icon name="contacts" />{t("Users")}</Link>}

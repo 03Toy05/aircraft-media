@@ -39,6 +39,7 @@ export function welcomeMail(site: string, u: { email: string; displayName: strin
     hello(u.displayName),
     `Thanks for trying Aircraft Media. Your free trial runs for ${TRIAL_DAYS} days from today, with your own workspace and the shared aircraft library.`,
     "To get going:\n1. Ask Toy for a quote, e.g. “G650 Hong Kong to Tokyo 12 Dec, 4 pax”.\n2. Tick the aircraft and photos, then copy the message, share the client link, or download the PDF.\n3. In Settings, add your logo and colour, or upload one of your past quotes so PDFs come out in your own layout.",
+    `The Getting started guide takes five minutes: ${site}/guide`,
     "Questions or ideas? Just reply to this email, or use Support in the app.",
   ], { label: "Open Aircraft Media", href: site });
 }

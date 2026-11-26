@@ -7,9 +7,12 @@ import ChatClient from "../_components/ChatClient";
 import Icon from "../_components/Icon";
 import { listRequests } from "@/domain/requests";
 import { serverT } from "@/lib/uiLang";
+import { libraryScope } from "@/domain/library";
+import { isNewToQuotes, sampleAircraft, sampleQuoteText } from "@/domain/guide";
 
 export default async function Dashboard() {
-  const { actor } = await requireOwner();
+  const session = await requireOwner();
+  const { actor } = session;
   const db = await getDb();
   const needsReview = (
     await db
@@ -25,11 +28,14 @@ export default async function Dashboard() {
     .limit(4);
   const requests = (await listRequests(db, actor.tenantId)).slice(0, 5);
   const t = await serverT();
+  // A quote line that works for this person, and whether they are new: for Toy's examples and welcome.
+  const sample = sampleQuoteText(await sampleAircraft(db, actor.tenantId, await libraryScope(db, session)));
+  const firstSteps = !session.viewingAs && (await isNewToQuotes(db, actor.tenantId));
 
   return (
     <div className="dash">
       <div style={{ minWidth: 0 }}>
-        <ChatClient />
+        <ChatClient sample={sample} firstSteps={firstSteps} />
       </div>
       <aside style={{ minWidth: 0 }}>
         <div className="card qa-card">

@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { rememberUiLang, uiLangChosen, useUiLang } from "./uiLang";
 import { useEffect, useRef, useState, useTransition } from "react";
 import { clearToyChatAction, loadToyChatAction, toyTurnAction, type TurnResult } from "../chatActions";
@@ -32,6 +32,9 @@ const UI_EN = {
   placeholderNew: "Ask Toy, or tap Template…",
   placeholderReply: "Reply to Toy, or add more details…",
   templateBtn: "Template", speak: "Speak", stop: "Stop", send: "Send", attach: "Photos", voiceOptions: "Voice options", clear: "Clear", newChat: "New chat", newChatHint: "Start a new conversation. Toy still remembers the choices you made.",
+  welcomeTitle: "Welcome! Let's make your first quote.", welcomeBody: "Toy turns one line into a quote: the message, the photos and a link for your client. Try a sample, or start with your own aircraft.",
+  welcomeSample: "Make a sample quote", welcomeAdd: "Add my first aircraft", welcomeGuide: "Read the guide", welcomeClose: "Close",
+  tryLabel: "Try:", exRecent: "My recent quotes", exRecentAsk: "my recent quotes", exTemplate: "Quote template",
   readAloud: "Toy reads replies aloud", autoSend: "Send when I stop speaking", voiceLanguage: "Voice language", language: "Language",
   listening: "Listening… keep talking, pauses are fine. Press Stop listening when you are done (or tick “Send when I stop speaking”). Say something like “Operator Advanced Aviation, aircraft type G280, capacity 10”.",
   noVoice: "Voice input isn't available in this browser. Chrome or Edge work best.",
@@ -67,6 +70,9 @@ const UI_HANT: UI = {
   placeholderNew: "問 Toy，或按「範本」…",
   placeholderReply: "回覆 Toy，或補充更多資料…",
   templateBtn: "範本", speak: "語音輸入", stop: "停止", send: "傳送", attach: "相片", voiceOptions: "語音選項", clear: "清除", newChat: "新對話", newChatHint: "開始新的對話。Toy 仍會記得你之前的選擇。",
+  welcomeTitle: "歡迎！一起做你的第一份報價。", welcomeBody: "Toy 能把一句話變成報價：訊息、相片，以及給客戶的連結。試試範例，或先加入你自己的飛機。",
+  welcomeSample: "製作範例報價", welcomeAdd: "加入我的第一架飛機", welcomeGuide: "閱讀使用指南", welcomeClose: "關閉",
+  tryLabel: "試試：", exRecent: "最近的報價", exRecentAsk: "最近的報價", exTemplate: "報價範本",
   readAloud: "由 Toy 朗讀回覆", autoSend: "停止說話後自動傳送", voiceLanguage: "語音語言", language: "語言",
   listening: "正在收音…請繼續說，停頓沒關係。說完後按「停止收音」（或勾選「停止說話後自動傳送」）。可以這樣說：「營運商 Advanced Aviation，機型 G280，載客量 10」。",
   noVoice: "此瀏覽器不支援語音輸入。建議使用 Chrome 或 Edge。",
@@ -243,8 +249,10 @@ const getRecognition = (): RecognitionCtor | null => {
 };
 
 const QUOTE_KEY = "toyLastQuote";
+const WELCOME_KEY = "toyWelcomeDone";
 
-export default function ChatClient() {
+/** sample: a quote line that works for this person (from a real aircraft); firstSteps: they haven't made a quote yet. */
+export default function ChatClient({ sample, firstSteps }: { sample?: string; firstSteps?: boolean } = {}) {
   const [msgs, setMsgs] = useState<Msg[]>([]);
   const [text, setText] = useState("");
   const [files, setFiles] = useState<File[]>([]);
@@ -390,6 +398,7 @@ export default function ChatClient() {
       setMsgs((m) => [...m, reply]);
       // Success = the backend saved something or handed back a finished result. Not found or a failure = Toy needs help.
       // A plain follow-up question is neither: Toy is ready for the answer.
+      if (r.reply.options?.length) closeWelcome(); // their first quote: the welcome has done its job
       const confirmed = !!(r.applied || r.reply.done || r.reply.options?.length || r.reply.photos?.length || r.reply.share || r.reply.link);
       settleToy(toyNo, r.failures.length > 0 || r.reply.notFound ? "needsHelp" : confirmed ? "success" : "ready");
       try {
@@ -503,6 +512,34 @@ export default function ChatClient() {
     setText((v) => (v.trim() ? v : ui.quoteTemplate));
     setTimeout(() => boxRef.current?.focus(), 0);
   };
+  // From the Getting started guide: "Try it" opens Toy with the example typed in (/?ask=…), or a template (/?template=quote, /?add=1).
+  // Read through Next's own search params: the address bar can briefly read "/" while the page starts.
+  const params = useSearchParams();
+  const askParam = params.get("ask"), tplParam = params.get("template"), addParam = params.get("add");
+  const handled = useRef("");
+  useEffect(() => {
+    const key = `${askParam}|${tplParam}|${addParam}`;
+    if ((!askParam && !tplParam && !addParam) || handled.current === key) return;
+    handled.current = key;
+    if (askParam) { setText(askParam.slice(0, 2000)); setTimeout(() => boxRef.current?.focus(), 0); }
+    else if (tplParam === "quote") startQuote();
+    else if (addParam) startAdd();
+    router.replace("/", { scroll: false });
+  }, [askParam, tplParam, addParam]); // eslint-disable-line react-hooks/exhaustive-deps
+  // The welcome card, until the first quote (or until closed), on this device. The guide can show it again (/?welcome=1).
+  const [welcome, setWelcome] = useState(false);
+  const [replayed, setReplayed] = useState(false);
+  useEffect(() => {
+    if (!firstSteps) return;
+    try { if (!window.localStorage.getItem(WELCOME_KEY)) setWelcome(true); } catch { setWelcome(true); }
+  }, [firstSteps]);
+  const welcomeParam = params.get("welcome");
+  useEffect(() => {
+    if (!welcomeParam) return;
+    setWelcome(true); setReplayed(true);
+    router.replace("/", { scroll: false });
+  }, [welcomeParam]); // eslint-disable-line react-hooks/exhaustive-deps
+  const closeWelcome = () => { setWelcome(false); try { window.localStorage.setItem(WELCOME_KEY, "1"); } catch { /* ignore */ } };
 
   return (
     <div>
@@ -526,7 +563,29 @@ export default function ChatClient() {
           <Link href="/fleet" className="btn secondary"><Icon name="search" />{ui.doFind}</Link>
         </div>
         <p className="small muted" style={{ margin: "8px 0 0" }}>{adding ? ui.addHint : quoting ? ui.quoteHint : ui.askHint}</p>
+        {/* Examples to tap while the chat is empty: they fill the box, nothing is sent until Send. */}
+        {msgs.length === 0 && !adding && !quoting && (
+          <div className="ex-chips">
+            <span className="small muted">{ui.tryLabel}</span>
+            {sample && <button type="button" className="secondary small-btn" onClick={() => { setText(sample); boxRef.current?.focus(); }}>{sample}</button>}
+            <button type="button" className="secondary small-btn" onClick={() => { setText(ui.exRecentAsk); boxRef.current?.focus(); }}>{ui.exRecent}</button>
+            <button type="button" className="secondary small-btn" onClick={startQuote}>{ui.exTemplate}</button>
+          </div>
+        )}
       </div>
+
+      {welcome && (msgs.length === 0 || replayed) && (
+        <div className="card welcome-card" role="region" aria-label={ui.welcomeTitle}>
+          <button type="button" className="welcome-close" onClick={closeWelcome} aria-label={ui.welcomeClose}>✕</button>
+          <b>{ui.welcomeTitle}</b>
+          <p style={{ margin: "6px 0 10px" }}>{ui.welcomeBody}</p>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            {sample && <button type="button" onClick={() => send({ text: sample })}><Icon name="quote" />{ui.welcomeSample}</button>}
+            <button type="button" className="secondary" onClick={startAdd}><Icon name="upload" />{ui.welcomeAdd}</button>
+            <Link href="/guide" className="btn secondary">{ui.welcomeGuide}</Link>
+          </div>
+        </div>
+      )}
 
       {msgs.map((m) =>
         m.role === "user" ? (
