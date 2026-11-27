@@ -6,7 +6,7 @@ import { aircraft as aircraftTable, quoteLinks, quoteVersions, users } from "../
 import type { Actor } from "./action";
 import type { Classification } from "./constants";
 import { createAircraft, createAircraftType, createOrganisation } from "./directory";
-import { approveMedia, getLineup, getMediaDetail, ingestUpload, retireMedia, setMediaAssociation, updateMediaMetadata } from "./media";
+import { approveMedia, getLineup, getMediaDetail, ingestUpload, restoreMedia, retireMedia, setMediaAssociation, updateMediaMetadata } from "./media";
 import { QUOTE_LOCALE, QUOTE_WORDS, buildQuoteParts, type QuoteAircraft, type QuoteLanguage } from "./quote";
 import { cleanSnapshot, saveQuoteVersion } from "./requests";
 import { ensureLink, setLink } from "./quoteLinks";
@@ -69,9 +69,8 @@ export async function makeDemoQuote(db: Db, store: FileStore, input: DemoInput, 
   let aircraftId: string, typeId: string;
   const [existing] = complete ? await db.select().from(aircraftTable).where(and(eq(aircraftTable.tenantId, me.tenantId), eq(aircraftTable.active, true))) : [];
   if (existing) {
-    // Refresh: the old photos go (kept in the record, no longer shown); the new ones come in below.
+    // Refresh: the new photos come in below; any old photo not among them is then retired (kept in the record, not shown).
     aircraftId = existing.id; typeId = existing.aircraftTypeId;
-    for (const l of await getLineup(db, { aircraftId, aircraftTypeId: typeId })) await retireMedia(db, me, k(), { mediaId: l.mediaId });
   } else {
     const orgId = (await createOrganisation(db, me, k(), { name: a.operator })).result.organisationId;
     typeId = (await createAircraftType(db, me, k(), { manufacturer: a.manufacturer, model: a.model, category: a.category })).result.aircraftTypeId;
@@ -81,16 +80,21 @@ export async function makeDemoQuote(db: Db, store: FileStore, input: DemoInput, 
     })).result.aircraftId;
   }
 
+  // An unchanged photo uploads as the same photo (same bytes): it is reused, restored if it had been retired.
+  const keep = new Set<string>();
   for (const p of input.photos) {
     const r = (await ingestUpload(db, store, me, { filename: p.name, bytes: p.bytes })).result;
     if (!r.mediaId) throw new Error(`The photo ${p.name} could not be added.`);
-    let v = (await getMediaDetail(db, me.tenantId, r.mediaId))!.media.version;
-    await updateMediaMetadata(db, me, k(), { mediaId: r.mediaId, expectedVersion: v, classification: p.classification });
-    v++;
-    await setMediaAssociation(db, me, k(), { mediaId: r.mediaId, expectedVersion: v, status: "actual_aircraft", aircraftId });
+    keep.add(r.mediaId);
+    let m = (await getMediaDetail(db, me.tenantId, r.mediaId))!.media;
+    if (m.lifecycleState === "retired") { await restoreMedia(db, me, k(), { mediaId: r.mediaId }); m = (await getMediaDetail(db, me.tenantId, r.mediaId))!.media; }
+    if (m.reviewState === "approved") continue;
+    await updateMediaMetadata(db, me, k(), { mediaId: r.mediaId, expectedVersion: m.version, classification: p.classification });
+    await setMediaAssociation(db, me, k(), { mediaId: r.mediaId, expectedVersion: m.version + 1, status: "actual_aircraft", aircraftId });
     const d = (await getMediaDetail(db, me.tenantId, r.mediaId))!;
     await approveMedia(db, me, { mediaId: r.mediaId, contentVersionId: d.media.currentContentVersionId!, expectedVersion: d.media.version });
   }
+  for (const l of await getLineup(db, { aircraftId, aircraftTypeId: typeId })) if (!keep.has(l.mediaId)) await retireMedia(db, me, k(), { mediaId: l.mediaId });
   const lineup = await getLineup(db, { aircraftId, aircraftTypeId: typeId });
   const photos = lineup.map((l) => ({ id: l.contentVersionId, label: l.label, classification: l.classification }));
 
