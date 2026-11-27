@@ -38,6 +38,16 @@ export function demoTranscript(lang: SiteLang): string | null {
   return file ? fs.readFileSync(path.join(PUBLIC, file), "utf8").trim() : null;
 }
 
+/**
+ * The short demo (about 30 s, vertical): public/demo/toy-short-demo.mp4, -zh-hant, -zh-hans, captions burned in.
+ * Git-ignored while it is a draft, so it plays in the local preview only. Without it, "Watch me at work" plays the full film.
+ */
+export function shortDemoVideo(lang: SiteLang = "en") {
+  if (!has("demo/toy-short-demo.mp4")) return null;
+  const own = lang !== "en" && has(`demo/toy-short-demo-${lang}.mp4`);
+  return { src: own ? `/demo/toy-short-demo-${lang}.mp4` : "/demo/toy-short-demo.mp4", captions: [] as { lang: string; srclang: string; label: string }[] };
+}
+
 export const founderPhoto = () => (has("brand/founder.jpg") ? "/brand/founder.jpg" : null);
 
 /** The founder's own video for "How it begins"; with it, the photo becomes its cover instead of a portrait. */
@@ -48,4 +58,33 @@ export function founderVideo() {
     poster: founderPhoto() ?? undefined,
     captions: CAPTION_LANGS.filter((c) => has(`brand/founder-captions-${c.lang}.vtt`)),
   };
+}
+
+/**
+ * "Let me try" with a real aircraft. It is shown only where SHOW_LET_ME_TRY=1 (the local preview); the live site says
+ * "coming soon" until the owner releases it. Its files sit in public/try-sample/, which git ignores, so the photos
+ * (rights not yet cleared for public use) never reach the live server:
+ *   public/try-sample/sample.json   { "photos": ["exterior.jpg", ...],
+ *                                     "clientLink": "https://…/q/…" or { "en", "zh-hant", "zh-hans": "https://…/q/…" } (optional: real client links from a demo workspace),
+ *                                     "en" | "zh-hant" | "zh-hans": { "ask", "found", "interior", "labels": [one per photo], "quote" } }
+ *   public/try-sample/<photo files>
+ */
+export type TrySample = { ask: string; found: string; interior: string; photos: { src: string; label: string }[]; quote: string; clientLink: string | null };
+export const letMeTryLive = () => process.env.SHOW_LET_ME_TRY === "1";
+export function trySample(lang: SiteLang): TrySample | null {
+  if (!letMeTryLive() || !has("try-sample/sample.json")) return null;
+  try {
+    const raw = JSON.parse(fs.readFileSync(path.join(PUBLIC, "try-sample/sample.json"), "utf8"));
+    const t = raw[lang] ?? raw.en;
+    const photos = (raw.photos as string[])
+      .map((f, i) => ({ f, label: t.labels?.[i] ?? "" }))
+      .filter(({ f }) => has(`try-sample/${f}`))
+      .map(({ f, label }) => ({ src: `/try-sample/${encodeURIComponent(f)}`, label }));
+    // One link, or one per language ({ "en", "zh-hant", "zh-hans" }): the client page shows the language its quote was written in.
+    const rawLink = typeof raw.clientLink === "string" ? raw.clientLink : raw.clientLink?.[lang] ?? raw.clientLink?.en;
+    const link = typeof rawLink === "string" && /^https?:\/\/[^\s]+\/q\/[^\s]+$/.test(rawLink) ? rawLink : null;
+    return { ask: t.ask, found: t.found, interior: t.interior, photos, quote: t.quote, clientLink: link };
+  } catch {
+    return null; // a broken file falls back to the placeholder sample rather than breaking the page
+  }
 }

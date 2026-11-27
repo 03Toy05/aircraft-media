@@ -179,3 +179,60 @@
 .phone-founder video { display: block; width: 100%; max-height: 260px; border-radius: 14px; background: var(--ink); }
 .phone-founder figcaption { margin-top: 4px; font-size: 12px; color: var(--ink-soft); }
 .phone-founder-cta { display: inline-flex; align-items: center; margin-top: 8px; min-height: 40px; padding: 0 14px; border-radius: 999px; border: 0; background: var(--ink); color: var(--canvas); font: inherit; font-size: 14px; font-weight: 600; cursor: pointer; }
+
+/* Website improvements (27 Nov 2026): what Toy does under the promise, the demo button, the founder credential;
+   "Let me try" sample taps, the time calculator and Toy's next question inside the phone. */
+.home .site-hero { gap: 2px; }
+.hero-does { margin: 10px 0 0; font-size: 16px; text-align: center; text-wrap: balance; }
+.hero-benefit { margin: 4px 0 0; font-size: 18px; font-weight: 700; text-align: center; }
+.hero-watch { display: inline-flex; align-items: center; gap: 12px; margin-top: 14px; min-height: 52px; padding: 8px 18px 8px 10px; border: 2px solid var(--ink); border-radius: 999px; background: #fff; color: var(--ink); font: inherit; text-align: left; line-height: 1.3; cursor: pointer; }
+.hero-watch:hover { background: var(--canvas); }
+.hero-watch-icon { display: grid; place-items: center; width: 36px; height: 36px; border-radius: 50%; background: var(--ink); color: var(--canvas); }
+.hero-watch-sub { font-size: 13px; color: var(--ink-soft); }
+.hero-built { margin: 12px 0 0; font-size: 14px; color: var(--ink-soft); font-style: italic; text-align: center; }
+
+.phone-next { display: inline-flex; align-items: center; margin: 12px 0 4px; min-height: 40px; padding: 0 14px; border-radius: 999px; background: #E6EEE9; color: var(--ink); font-weight: 600; font-size: 14px; text-decoration: none; }
+.phone-next:hover { background: var(--sage); }
+.phone-next.is-cta { background: var(--sage); border: 2px solid var(--ink); }
+
+.try h2 { margin-bottom: 4px; }
+.try-intro { font-size: 13px; color: var(--ink-soft); }
+.try-chips { display: flex; flex-direction: column; gap: 6px; margin: 8px 0 10px; }
+.try-chip { min-height: 40px; padding: 6px 12px; border-radius: 12px; border: 1.5px solid var(--ink); background: #fff; color: var(--ink); font: inherit; font-size: 14px; font-weight: 600; text-align: left; cursor: pointer; }
+.try-chip[aria-pressed="true"] { background: #E6EEE9; }
+.try-chat { display: flex; flex-direction: column; gap: 10px; }
+.try-you { align-self: flex-end; margin: 0 0 4px auto !important; max-width: 85%; width: fit-content; padding: 6px 12px; border-radius: 14px 14px 4px 14px; background: #E6EEE9; font-size: 13px; }
+.try-toy { display: flex; gap: 8px; align-items: flex-start; }
+.try-answer { flex: 1; min-width: 0; padding: 8px 10px; background: #fff; border: 1px solid var(--line); border-radius: 14px 14px 14px 4px; font-size: 13px; }
+.try-answer p { margin: 0 0 6px; }
+.try-photos { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px; }
+.try-photo { display: flex; align-items: flex-end; height: 54px; padding: 4px 6px; border-radius: 8px; background: #E8EEF0; font-size: 11px; color: var(--ink-soft); box-sizing: border-box; }
+.try-quote { margin: 0 0 6px; padding: 8px; border-radius: 8px; background: var(--canvas); font: inherit; font-size: 12px; white-space: pre-wrap; }
+.try-ways { font-size: 12px; color: var(--ink-soft); }
+.try-sample { display: inline-block; padding: 1px 8px; border-radius: 999px; background: #F6E6C8; color: #6B4A0E; font-size: 11px; font-weight: 700; }
+
+.calc { margin-top: 12px; padding: 12px; border-radius: 14px; background: #fff; border: 1px solid var(--line); }
+.calc h2 { margin: 0 0 4px; font-size: 16px; }
+.calc-intro { font-size: 13px; color: var(--ink-soft); }
+.calc-inputs { display: flex; flex-direction: column; gap: 8px; margin: 8px 0; }
+.calc-inputs label { display: flex; justify-content: space-between; align-items: center; gap: 10px; font-size: 13px; }
+.calc-inputs input { width: 72px; min-height: 40px; padding: 0 10px; border: 1px solid #C9CCC2; border-radius: 10px; background: var(--canvas); color: var(--ink); font: inherit; font-size: 16px; text-align: right; box-sizing: border-box; }
+.calc-result { display: flex; flex-direction: column; gap: 6px; padding: 10px; border-radius: 12px; background: var(--sage); }
+.calc-result p { margin: 0 !important; display: flex; justify-content: space-between; gap: 8px; align-items: baseline; font-size: 13px; }
+.calc-result b { font-size: 20px; white-space: nowrap; }
+.calc-note { margin: 8px 0 4px !important; font-size: 11px; color: var(--ink-soft); }
+.calc-closing { margin: 0 !important; font-weight: 700; font-size: 14px; }
+
+/* "Before you ask": plain questions that open to honest answers. */
+.home-faq { display: flex; flex-direction: column; gap: 8px; }
+.home-faq h2 { margin: 0 0 4px; font-size: 20px; }
+.home-faq details { background: #fff; border: 1px solid var(--line); border-radius: 16px; padding: 12px 16px; }
+.home-faq summary { cursor: pointer; font-weight: 600; min-height: 32px; display: flex; align-items: center; }
+.home-faq p { margin: 8px 0 0; line-height: 1.55; }
+/* "Let me try" with real photos (local preview): the picture fills the tile, its label underneath. */
+.try-photo.has-img { display: block; height: auto; margin: 0; padding: 0; overflow: hidden; background: #E8EEF0; }
+.try-photo.has-img img { display: block; width: 100%; aspect-ratio: 4 / 3; object-fit: cover; }
+.try-photo.has-img figcaption { padding: 3px 6px; }
+/* Four photos sit 2×2 rather than leaving the floor plan alone on a second row. */
+.try-photos:has(> :nth-child(4)) { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.toy-site .try-client { display: inline-flex; align-items: center; min-height: 40px; padding: 0 14px; margin: 6px 0 2px; border-radius: 999px; background: var(--ink); color: #fff; font-weight: 700; font-size: 13px; text-decoration: none; }

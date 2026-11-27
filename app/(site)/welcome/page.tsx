@@ -5,7 +5,9 @@ import BrandSignature from "../../_components/BrandSignature";
 import LanguageMenu from "../LanguageMenu";
 import PhoneDemo from "../PhoneDemo";
 import FounderClip from "../FounderClip";
-import { demoTranscript, demoVideo, founderPhoto, founderVideo } from "../siteMedia";
+import { SiteTracker } from "../track";
+import { LetMeTry, TimeCalculator, WatchDemoButton } from "../HomeWidgets";
+import { demoTranscript, demoVideo, shortDemoVideo, letMeTryLive, trySample, founderPhoto, founderVideo } from "../siteMedia";
 import { COPY, HTML_LANG, QUESTIONS, parseLang, parseQuestion, type QuestionKey, type SiteLang } from "./copy";
 
 // The front page: shown at "/" to visitors who are not signed in (see proxy.ts), and at /welcome.
@@ -38,12 +40,16 @@ export default async function WelcomePage({ searchParams }: { searchParams: Prom
   const t = COPY[lang];
   const mail = contactHref();
   const video = demoVideo(lang);
+  const shortFilm = video ? shortDemoVideo(lang) : null;
   const words = video ? demoTranscript(lang) : null;
   const founder = founderPhoto();
   const founderFilm = founderVideo();
+  const tryOn = letMeTryLive();
+  const sample = tryOn ? trySample(lang) : null;
 
   return (
     <div className="toy-site" lang={HTML_LANG[lang]}>
+      <SiteTracker lang={lang} pricing={q === "price"} />
       <header className="site-head">
         <Link className="site-brand" href={href(lang, null)}>
           <span className="site-brand-name">aircraftmedia.my</span>
@@ -63,15 +69,20 @@ export default async function WelcomePage({ searchParams }: { searchParams: Prom
           {/* "Hi, I'm Toy." with the airplane as its full stop (TOY-14); still, no takeoff. */}
           <BrandSignature as="h1" lead={t.greeting.lead} tail="Toy" plain={t.greeting.plain} />
           <p className="site-promise">{t.promise}</p>
+          <p className="hero-does">{t.hero.does}</p>
+          <p className="hero-benefit">{t.hero.benefit}</p>
+          {video && <WatchDemoButton label={t.hero.watch} sub={shortFilm ? t.hero.watchSubShort : t.hero.watchSub} />}
+          <p className="hero-built">{t.hero.builtBy}</p>
         </div>
 
         <section className="home-stage" id="film" aria-label={t.demo.intro}>
           <p className="home-film-intro">{t.demo.intro}</p>
           <div className="stage-row">
             {/* The phone: Toy's notes on its screen until the demo plays (keyed by question, so a new question stops the film). */}
-            <PhoneDemo key={q ?? "start"} video={video} lang={lang}
+            <PhoneDemo key={q ?? "start"} video={video} short={shortFilm} lang={lang}
               hidePlay={q === "begins" && !!founderFilm}
-              labels={{ watch: t.demo.watch, close: t.demo.close, soon: t.demo.soon, screen: t.demo.screen, draft: t.demo.draft, again: t.demo.again }}
+              labels={{ watch: t.demo.watch, close: t.demo.close, soon: t.demo.soon, screen: t.demo.screen, draft: t.demo.draft, again: t.demo.again, start: t.cta }}
+              startHref={lang === "en" ? "/start" : `/start?lang=${lang}`}
               draftHref={lang === "en" ? "/start" : `/start?lang=${lang}`}>
               <div aria-live="polite">
                 {q === null && (
@@ -83,6 +94,7 @@ export default async function WelcomePage({ searchParams }: { searchParams: Prom
                     <p className="demo-claim">{t.demo.claim}</p>
                     <h2>{t.initial.title}</h2>
                     <p>{t.initial.body}</p>
+                    <Link className="phone-next" href={href(lang, "what", "#film")} scroll={false}>{t.next.start} →</Link>
                   </>
                 )}
                 {q === "what" && (
@@ -90,6 +102,19 @@ export default async function WelcomePage({ searchParams }: { searchParams: Prom
                     <h2>{t.what.headline}</h2>
                     <ul>{t.what.items.map((i) => <li key={i}>{i}</li>)}</ul>
                     <p className="site-next">{t.what.next}</p>
+                    <Link className="phone-next" href={href(lang, "try", "#film")} scroll={false}>{t.next.what} →</Link>
+                  </>
+                )}
+                {q === "try" && (
+                  <>
+                    {/* Live: "coming soon" until the owner releases it; the local preview (SHOW_LET_ME_TRY=1) shows it working. */}
+                    {tryOn ? <LetMeTry copy={t.tryIt} lang={lang} sample={sample} /> : (
+                      <>
+                        <h2>{t.tryIt.headline}</h2>
+                        <p className="site-next">{t.tryIt.soon}</p>
+                      </>
+                    )}
+                    <Link className="phone-next" href={href(lang, "price", "#film")} scroll={false}>{t.next.tryIt} →</Link>
                   </>
                 )}
                 {q === "begins" && (
@@ -103,13 +128,15 @@ export default async function WelcomePage({ searchParams }: { searchParams: Prom
                     )}
                     {t.begins.paragraphs.map((p) => <p key={p}>{p}</p>)}
                     <p className="site-vision">{t.begins.vision}</p>
+                    <Link className="phone-next" href={href(lang, "try", "#film")} scroll={false}>{t.next.begins} →</Link>
                   </>
                 )}
                 {q === "price" && (
                   <>
                     <h2>{t.price.headline}</h2>
-                    <p>{t.price.body}</p>
                     <p className="site-next">{t.price.soon}</p>
+                    <TimeCalculator copy={t.calc} />
+                    <Link className="phone-next is-cta" href={lang === "en" ? "/start" : `/start?lang=${lang}`}>{t.cta} →</Link>
                   </>
                 )}
               </div>
@@ -133,6 +160,17 @@ export default async function WelcomePage({ searchParams }: { searchParams: Prom
               <p>{words}</p>
             </details>
           )}
+        </section>
+
+        {/* "Before you ask": the usual hesitations, answered plainly (fact-checked; no promises about price). */}
+        <section className="home-faq" aria-labelledby="faq-title">
+          <h2 id="faq-title">{t.faq.title}</h2>
+          {t.faq.items.map((f) => (
+            <details key={f.q}>
+              <summary>{f.q}</summary>
+              <p>{f.a}</p>
+            </details>
+          ))}
         </section>
       </main>
 
