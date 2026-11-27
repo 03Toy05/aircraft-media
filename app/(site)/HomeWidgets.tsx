@@ -1,7 +1,8 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Toy from "../_components/Toy";
 import type { TrySample } from "./siteMedia";
+import { track } from "./track";
 
 /** The hero's "Watch me at work" button: opens the phone's demo player (PhoneDemo listens for "toy:watch-demo"). */
 export function WatchDemoButton({ label, sub }: { label: string; sub: string }) {
@@ -15,16 +16,18 @@ export function WatchDemoButton({ label, sub }: { label: string; sub: string }) 
   );
 }
 
-type TryCopy = { headline: string; intro: string; chips: string[]; found: string; interior: string; rooms: string[]; quoteDone: string; quote: string; quoteWays: string; sample: string; soon: string };
+type TryCopy = { headline: string; intro: string; chips: string[]; found: string; interior: string; rooms: string[]; quoteDone: string; quote: string; quoteWays: string; sample: string; soon: string; clientLink: string };
 
 /**
  * "Let me try": three taps on sample data, answered at once (no fake waiting, TOY-04), with no real workspace behind it.
  * With a real sample (public/try-sample/, local preview only) it shows that aircraft and its photos; without one, placeholders.
  */
-export function LetMeTry({ copy, sample = null }: { copy: TryCopy; sample?: TrySample | null }) {
+export function LetMeTry({ copy, lang, sample = null }: { copy: TryCopy; lang: string; sample?: TrySample | null }) {
   const chips = sample ? [sample.ask, ...copy.chips.slice(1)] : copy.chips;
   const [asked, setAsked] = useState<number[]>([]);
   const ask = (i: number) => setAsked((a) => [...a.filter((x) => x !== i), i]);
+  // Counted once the visitor has tried all three.
+  useEffect(() => { if (asked.length === 3) track("letmetry_complete", lang); }, [asked.length, lang]);
   return (
     <div className="try">
       <h2>{copy.headline}</h2>
@@ -63,6 +66,10 @@ export function LetMeTry({ copy, sample = null }: { copy: TryCopy; sample?: TryS
                     <p>{copy.quoteDone}</p>
                     <pre className="try-quote">{sample?.quote ?? copy.quote}</pre>
                     <p className="try-ways">{copy.quoteWays}</p>
+                    {/* The real thing: the client page a broker shares (a demo workspace's link), not a mock-up. */}
+                    {sample?.clientLink && (
+                      <a className="try-client" href={sample.clientLink} target="_blank" rel="noopener">{copy.clientLink} →</a>
+                    )}
                   </>
                 )}
                 <span className="try-sample">{copy.sample}</span>

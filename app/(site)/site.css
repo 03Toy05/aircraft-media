@@ -233,3 +233,6 @@
 .try-photo.has-img { display: block; height: auto; margin: 0; padding: 0; overflow: hidden; background: #E8EEF0; }
 .try-photo.has-img img { display: block; width: 100%; aspect-ratio: 4 / 3; object-fit: cover; }
 .try-photo.has-img figcaption { padding: 3px 6px; }
+/* Four photos sit 2×2 rather than leaving the floor plan alone on a second row. */
+.try-photos:has(> :nth-child(4)) { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.try-client { display: inline-flex; align-items: center; min-height: 40px; padding: 0 14px; margin: 6px 0 2px; border-radius: 999px; background: var(--ink); color: #fff; font-weight: 700; font-size: 13px; text-decoration: none; }

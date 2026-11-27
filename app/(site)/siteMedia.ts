@@ -55,10 +55,11 @@ export function founderVideo() {
  * "coming soon" until the owner releases it. Its files sit in public/try-sample/, which git ignores, so the photos
  * (rights not yet cleared for public use) never reach the live server:
  *   public/try-sample/sample.json   { "photos": ["exterior.jpg", ...],
+ *                                     "clientLink": "https://…/q/…" or { "en", "zh-hant", "zh-hans": "https://…/q/…" } (optional: real client links from a demo workspace),
  *                                     "en" | "zh-hant" | "zh-hans": { "ask", "found", "interior", "labels": [one per photo], "quote" } }
  *   public/try-sample/<photo files>
  */
-export type TrySample = { ask: string; found: string; interior: string; photos: { src: string; label: string }[]; quote: string };
+export type TrySample = { ask: string; found: string; interior: string; photos: { src: string; label: string }[]; quote: string; clientLink: string | null };
 export const letMeTryLive = () => process.env.SHOW_LET_ME_TRY === "1";
 export function trySample(lang: SiteLang): TrySample | null {
   if (!letMeTryLive() || !has("try-sample/sample.json")) return null;
@@ -69,7 +70,10 @@ export function trySample(lang: SiteLang): TrySample | null {
       .map((f, i) => ({ f, label: t.labels?.[i] ?? "" }))
       .filter(({ f }) => has(`try-sample/${f}`))
       .map(({ f, label }) => ({ src: `/try-sample/${encodeURIComponent(f)}`, label }));
-    return { ask: t.ask, found: t.found, interior: t.interior, photos, quote: t.quote };
+    // One link, or one per language ({ "en", "zh-hant", "zh-hans" }): the client page shows the language its quote was written in.
+    const rawLink = typeof raw.clientLink === "string" ? raw.clientLink : raw.clientLink?.[lang] ?? raw.clientLink?.en;
+    const link = typeof rawLink === "string" && /^https?:\/\/[^\s]+\/q\/[^\s]+$/.test(rawLink) ? rawLink : null;
+    return { ask: t.ask, found: t.found, interior: t.interior, photos, quote: t.quote, clientLink: link };
   } catch {
     return null; // a broken file falls back to the placeholder sample rather than breaking the page
   }

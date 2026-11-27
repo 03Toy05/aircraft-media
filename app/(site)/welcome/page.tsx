@@ -5,6 +5,7 @@ import BrandSignature from "../../_components/BrandSignature";
 import LanguageMenu from "../LanguageMenu";
 import PhoneDemo from "../PhoneDemo";
 import FounderClip from "../FounderClip";
+import { SiteTracker } from "../track";
 import { LetMeTry, TimeCalculator, WatchDemoButton } from "../HomeWidgets";
 import { demoTranscript, demoVideo, letMeTryLive, trySample, founderPhoto, founderVideo } from "../siteMedia";
 import { COPY, HTML_LANG, QUESTIONS, parseLang, parseQuestion, type QuestionKey, type SiteLang } from "./copy";
@@ -47,6 +48,7 @@ export default async function WelcomePage({ searchParams }: { searchParams: Prom
 
   return (
     <div className="toy-site" lang={HTML_LANG[lang]}>
+      <SiteTracker lang={lang} pricing={q === "price"} />
       <header className="site-head">
         <Link className="site-brand" href={href(lang, null)}>
           <span className="site-brand-name">aircraftmedia.my</span>
@@ -104,7 +106,7 @@ export default async function WelcomePage({ searchParams }: { searchParams: Prom
                 {q === "try" && (
                   <>
                     {/* Live: "coming soon" until the owner releases it; the local preview (SHOW_LET_ME_TRY=1) shows it working. */}
-                    {tryOn ? <LetMeTry copy={t.tryIt} sample={sample} /> : (
+                    {tryOn ? <LetMeTry copy={t.tryIt} lang={lang} sample={sample} /> : (
                       <>
                         <h2>{t.tryIt.headline}</h2>
                         <p className="site-next">{t.tryIt.soon}</p>

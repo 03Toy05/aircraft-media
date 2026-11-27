@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import Toy from "../_components/Toy";
+import { track } from "./track";
 
 type Video = { src: string; poster?: string; captions: { lang: string; srclang: string; label: string }[] };
 
@@ -36,6 +37,7 @@ export default function PhoneDemo({ video, lang, labels, draftHref, hidePlay = f
     const v = film.current;
     if (v?.videoWidth) setTall(v.videoHeight > v.videoWidth);
     dialog.current?.showModal(); if (v) v.currentTime = 0; play();
+    track("demo_play", lang);
   };
   const close = () => dialog.current?.close();
   // Other parts of the page (the founder clip's end link) can ask for the demo with a "toy:watch-demo" event.
@@ -71,7 +73,7 @@ export default function PhoneDemo({ video, lang, labels, draftHref, hidePlay = f
           <div className="film-frame">
             <video key={video.src} ref={film} className="film-video" controls={!ended} playsInline preload="metadata" poster={video.poster}
               onLoadedMetadata={(e) => setTall(e.currentTarget.videoHeight > e.currentTarget.videoWidth)}
-              onEnded={() => setEnded(true)} onPlay={() => setEnded(false)}>
+              onEnded={() => { setEnded(true); track("demo_complete", lang); }} onPlay={() => setEnded(false)}>
               <source src={video.src} type="video/mp4" />
               {video.captions.map((c) => (
                 <track key={c.lang} kind="captions" src={`/demo/captions-${c.lang}.vtt`} srcLang={c.srclang} label={c.label}
