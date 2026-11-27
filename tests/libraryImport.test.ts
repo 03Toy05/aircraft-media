@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { readFileSync, readdirSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { setup, makeImage } from "./helpers";
 import { getCatalogue } from "../src/domain/catalogue";
 import { getAircraftCard } from "../src/domain/directory";
@@ -56,6 +56,7 @@ describe("Library import", () => {
     try { packs = readdirSync("library-packs"); } catch { return; } // the packs are local only
     for (const name of packs) {
       const dir = `library-packs/${name}`;
+      if (!existsSync(`${dir}/pack.json`)) continue; // a folder of packs (e.g. faa-part135), not a pack itself
       const t = await setup();
       const pack = JSON.parse(readFileSync(`${dir}/pack.json`, "utf8")) as LibraryPack;
       const files = new Map(readdirSync(dir).filter((n) => n.endsWith(".jpg")).map((n) => [n, new Uint8Array(readFileSync(`${dir}/${n}`))]));

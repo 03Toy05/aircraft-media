@@ -21,7 +21,7 @@ export interface AccessState {
 
 /** Pure: what a user may do at `now`. */
 export function accessFor(u: Pick<AccountRow, "plan" | "trialEndsAt" | "status">, now = new Date()): AccessState {
-  if (u.status === "blocked") return { readOnly: true, daysLeft: null, expired: false };
+  if (u.status === "blocked" || u.status === "cancelled") return { readOnly: true, daysLeft: null, expired: false };
   if (u.plan !== "trial" || !u.trialEndsAt) return { readOnly: false, daysLeft: null, expired: false };
   const ms = u.trialEndsAt.getTime() - now.getTime();
   if (ms <= 0) return { readOnly: true, daysLeft: 0, expired: true };

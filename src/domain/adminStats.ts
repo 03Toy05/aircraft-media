@@ -34,7 +34,7 @@ export async function userOverview(db: Db, adminEmail: string, now = new Date())
   const week = now.getTime() - 7 * 864e5, month = now.getTime() - 30 * 864e5;
   let trial = 0, ended = 0, full = 0, off = 0;
   for (const u of all) {
-    if (u.status === "blocked") off++;
+    if (u.status === "blocked" || u.status === "cancelled") off++;
     else if (u.plan === "full") full++;
     else if (accessFor(u, now).expired) ended++;
     else trial++;

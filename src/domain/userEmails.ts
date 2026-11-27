@@ -1,5 +1,5 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
-import { and, eq, gt, isNotNull, isNull, lte, ne, sql } from "drizzle-orm";
+import { and, eq, gt, isNotNull, isNull, lte, ne, notInArray, sql } from "drizzle-orm";
 import type { Db } from "../db/client";
 import { announcements, users } from "../db/schema";
 import { TRIAL_DAYS, accessFor } from "./accounts";
@@ -103,7 +103,7 @@ export function announcementMail(site: string, u: { id: string; email: string; d
 export async function sendDueEmails(db: Db, site: string, send: Send, now = new Date()): Promise<{ sent: number; failed: number }> {
   let sent = 0, failed = 0;
   const run = async (col: "welcomedAt" | "trialReminderAt" | "trialEndedMailAt", where: ReturnType<typeof and>, make: (u: typeof users.$inferSelect) => Mail | null) => {
-    const due = await db.select().from(users).where(and(where, isNull(users[col]), ne(users.status, "blocked")));
+    const due = await db.select().from(users).where(and(where, isNull(users[col]), notInArray(users.status, ["blocked", "cancelled"])));
     for (const u of due.slice(0, 50)) {
       const [claimed] = await db.update(users).set({ [col]: now }).where(and(eq(users.id, u.id), isNull(users[col]))).returning({ id: users.id });
       if (!claimed) continue;
@@ -150,7 +150,7 @@ export type Audience = (typeof AUDIENCES)[number];
 
 /** Who an announcement goes to: signed-in users, not turned off, not opted out, not the admin. */
 export async function audienceOf(db: Db, audience: Audience, adminEmail: string, now = new Date()) {
-  const rows = await db.select().from(users).where(and(ne(users.status, "blocked"), eq(users.emailOptOut, false), isNotNull(users.firstSignInAt), sql`lower(${users.email}) <> ${adminEmail.toLowerCase()}`));
+  const rows = await db.select().from(users).where(and(notInArray(users.status, ["blocked", "cancelled"]), eq(users.emailOptOut, false), isNotNull(users.firstSignInAt), sql`lower(${users.email}) <> ${adminEmail.toLowerCase()}`));
   return rows.filter((u) =>
     audience === "all" ? true
     : audience === "trial" ? u.plan === "trial"

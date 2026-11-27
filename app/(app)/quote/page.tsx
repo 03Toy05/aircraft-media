@@ -6,7 +6,7 @@ import { aircraftTypes, organisations } from "@/db/schema";
 import { getAircraftCards, getPreferredOperators } from "@/domain/directory";
 import { getLineups } from "@/domain/media";
 import { getQuoteTemplates } from "@/domain/quoteTemplates";
-import { LIBRARY_TENANT_ID, copiedLibraryAircraft, libraryScope, scopeHasAircraft, scopeHasOperator } from "@/domain/library";
+import { LIBRARY_TENANT_ID, copiedLibraryAircraft, libraryScope, readyLibraryAircraft, scopeHasAircraft, scopeHasOperator } from "@/domain/library";
 import { normalizeKey, normalizeRegistration, type AircraftCategory } from "@/domain/constants";
 import { CLASSIFICATION_LABEL } from "@/domain/constants";
 import QuoteBuilder, { type QuoteAircraftOption, type QuoteOperator } from "../../_components/QuoteBuilder";
@@ -35,11 +35,13 @@ export default async function Quote({ searchParams }: { searchParams: SP }) {
     `${normalizeKey(o.operator ?? "")}|${normalizeKey(o.type)}|${o.tail ? `t:${normalizeRegistration(o.tail)}` : `y:${o.yom ?? ""}`}`;
   const ownKeys = new Set<string>();
   const copied = await copiedLibraryAircraft(db, actor.tenantId);
+  // Library aircraft with photos only: the directory's details-only aircraft are added to a workspace first.
+  const ready = scope ? await readyLibraryAircraft(db) : new Set<string>();
   // An operator the broker has under the same name is one operator: library aircraft go under the broker's own.
   const ownOrgByName = new Map<string, QuoteOperator>();
   for (const src of sources) {
     const rows = (await getCatalogue(db, src.tenantId))
-      .filter((r) => !src.library || (!copied.has(r.aircraftId) && scopeHasOperator(scope, r.operatorId) && scopeHasAircraft(scope, r.aircraftId)));
+      .filter((r) => !src.library || (!copied.has(r.aircraftId) && ready.has(r.aircraftId) && scopeHasOperator(scope, r.operatorId) && scopeHasAircraft(scope, r.aircraftId)));
     // Every aircraft's details and photos in a few queries, not several per aircraft.
     const typeIds = [...new Set(rows.map((r) => r.aircraftTypeId))];
     const [cards, lineups, typeRows] = await Promise.all([
@@ -95,6 +97,7 @@ export default async function Quote({ searchParams }: { searchParams: SP }) {
         if (count) own.alsoLibrary = true;
         continue;
       }
+      if (src.library && !count) continue; // a library operator with nothing to quote here (e.g. only directory aircraft)
       const op: QuoteOperator = { id: o.id, name: o.canonicalName, region: o.region, addedAt: o.createdAt.toISOString(), count, library: src.library };
       if (!src.library) ownOrgByName.set(normalizeKey(o.canonicalName), op);
       operators.push(op);

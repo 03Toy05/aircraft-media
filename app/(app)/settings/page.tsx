@@ -12,6 +12,7 @@ import { MIN_PASSWORD, hasPassword } from "@/domain/passwords";
 import Choice from "../../_components/Choice";
 import { Flash, Key, one, type SP } from "../../_components/ui";
 import SearchSelect from "../../_components/SearchSelect";
+import { cancelAccountAction, deleteAccountAction, reopenAccountAction } from "../../accountActions";
 import { serverT } from "@/lib/uiLang";
 
 const LANGUAGE_NAMES: Record<string, string> = {
@@ -21,7 +22,7 @@ const LANGUAGE_NAMES: Record<string, string> = {
 export default async function Settings({ searchParams }: { searchParams: SP }) {
   const sp = await searchParams;
   const t = await serverT();
-  const { actor, email } = await requireOwner();
+  const { actor, email, isAdmin, viewingAs, cancelled } = await requireOwner();
   const brandDb = await getDb();
   const brand = await getBrand(brandDb, actor.tenantId);
   const [meName] = await brandDb.select({ name: users.displayName }).from(users).where(eq(users.id, actor.id));
@@ -129,6 +130,32 @@ export default async function Settings({ searchParams }: { searchParams: SP }) {
             </table>
           </div>
         </details>
+        {!isAdmin && !viewingAs && (
+          <div className="card" id="account">
+            <h3>{t("Your account")}</h3>
+            {cancelled ? (
+              <>
+                <p className="small">{t("You cancelled your account. Your workspace is read-only: you can still look at it, share quotes and download them.")}</p>
+                <form action={reopenAccountAction}><button type="submit">{t("Reopen my account")}</button></form>
+              </>
+            ) : (
+              <>
+                <p className="small muted">{t("Cancel to stop using Aircraft Media for now. Your workspace becomes read-only and nothing is deleted; you can reopen it here at any time.")}</p>
+                <form action={cancelAccountAction}><button type="submit" className="secondary">{t("Cancel my account")}</button></form>
+              </>
+            )}
+            <details className="collapse" style={{ marginTop: 14 }}>
+              <summary>{t("Delete my account")}</summary>
+              <p className="small">{t("This deletes your workspace and everything in it: aircraft, operators, photos, quotes and requests. Client links you shared stop opening. It can't be undone.")}</p>
+              <form action={deleteAccountAction} className="row" style={{ alignItems: "end" }}>
+                <label style={{ flex: "1 1 240px" }}>{t("Type your email address to confirm")}
+                  <input name="confirmEmail" type="email" autoComplete="off" required placeholder={email} />
+                </label>
+                <div style={{ flex: "0 0 auto" }}><button type="submit" className="danger">{t("Delete my account")}</button></div>
+              </form>
+            </details>
+          </div>
+        )}
       </div>
     </>
   );

@@ -56,7 +56,7 @@ export const users = pgTable(
     displayName: text("display_name").notNull(),
     role: text("role").notNull().default("owner"), // each user owns their own workspace (tenant)
     preferredLanguage: text("preferred_language").notNull().default("en"),
-    /** applied (signed up, waiting for the admin's approval) | invited (not signed in yet) | active | blocked */
+    /** applied (signed up, waiting for the admin's approval) | invited (not signed in yet) | active | blocked | cancelled (by them: read-only) */
     status: text("status").notNull().default("active"),
     /** trial: may add and change things until trialEndsAt, read-only after | full: no time limit */
     plan: text("plan").notNull().default("full"),
@@ -754,4 +754,21 @@ export const toyChoices = pgTable(
     updatedAt: updated(),
   },
   (t) => [primaryKey({ columns: [t.userId, t.kind, t.key] })],
+);
+
+/**
+ * Visits to the public website, counted per day: which step people reached (front page, demo film, "Let me try",
+ * pricing) and in which language. Only counts: no cookies, no IP address, nothing that tells one visitor from another.
+ */
+export const siteEvents = pgTable(
+  "site_events",
+  {
+    /** The day in UTC, "2026-11-27". */
+    day: text("day").notNull(),
+    event: text("event").notNull(),
+    /** en | zh-hant | zh-hans */
+    lang: text("lang").notNull(),
+    n: integer("n").notNull().default(0),
+  },
+  (t) => [primaryKey({ columns: [t.day, t.event, t.lang] })],
 );

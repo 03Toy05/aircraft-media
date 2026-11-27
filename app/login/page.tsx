@@ -29,9 +29,9 @@ async function passwordSignInAction(fd: FormData) {
   }
 }
 
-export default async function LoginPage({ searchParams }: { searchParams: Promise<{ error?: string; email?: string }> }) {
+export default async function LoginPage({ searchParams }: { searchParams: Promise<{ error?: string; email?: string; ok?: string }> }) {
   if (devBypassEnabled()) redirect("/");
-  const { error, email } = await searchParams;
+  const { error, email, ok } = await searchParams;
   const t = await serverT();
   return (
     <SignInShell
@@ -40,6 +40,7 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
       intro={<>{t("Sign in to your workspace.")} <Link href="/start">{t("New here? Start your 14-day free trial")}</Link></>}
       footer={{ privacy: t("Privacy"), terms: t("Terms") }}
     >
+      {ok === "deleted" && <div className="flash ok">{t("Your account and workspace have been deleted. Thank you for trying Aircraft Media.")}</div>}
       {error && <div className="flash err">{t(ERRORS[error] ?? "That account is not authorised.")}</div>}
       <form
         className="signin-form"

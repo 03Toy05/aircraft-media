@@ -968,8 +968,10 @@ export async function addFromLibraryAction(fd: FormData) {
   const back = `/library${str(fd, "q") ? `?q=${encodeURIComponent(str(fd, "q"))}` : ""}`;
   const operatorId = str(fd, "libraryOperatorId");
   // Only aircraft of the operators opened to them.
+  // Directory aircraft (details only, no photos yet) are open to everyone the library is shared with.
+  const directory = await library.directoryLibraryAircraft(db);
   const ids = (operatorId ? await library.libraryOperatorAircraft(db, operatorId) : [str(fd, "libraryAircraftId")].filter(Boolean))
-    .filter((id) => library.scopeHasAircraft(scope, id));
+    .filter((id) => library.scopeHasAircraft(scope, id) || directory.has(id));
   const have = await library.copiedLibraryAircraft(db, session.actor.tenantId);
   // Copying the photos takes a while (each one goes through Google Drive), so it carries on after this page answers.
   const { queued, done } = library.queueAdds(db, getFileStore(), session.actor, ids.filter((id) => !have.has(id)));

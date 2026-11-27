@@ -61,6 +61,7 @@ export const TRANSLATED = [
   "app/unsubscribe/page.tsx",
   "app/adminMailActions.ts",
   "app/applicationActions.ts",
+  "app/accountActions.ts",
   "app/_components/QuoteLayoutCard.tsx",
   "app/(app)/support/page.tsx",
   "app/api/quote/preview-pdf/route.ts",
@@ -76,6 +77,7 @@ export const TRANSLATED = [
 /** Core logic whose error messages are shown translated (DomainError templates). */
 const DOMAIN = [
   "src/domain/accounts.ts",
+  "src/domain/closeAccount.ts",
   "src/domain/contacts.ts",
   "src/domain/directory.ts",
   "src/domain/intake.ts",
@@ -86,6 +88,7 @@ const DOMAIN = [
 ];
 /** Labels passed through a variable (t(label)), so the scan below can't see them. */
 const INDIRECT = [
+  "Used the front page", "Played the demo film", "Watched the demo to the end", "Finished “Let me try”", "Looked at pricing", "Clicked “Make Toy yours”", "Signed up", "Shared their first quote",
   "Fleet", "Quote", "Routing", "Operator", "Tail", "Base", "Notes", "Email", "Other apps",
   "A–Z", "Most aircraft", "Newest", "Mine + library", "Mine", "Library",
   "at least 1 exterior, 2 cabin and 1 floor plan photo",
