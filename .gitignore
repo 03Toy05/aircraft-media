@@ -9,3 +9,6 @@ next-env.d.ts
 AGENTS.md
 .claude/
 library-packs/
+
+# "Let me try" sample photos: local preview only until their rights are cleared
+public/try-sample/

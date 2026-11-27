@@ -5,7 +5,8 @@ import BrandSignature from "../../_components/BrandSignature";
 import LanguageMenu from "../LanguageMenu";
 import PhoneDemo from "../PhoneDemo";
 import FounderClip from "../FounderClip";
-import { demoTranscript, demoVideo, founderPhoto, founderVideo } from "../siteMedia";
+import { LetMeTry, TimeCalculator, WatchDemoButton } from "../HomeWidgets";
+import { demoTranscript, demoVideo, letMeTryLive, trySample, founderPhoto, founderVideo } from "../siteMedia";
 import { COPY, HTML_LANG, QUESTIONS, parseLang, parseQuestion, type QuestionKey, type SiteLang } from "./copy";
 
 // The front page: shown at "/" to visitors who are not signed in (see proxy.ts), and at /welcome.
@@ -41,6 +42,8 @@ export default async function WelcomePage({ searchParams }: { searchParams: Prom
   const words = video ? demoTranscript(lang) : null;
   const founder = founderPhoto();
   const founderFilm = founderVideo();
+  const tryOn = letMeTryLive();
+  const sample = tryOn ? trySample(lang) : null;
 
   return (
     <div className="toy-site" lang={HTML_LANG[lang]}>
@@ -63,6 +66,10 @@ export default async function WelcomePage({ searchParams }: { searchParams: Prom
           {/* "Hi, I'm Toy." with the airplane as its full stop (TOY-14); still, no takeoff. */}
           <BrandSignature as="h1" lead={t.greeting.lead} tail="Toy" plain={t.greeting.plain} />
           <p className="site-promise">{t.promise}</p>
+          <p className="hero-does">{t.hero.does}</p>
+          <p className="hero-benefit">{t.hero.benefit}</p>
+          {video && <WatchDemoButton label={t.hero.watch} sub={t.hero.watchSub} />}
+          <p className="hero-built">{t.hero.builtBy}</p>
         </div>
 
         <section className="home-stage" id="film" aria-label={t.demo.intro}>
@@ -83,6 +90,7 @@ export default async function WelcomePage({ searchParams }: { searchParams: Prom
                     <p className="demo-claim">{t.demo.claim}</p>
                     <h2>{t.initial.title}</h2>
                     <p>{t.initial.body}</p>
+                    <Link className="phone-next" href={href(lang, "what", "#film")} scroll={false}>{t.next.start} →</Link>
                   </>
                 )}
                 {q === "what" && (
@@ -90,6 +98,19 @@ export default async function WelcomePage({ searchParams }: { searchParams: Prom
                     <h2>{t.what.headline}</h2>
                     <ul>{t.what.items.map((i) => <li key={i}>{i}</li>)}</ul>
                     <p className="site-next">{t.what.next}</p>
+                    <Link className="phone-next" href={href(lang, "try", "#film")} scroll={false}>{t.next.what} →</Link>
+                  </>
+                )}
+                {q === "try" && (
+                  <>
+                    {/* Live: "coming soon" until the owner releases it; the local preview (SHOW_LET_ME_TRY=1) shows it working. */}
+                    {tryOn ? <LetMeTry copy={t.tryIt} sample={sample} /> : (
+                      <>
+                        <h2>{t.tryIt.headline}</h2>
+                        <p className="site-next">{t.tryIt.soon}</p>
+                      </>
+                    )}
+                    <Link className="phone-next" href={href(lang, "price", "#film")} scroll={false}>{t.next.tryIt} →</Link>
                   </>
                 )}
                 {q === "begins" && (
@@ -103,6 +124,7 @@ export default async function WelcomePage({ searchParams }: { searchParams: Prom
                     )}
                     {t.begins.paragraphs.map((p) => <p key={p}>{p}</p>)}
                     <p className="site-vision">{t.begins.vision}</p>
+                    <Link className="phone-next" href={href(lang, "try", "#film")} scroll={false}>{t.next.begins} →</Link>
                   </>
                 )}
                 {q === "price" && (
@@ -110,6 +132,8 @@ export default async function WelcomePage({ searchParams }: { searchParams: Prom
                     <h2>{t.price.headline}</h2>
                     <p>{t.price.body}</p>
                     <p className="site-next">{t.price.soon}</p>
+                    <TimeCalculator copy={t.calc} />
+                    <Link className="phone-next is-cta" href={lang === "en" ? "/start" : `/start?lang=${lang}`}>{t.cta} →</Link>
                   </>
                 )}
               </div>
@@ -133,6 +157,17 @@ export default async function WelcomePage({ searchParams }: { searchParams: Prom
               <p>{words}</p>
             </details>
           )}
+        </section>
+
+        {/* "Before you ask": the usual hesitations, answered plainly (fact-checked; no promises about price). */}
+        <section className="home-faq" aria-labelledby="faq-title">
+          <h2 id="faq-title">{t.faq.title}</h2>
+          {t.faq.items.map((f) => (
+            <details key={f.q}>
+              <summary>{f.q}</summary>
+              <p>{f.a}</p>
+            </details>
+          ))}
         </section>
       </main>
 
