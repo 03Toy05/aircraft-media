@@ -2,11 +2,11 @@ import { randomUUID } from "node:crypto";
 import { and, eq, sql } from "drizzle-orm";
 import type { Db } from "../db/client";
 import type { FileStore } from "../storage";
-import { quoteLinks, quoteVersions, users } from "../db/schema";
+import { aircraft as aircraftTable, quoteLinks, quoteVersions, users } from "../db/schema";
 import type { Actor } from "./action";
 import type { Classification } from "./constants";
 import { createAircraft, createAircraftType, createOrganisation } from "./directory";
-import { approveMedia, getLineup, getMediaDetail, ingestUpload, setMediaAssociation, updateMediaMetadata } from "./media";
+import { approveMedia, getLineup, getMediaDetail, ingestUpload, retireMedia, setMediaAssociation, updateMediaMetadata } from "./media";
 import { QUOTE_LOCALE, QUOTE_WORDS, buildQuoteParts, type QuoteAircraft, type QuoteLanguage } from "./quote";
 import { cleanSnapshot, saveQuoteVersion } from "./requests";
 import { ensureLink, setLink } from "./quoteLinks";
@@ -29,9 +29,11 @@ export interface DemoInput {
   photos: { name: string; bytes: Uint8Array; classification: Classification }[];
   legs: Leg[];
   expiresAt: Date;
+  /** The links exist already: put these photos (and this wording) in as the next version of each quote, same links. */
+  refresh?: boolean;
 }
 
-export interface DemoResult { created: boolean; links: Record<DemoLang, string> }
+export interface DemoResult { created: boolean; refreshed?: boolean; links: Record<DemoLang, string> }
 
 async function demoUser(db: Db, now: Date): Promise<Actor> {
   const [u] = await db.select().from(users).where(eq(users.email, DEMO_EMAIL));
@@ -43,14 +45,14 @@ async function demoUser(db: Db, now: Date): Promise<Actor> {
   return { id: n.id, tenantId: n.tenantId };
 }
 
-/** The demo's links, by language, when they were already made. */
-async function existingLinks(db: Db, tenantId: string): Promise<Partial<Record<DemoLang, string>>> {
-  const rows = await db.select({ token: quoteLinks.token, lang: sql<string>`${quoteVersions.content}->>'lang'` }).from(quoteLinks)
+/** The demo's links (and their requests), by language, when they were already made. */
+async function existingLinks(db: Db, tenantId: string): Promise<Partial<Record<DemoLang, { token: string; requestId: string }>>> {
+  const rows = await db.select({ token: quoteLinks.token, requestId: quoteLinks.requestId, lang: sql<string>`${quoteVersions.content}->>'lang'` }).from(quoteLinks)
     .innerJoin(quoteVersions, eq(quoteVersions.requestId, quoteLinks.requestId)).where(and(eq(quoteLinks.tenantId, tenantId), eq(quoteLinks.active, true)));
-  const out: Partial<Record<DemoLang, string>> = {};
+  const out: Partial<Record<DemoLang, { token: string; requestId: string }>> = {};
   for (const lang of Object.keys(DEMO_LANGS) as DemoLang[]) {
     const r = rows.find((x) => x.lang === DEMO_LANGS[lang]);
-    if (r) out[lang] = r.token;
+    if (r) out[lang] = { token: r.token, requestId: r.requestId };
   }
   return out;
 }
@@ -58,16 +60,26 @@ async function existingLinks(db: Db, tenantId: string): Promise<Partial<Record<D
 export async function makeDemoQuote(db: Db, store: FileStore, input: DemoInput, now = new Date()): Promise<DemoResult> {
   const me = await demoUser(db, now);
   const have = await existingLinks(db, me.tenantId);
-  if (Object.keys(have).length === Object.keys(DEMO_LANGS).length) return { created: false, links: have as Record<DemoLang, string> };
+  const tokens = () => Object.fromEntries(Object.entries(have).map(([l, v]) => [l, v!.token])) as Record<DemoLang, string>;
+  const complete = Object.keys(have).length === Object.keys(DEMO_LANGS).length;
+  if (complete && !input.refresh) return { created: false, links: tokens() };
 
   const a = input.aircraft;
   const k = () => randomUUID();
-  const orgId = (await createOrganisation(db, me, k(), { name: a.operator })).result.organisationId;
-  const typeId = (await createAircraftType(db, me, k(), { manufacturer: a.manufacturer, model: a.model, category: a.category })).result.aircraftTypeId;
-  const aircraftId = (await createAircraft(db, me, k(), {
-    aircraftTypeId: typeId, registration: a.tail ?? null, operatorId: orgId,
-    info: { yom: a.yom ?? null, yor: null, capacity: a.capacity ?? null, wifiStatus: "unknown", notes: null },
-  })).result.aircraftId;
+  let aircraftId: string, typeId: string;
+  const [existing] = complete ? await db.select().from(aircraftTable).where(and(eq(aircraftTable.tenantId, me.tenantId), eq(aircraftTable.active, true))) : [];
+  if (existing) {
+    // Refresh: the old photos go (kept in the record, no longer shown); the new ones come in below.
+    aircraftId = existing.id; typeId = existing.aircraftTypeId;
+    for (const l of await getLineup(db, { aircraftId, aircraftTypeId: typeId })) await retireMedia(db, me, k(), { mediaId: l.mediaId });
+  } else {
+    const orgId = (await createOrganisation(db, me, k(), { name: a.operator })).result.organisationId;
+    typeId = (await createAircraftType(db, me, k(), { manufacturer: a.manufacturer, model: a.model, category: a.category })).result.aircraftTypeId;
+    aircraftId = (await createAircraft(db, me, k(), {
+      aircraftTypeId: typeId, registration: a.tail ?? null, operatorId: orgId,
+      info: { yom: a.yom ?? null, yor: null, capacity: a.capacity ?? null, wifiStatus: "unknown", notes: null },
+    })).result.aircraftId;
+  }
 
   for (const p of input.photos) {
     const r = (await ingestUpload(db, store, me, { filename: p.name, bytes: p.bytes })).result;
@@ -83,11 +95,11 @@ export async function makeDemoQuote(db: Db, store: FileStore, input: DemoInput, 
   const photos = lineup.map((l) => ({ id: l.contentVersionId, label: l.label, classification: l.classification }));
 
   const type = `${a.manufacturer} ${a.model}`.trim();
-  const item: QuoteAircraft = { type, operator: a.operator, tail: a.tail ?? null, base: a.base ?? null, yom: a.yom ?? null, yor: null, capacity: a.capacity ?? null, wifi: "unknown", price: a.price };
+  // The operator is never in the demo quote, not even in its saved data.
+  const item: QuoteAircraft = { type, operator: null, tail: a.tail ?? null, base: a.base ?? null, yom: a.yom ?? null, yor: null, capacity: a.capacity ?? null, wifi: "unknown", price: a.price };
   const airports = Object.fromEntries(input.legs.flatMap((l) => [l.from, l.to]).map((c) => [c, findAirport(c)!]).filter(([, x]) => x));
-  const links: Partial<Record<DemoLang, string>> = { ...have };
+  const links: Partial<Record<DemoLang, string>> = {};
   for (const [site, lang] of Object.entries(DEMO_LANGS) as [DemoLang, QuoteLanguage][]) {
-    if (links[site]) continue;
     // As the quote builder writes it: greeting, routing, the aircraft, closing. Operator left out (the broker's default).
     const opts = { language: lang, includeTail: true, includeBase: true, greeting: true };
     const parts = buildQuoteParts([item], opts);
@@ -95,13 +107,13 @@ export async function makeDemoQuote(db: Db, store: FileStore, input: DemoInput, 
     const text = [parts.greeting, routing, ...parts.blocks, parts.closing].filter((x): x is string => !!x && x.trim() !== "").join("\n\n");
     const snap = cleanSnapshot({
       lang, text, greeting: parts.greeting, closing: parts.closing,
-      options: [{ aircraftId, type, operator: a.operator, tail: a.tail ?? null, base: a.base ?? null, yom: a.yom ?? null, capacity: a.capacity ?? null, price: a.price, wifi: "unknown", photos }],
+      options: [{ aircraftId, type, operator: null, tail: a.tail ?? null, base: a.base ?? null, yom: a.yom ?? null, capacity: a.capacity ?? null, price: a.price, wifi: "unknown", photos }],
       builder: { inc: { operator: false, tail: true, base: true } },
     });
-    const { requestId } = await saveQuoteVersion(db, me, null, input.legs, snap);
+    const { requestId } = await saveQuoteVersion(db, me, have[site]?.requestId ?? null, input.legs, snap);
     await ensureLink(db, me, requestId);
     await setLink(db, me, requestId, { expiresAt: input.expiresAt });
     links[site] = (await db.select({ token: quoteLinks.token }).from(quoteLinks).where(eq(quoteLinks.requestId, requestId)))[0].token;
   }
-  return { created: true, links: links as Record<DemoLang, string> };
+  return { created: !complete, refreshed: complete, links: links as Record<DemoLang, string> };
 }

@@ -32,5 +32,17 @@ describe("The website's demo client link", () => {
     expect(await openLink(t.db, r.links.en, new Date("2027-07-01T00:00:00Z"))).toBeNull(); // ended
     const again = await makeDemoQuote(t.db, t.store, input);
     expect(again).toEqual({ created: false, links: r.links });
+
+    // New photos into the same links: the client sees the next version, with only the new photos, and no operator anywhere.
+    const fresh = { ...input, refresh: true, photos: input.photos.map((p, i) => ({ ...p, name: `new-${p.name}` })) };
+    fresh.photos = await Promise.all(fresh.photos.map(async (p, i) => ({ ...p, bytes: await makeImage(400, 300, 20 + i) })));
+    const r2 = await makeDemoQuote(t.db, t.store, fresh);
+    expect(r2).toEqual({ created: false, refreshed: true, links: r.links });
+    const q2 = (await openLink(t.db, r.links.en))!;
+    expect(q2.version).toBe(2);
+    expect(q2.quote.options[0].photos).toHaveLength(4);
+    const oldIds = (await openLink(t.db, r.links.en))!.quote.options[0].photos.map((p) => p.id);
+    expect(new Set(oldIds).size).toBe(4);
+    expect(JSON.stringify(q2.quote)).not.toContain("Executive Wings");
   });
 });

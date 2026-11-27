@@ -30,7 +30,7 @@ export async function POST(req: Request) {
     }
     const expiresAt = new Date(spec.expiresAt);
     if (Number.isNaN(expiresAt.getTime())) throw new Error("expiresAt isn't a date.");
-    const r = await makeDemoQuote(await getDb(), getFileStore(), { aircraft: spec.aircraft, legs: spec.legs, photos, expiresAt });
+    const r = await makeDemoQuote(await getDb(), getFileStore(), { aircraft: spec.aircraft, legs: spec.legs, photos, expiresAt, refresh: (spec as { refresh?: boolean }).refresh === true });
     return NextResponse.json(r);
   } catch (e) {
     return NextResponse.json({ error: (e as Error).message }, { status: 400 });

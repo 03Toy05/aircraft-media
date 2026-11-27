@@ -3,6 +3,7 @@
  * Chinese, in the demo workspace (demo@aircraftmedia.my), each ending on 30 June 2027.
  *   npm run demo:links                              (the live site)
  *   npm run demo:links -- --site http://localhost:3102
+ *   npm run demo:links -- --refresh                 (new photos into the same links)
  * Needs LIBRARY_UPLOAD_KEY in .env.local (never printed). Prints the three links. Running it again gives the same links.
  */
 import { readFileSync } from "node:fs";
@@ -27,12 +28,14 @@ const spec = {
   legs: [{ from: "VHHH", to: "VTBS", date: "2027-03-12", time: "10:00", flight: 165, pax: 4 }],
   expiresAt: "2027-06-30T23:59:59+08:00",
   photos,
+  // --refresh: the links exist already; put these photos in as the next version of each quote (same links).
+  refresh: args.includes("--refresh"),
 };
 const form = new FormData();
 form.set("spec", JSON.stringify(spec));
 for (const p of photos) form.append("files", new Blob([readFileSync(path.join(dir, p.name))], { type: "image/jpeg" }), p.name);
 const res = await fetch(`${site}/api/demo`, { method: "POST", headers: { Authorization: `Bearer ${key}` }, body: form });
-const body = (await res.json().catch(() => ({}))) as { error?: string; created?: boolean; links?: Record<string, string> };
+const body = (await res.json().catch(() => ({}))) as { error?: string; created?: boolean; refreshed?: boolean; links?: Record<string, string> };
 if (!res.ok || !body.links) { console.error(body.error ?? `The site answered ${res.status}.`); process.exit(1); }
-console.log(body.created ? "Made the demo quote." : "The demo quote was already there.");
+console.log(body.created ? "Made the demo quote." : body.refreshed ? "Put the new photos into the demo quote (same links)." : "The demo quote was already there.");
 for (const [lang, token] of Object.entries(body.links)) console.log(`${lang}: ${site}/q/${token}`);
