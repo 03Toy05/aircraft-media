@@ -82,7 +82,7 @@ export function LetMeTry({ copy, lang, sample = null }: { copy: TryCopy; lang: s
   );
 }
 
-type CalcCopy = { title: string; intro: string; perDay: string; minutes: string; days: string; monthly: string; equiv: string; hours: string; workdays: string; note: string; closing: string };
+type CalcCopy = { title: string; perDay: string; minutes: string; days: string; monthly: string; equiv: string; hours: string; workdays: string; note: string; closing: string };
 
 /** "How much time could Toy give you back?": the visitor's own numbers, worked out in the browser; nothing is sent or saved. */
 export function TimeCalculator({ copy }: { copy: CalcCopy }) {
@@ -96,7 +96,6 @@ export function TimeCalculator({ copy }: { copy: CalcCopy }) {
   return (
     <section className="calc" aria-label={copy.title}>
       <h2>{copy.title}</h2>
-      <p className="calc-intro">{copy.intro}</p>
       <div className="calc-inputs">
         <label>{copy.perDay}<input type="number" inputMode="numeric" min={0} max={100} value={perDay} onChange={(e) => setPerDay(num(e.target.value, 100))} /></label>
         <label>{copy.minutes}<input type="number" inputMode="numeric" min={0} max={120} value={minutes} onChange={(e) => setMinutes(num(e.target.value, 120))} /></label>

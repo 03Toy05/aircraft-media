@@ -71,7 +71,7 @@ export default async function WelcomePage({ searchParams }: { searchParams: Prom
           <p className="site-promise">{t.promise}</p>
           <p className="hero-does">{t.hero.does}</p>
           <p className="hero-benefit">{t.hero.benefit}</p>
-          {video && <WatchDemoButton label={t.hero.watch} sub={t.hero.watchSub} />}
+          {video && <WatchDemoButton label={t.hero.watch} sub={shortFilm ? t.hero.watchSubShort : t.hero.watchSub} />}
           <p className="hero-built">{t.hero.builtBy}</p>
         </div>
 
@@ -134,7 +134,6 @@ export default async function WelcomePage({ searchParams }: { searchParams: Prom
                 {q === "price" && (
                   <>
                     <h2>{t.price.headline}</h2>
-                    <p>{t.price.body}</p>
                     <p className="site-next">{t.price.soon}</p>
                     <TimeCalculator copy={t.calc} />
                     <Link className="phone-next is-cta" href={lang === "en" ? "/start" : `/start?lang=${lang}`}>{t.cta} →</Link>

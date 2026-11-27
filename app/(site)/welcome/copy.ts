@@ -25,13 +25,13 @@ export type Copy = {
   greeting: { lead: string; plain: string };
   promise: string;
   /** Under the promise: what Toy does, the benefit, the demo button and the founder credential. */
-  hero: { does: string; benefit: string; watch: string; watchSub: string; builtBy: string };
+  hero: { does: string; benefit: string; watch: string; watchSub: string; /** When the button plays the short demo. */ watchSubShort: string; builtBy: string };
   /** "Let me try": a few taps on sample data (no real workspace). */
   tryIt: { headline: string; intro: string; chips: string[]; found: string; interior: string; rooms: string[]; quoteDone: string; quote: string; quoteWays: string; sample: string; soon: string; clientLink: string };
   /** Toy's next question at the end of each answer. */
   next: { start: string; what: string; tryIt: string; begins: string };
   /** The time calculator inside "How much?" (illustrative: the visitor's own numbers). */
-  calc: { title: string; intro: string; perDay: string; minutes: string; days: string; monthly: string; equiv: string; hours: string; workdays: string; note: string; closing: string };
+  calc: { title: string; perDay: string; minutes: string; days: string; monthly: string; equiv: string; hours: string; workdays: string; note: string; closing: string };
   /** "Before you ask": honest answers to the usual hesitations (fact-checked against the app, 27 Nov 2026). */
   faq: { title: string; items: { q: string; a: string }[] };
   signIn: string;
@@ -46,7 +46,7 @@ export type Copy = {
   demo: { intro: string; watch: string; close: string; draft: string; again: string; screen: string; soon: string; soonNote: string; transcript: string; painTitle: string; pains: string[]; claim: string };
   /** The brand signature (TOY-14): `lead` + `tail`, then the airplane in place of the final period; `plain` is what screen readers hear. */
   begins: { lead: string; tail: string; plain: string; founderVideo: string; founderCta: string; paragraphs: string[]; vision: string };
-  price: { headline: string; body: string; soon: string };
+  price: { headline: string; soon: string };
   cta: string;
   footer: { rights: string; privacy: string; terms: string; contact: string };
 };
@@ -61,6 +61,7 @@ export const COPY: Record<SiteLang, Copy> = {
       benefit: "Less admin. More brokering.",
       watch: "Watch me at work",
       watchSub: "Meet your assistant in under 2 minutes",
+      watchSubShort: "Meet your assistant in under 30 seconds",
       builtBy: "Built by a broker, for brokers.",
     },
     tryIt: {
@@ -79,17 +80,16 @@ export const COPY: Record<SiteLang, Copy> = {
     },
     next: { start: "What can you do?", what: "Want to see me in action?", tryIt: "How much time could I save you?", begins: "Want to see me in action?" },
     calc: {
-      title: "How much time could Toy give you back?",
-      intro: "Adjust the numbers to match your own working day.",
-      perDay: "Quotations per day",
-      minutes: "Minutes saved per quotation",
-      days: "Working days per month",
-      monthly: "Time back each month",
-      equiv: "Equivalent 8-hour working days",
+      title: "How much time could I save you?",
+      perDay: "Quotes a day",
+      minutes: "Minutes saved on each",
+      days: "Workdays a month",
+      monthly: "Saved each month",
+      equiv: "That's about",
       hours: "hours",
-      workdays: "days",
-      note: "An estimate from your numbers, not measured product performance.",
-      closing: "More time for your clients. More time for brokering.",
+      workdays: "workdays",
+      note: "An estimate from your numbers.",
+      closing: "More time for brokering.",
     },
     faq: {
       title: "Before you ask",
@@ -114,13 +114,12 @@ export const COPY: Record<SiteLang, Copy> = {
     what: {
       headline: "Leave the repetitive work to me.",
       items: [
-        "Prepare client quotations with photos in a few clicks, as a message, a PDF or a link.",
-        "Put your own logo and colour on every PDF and link.",
-        "Organize and manage your aircraft photos.",
-        "Find aircraft and operator information.",
-        "Work with typed commands.",
+        "Quotes with photos, in a few clicks.",
+        "Sent as a message, a PDF or a link, with your logo.",
+        "All your aircraft photos in one place.",
+        "Aircraft details in seconds.",
       ],
-      next: "Coming next: itineraries for confirmed trips.",
+      next: "Coming next: trip itineraries.",
     },
     demo: {
       intro: "Generate a text, weblink or PDF quotation with photos in just a few clicks!",
@@ -147,18 +146,15 @@ export const COPY: Record<SiteLang, Copy> = {
       founderVideo: "A word from my creator",
       founderCta: "See Toy draft a quote",
       paragraphs: [
-        "My creator spent 14 years as an aviation charter butler. After years of preparing quotations, searching for aircraft photos and juggling platforms, he wanted to build the assistant he always wished he had.",
-        "Not every broker can afford an assistant. So he decided to build one.",
-        "He believes that learning begins with play. And that's how I came to be.",
-        "I'm his first creation.",
-        "Now I prepare a quotation with photos in just a few clicks.",
+        "My creator always wanted an assistant. So he built one.",
+        "No HR. No sick leave. No office hours.",
+        "I'm always here.",
         "And I'd love to be your assistant too.",
       ],
       vision: "Small beginning. Useful and reliable product. Bigger possibilities.",
     },
     price: {
       headline: "A little help shouldn't cost a lot.",
-      body: "Your own workspace, aircraft library, quotation tools and personal assistant.",
       soon: "Pricing coming soon.",
     },
     cta: "Make Toy yours",
@@ -173,6 +169,7 @@ export const COPY: Record<SiteLang, Copy> = {
       benefit: "少點雜務，專心代理。",
       watch: "看我工作",
       watchSub: "兩分鐘內認識你的助理",
+      watchSubShort: "30 秒內認識你的助理",
       builtBy: "由代理打造，為代理而設。",
     },
     tryIt: {
@@ -191,17 +188,16 @@ export const COPY: Record<SiteLang, Copy> = {
     },
     next: { start: "你可以做什麼？", what: "想看我實際操作嗎？", tryIt: "我可以幫你省多少時間？", begins: "想看我實際操作嗎？" },
     calc: {
-      title: "Toy 可以幫你省回多少時間？",
-      intro: "按你自己的工作日調整數字。",
-      perDay: "每天報價數量",
-      minutes: "每份報價節省的分鐘",
-      days: "每月工作天數",
-      monthly: "每月省回的時間",
-      equiv: "相當於 8 小時工作天",
+      title: "我可以幫你省多少時間？",
+      perDay: "每天報價",
+      minutes: "每份省下分鐘",
+      days: "每月工作天",
+      monthly: "每月省下",
+      equiv: "約等於",
       hours: "小時",
-      workdays: "天",
-      note: "按你輸入的數字估算，並非實際量度的產品表現。",
-      closing: "多點時間陪客戶，多點時間做代理。",
+      workdays: "個工作天",
+      note: "按你的數字估算。",
+      closing: "多點時間做代理。",
     },
     faq: {
       title: "你可能想問",
@@ -226,13 +222,12 @@ export const COPY: Record<SiteLang, Copy> = {
     what: {
       headline: "重複的工作，交給我。",
       items: [
-        "幾下點擊，為客戶準備附相片的報價：訊息、PDF 或連結。",
-        "每份 PDF 和連結都用上你自己的標誌和顏色。",
-        "整理和管理你的飛機相片。",
-        "查找飛機和營運商資料。",
-        "以輸入指令的方式與我合作。",
+        "幾下點擊，完成附相片的報價。",
+        "以訊息、PDF 或連結發送，附上你的標誌。",
+        "所有飛機相片，集中一處。",
+        "飛機資料，幾秒找到。",
       ],
-      next: "即將推出：已確認行程的行程表。",
+      next: "即將推出：行程表。",
     },
     demo: {
       intro: "只需幾下點擊，就能生成附相片的文字、網頁連結或 PDF 報價！",
@@ -259,18 +254,15 @@ export const COPY: Record<SiteLang, Copy> = {
       founderVideo: "我的創造者想說幾句",
       founderCta: "看 Toy 草擬報價",
       paragraphs: [
-        "我的創造者在私人飛機行業做了 14 年包機管家。多年來，他不斷準備報價單、尋找飛機相片、在不同平台之間周旋，於是想打造一位他一直希望擁有的助理。",
-        "不是每位代理都請得起助理。所以，他決定自己造一個。",
-        "他相信，學習始於玩樂。我，就是這樣誕生的。",
-        "我是他的第一個作品。",
-        "如今，我只需幾下點擊，就能準備好附有相片的報價單。",
+        "我的創造者一直想要一位助理。於是，他自己造了一個。",
+        "不用招聘，不會請病假，不分上下班。",
+        "我隨時都在。",
         "我也很想成為你的助理。",
       ],
       vision: "小小的開始，紮實的腳步，邁向無限可能。",
     },
     price: {
       headline: "一點協助，不必花很多錢。",
-      body: "專屬於你的工作空間、飛機資料庫、報價工具和個人助理。",
       soon: "收費資訊即將公布。",
     },
     cta: "擁有Toy吧!",
@@ -285,6 +277,7 @@ export const COPY: Record<SiteLang, Copy> = {
       benefit: "少点杂务，专心代理。",
       watch: "看我工作",
       watchSub: "两分钟内认识你的助理",
+      watchSubShort: "30 秒内认识你的助理",
       builtBy: "由代理打造，为代理而设。",
     },
     tryIt: {
@@ -303,17 +296,16 @@ export const COPY: Record<SiteLang, Copy> = {
     },
     next: { start: "你可以做什么？", what: "想看我实际操作吗？", tryIt: "我可以帮你省多少时间？", begins: "想看我实际操作吗？" },
     calc: {
-      title: "Toy 可以帮你省回多少时间？",
-      intro: "按你自己的工作日调整数字。",
-      perDay: "每天报价数量",
-      minutes: "每份报价节省的分钟",
-      days: "每月工作天数",
-      monthly: "每月省回的时间",
-      equiv: "相当于 8 小时工作天",
+      title: "我可以帮你省多少时间？",
+      perDay: "每天报价",
+      minutes: "每份省下分钟",
+      days: "每月工作天",
+      monthly: "每月省下",
+      equiv: "约等于",
       hours: "小时",
-      workdays: "天",
-      note: "按你输入的数字估算，并非实际量度的产品表现。",
-      closing: "多点时间陪客户，多点时间做代理。",
+      workdays: "个工作天",
+      note: "按你的数字估算。",
+      closing: "多点时间做代理。",
     },
     faq: {
       title: "你可能想问",
@@ -338,13 +330,12 @@ export const COPY: Record<SiteLang, Copy> = {
     what: {
       headline: "重复的工作，交给我。",
       items: [
-        "几下点击，为客户准备附照片的报价：消息、PDF 或链接。",
-        "每份 PDF 和链接都用上你自己的标志和颜色。",
-        "整理和管理你的飞机照片。",
-        "查找飞机和运营商资料。",
-        "以输入指令的方式与我合作。",
+        "几下点击，完成附照片的报价。",
+        "以信息、PDF 或链接发送，附上你的标志。",
+        "所有飞机照片，集中一处。",
+        "飞机资料，几秒找到。",
       ],
-      next: "即将推出：已确认行程的行程表。",
+      next: "即将推出：行程表。",
     },
     demo: {
       intro: "只需几下点击，就能生成附照片的文字、网页链接或 PDF 报价！",
@@ -371,18 +362,15 @@ export const COPY: Record<SiteLang, Copy> = {
       founderVideo: "我的创造者想说几句",
       founderCta: "看 Toy 起草报价",
       paragraphs: [
-        "我的创造者在私人飞机行业做了 14 年包机管家。多年来，他不断准备报价单、寻找飞机照片、在不同平台之间周旋，于是想打造一位他一直希望拥有的助理。",
-        "不是每位代理都请得起助理。所以，他决定自己造一个。",
-        "他相信，学习始于玩乐。我，就是这样诞生的。",
-        "我是他的第一个作品。",
-        "如今，我只需几下点击，就能准备好附有照片的报价单。",
+        "我的创造者一直想要一位助理。于是，他自己造了一个。",
+        "不用招聘，不会请病假，不分上下班。",
+        "我随时都在。",
         "我也很想成为你的助理。",
       ],
       vision: "小小的开始，扎实的脚步，迈向无限可能。",
     },
     price: {
       headline: "一点协助，不必花很多钱。",
-      body: "专属于你的工作空间、飞机资料库、报价工具和个人助理。",
       soon: "收费信息即将公布。",
     },
     cta: "拥有Toy吧!",
