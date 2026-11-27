@@ -505,7 +505,7 @@ export async function addToWorkspace(db: Db, store: FileStore, actor: Actor, lib
   if (!aircraftId) {
     const base = bases.length === 0 ? undefined : bases[0].mode === "floating" ? { mode: "floating" as const, locations: [] } : { mode: "based" as const, locations: bases.map((b) => b.location).filter((l): l is string => !!l) };
     aircraftId = (await createAircraft(db, actor, randomUUID(), {
-      aircraftTypeId: typeId, registration: card.tailNumber, operatorId, base, tailResolution: "distinct_aircraft",
+      aircraftTypeId: typeId, registration: card.tailNumber, operatorId, base, tailResolution: "distinct_aircraft", serialNumber: src.a.serialNumber,
       // Notes too: a library aircraft's notes are the admin's (from a pack), e.g. "Owner's approval required".
       info: { yom: card.yom, yor: card.yor, capacity: card.capacity, wifiStatus: card.wifi, wifiDetail: card.wifiDetail, smoking: card.smoking, pets: card.pets, cleaningFee: card.cleaningFee, notes: card.notes },
     })).result.aircraftId;
@@ -514,6 +514,26 @@ export async function addToWorkspace(db: Db, store: FileStore, actor: Actor, lib
   await db.insert(libraryCopies).values({ tenantId: actor.tenantId, aircraftId, libraryAircraftId, copied: pairs })
     .onConflictDoUpdate({ target: [libraryCopies.tenantId, libraryCopies.aircraftId], set: { libraryAircraftId, copied: pairs, updatedAt: new Date() } });
   return { aircraftId, photos: pairs.length, existed };
+}
+
+/**
+ * The library's directory: aircraft known only by their details (no approved photo yet), e.g. the US operators from
+ * the FAA's Part 135 list. They stay out of the long lists (Quote page, Fleet, the library's own list) and are found by
+ * searching the Library page; anyone the library is shared with can add one to their workspace and add photos there.
+ */
+export async function directoryLibraryAircraft(db: Db): Promise<Set<string>> {
+  const ready = await readyLibraryAircraft(db);
+  const all = await db.select({ id: aircraft.id }).from(aircraft).where(and(eq(aircraft.tenantId, LIBRARY_TENANT_ID), eq(aircraft.active, true)));
+  return new Set(all.map((a) => a.id).filter((id) => !ready.has(id)));
+}
+
+/** Library operators with at least one aircraft that has an approved photo (the ones worth choosing between). */
+export async function readyLibraryOperators(db: Db): Promise<Set<string>> {
+  const ready = await readyLibraryAircraft(db);
+  if (!ready.size) return new Set();
+  const links = await db.select({ aircraftId: organisationAircraftRelationships.aircraftId, operatorId: organisationAircraftRelationships.organisationId })
+    .from(organisationAircraftRelationships).where(and(eq(organisationAircraftRelationships.role, "operator"), eq(organisationAircraftRelationships.active, true), inArray(organisationAircraftRelationships.aircraftId, [...ready])));
+  return new Set(links.map((l) => l.operatorId));
 }
 
 /** The library aircraft of one library operator. */
@@ -741,6 +761,8 @@ export async function acceptUpdates(
 export interface PackAircraft {
   type: string; // e.g. "Gulfstream G650ER"
   tail?: string | null; // leave out when the brochure hides it (e.g. "VP-CXX")
+  /** The manufacturer's serial number (MSN), e.g. from the FAA's list of Part 135 aircraft. */
+  serial?: string | null;
   base?: string[];
   /** No fixed base (e.g. AirX's jets): shown as "Floating". */
   floating?: boolean;
@@ -910,7 +932,7 @@ export async function importLibraryPack(
       }
     } else {
       aircraftId = (await createAircraft(db, lib, randomUUID(), {
-        aircraftTypeId: type.id, registration: tail, operatorId, info,
+        aircraftTypeId: type.id, registration: tail, operatorId, info, serialNumber: a.serial?.trim() || null,
         base: a.floating ? { mode: "floating", locations: [] } : bases.length ? { mode: "based", locations: bases } : undefined,
         tailResolution: "distinct_aircraft",
       })).result.aircraftId;

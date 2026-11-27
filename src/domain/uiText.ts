@@ -1373,6 +1373,13 @@ export const UI_HANT: Record<string, string> = {
   "Approving…": "批准中…",
   "Decline": "拒絕",
   "That application was already handled.": "該申請已經處理。",
+  // The library's directory (aircraft known by their details only)
+  "Plus a directory of {n} aircraft known by their details only (no photos yet): search by operator, type or tail to find them.": "另有一個名錄，收錄 {n} 架只有資料（暫時未有相片）的飛機：可按營運商、機型或機尾號搜尋。",
+  "No library aircraft with photos match; see the directory below.": "沒有符合的附相片資料庫飛機；請查看下面的名錄。",
+  "Directory: {n} aircraft known by their details only": "名錄：{n} 架只有資料的飛機",
+  "From public registers (the FAA's list of US Part 135 operators): operator, type and tail. No photos yet: add one to your workspace, then add its photos and details there to quote it.": "資料來自公開登記冊（美國聯邦航空局的 Part 135 營運商名單）：營運商、機型及機尾號。暫時未有相片：請先加入你的工作區，再在那裡加入相片和資料，即可用於報價。",
+  "Showing the first {n}; search more precisely to see others.": "只顯示首 {n} 架；請收窄搜尋範圍以查看其他。",
+  "Add this operator's fleet to my workspace": "把這個營運商的機隊加入我的工作區",
   "Getting started with Toy": "Toy 使用指南",
   "Your first quote in 30 seconds": "30 秒完成第一份報價",
   "Tell Toy the aircraft, the routing, the date, the passengers and the price, in one line. Toy finds the aircraft, adds the routing and gives you the message, the photos and a link for your client.": "用一句話告訴 Toy 飛機、行程、日期、乘客人數和價格。Toy 會找到飛機、加入行程，並給你訊息、相片和給客戶的連結。",

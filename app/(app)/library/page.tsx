@@ -47,9 +47,9 @@ export default async function Library({ searchParams }: { searchParams: SP }) {
   for (const id of copied) adding.delete(id);
   const q = (one(sp.q) ?? "").trim().toLowerCase();
   const showAll = one(sp.all) === "1";
-  const [rows, orgs, waiting, infos, myTails] = await Promise.all([
-    // Only the aircraft open to this person (for brokers: ones that already have an approved photo).
-    getCatalogue(db, LIBRARY_TENANT_ID).then((list) => list.filter((r) => scopeHasAircraft(scope, r.aircraftId))),
+  const readySet = await readyLibraryAircraft(db);
+  const [allLib, orgs, waiting, infos, myTails, allOrgs] = await Promise.all([
+    getCatalogue(db, LIBRARY_TENANT_ID),
     db.select().from(organisations).where(and(eq(organisations.tenantId, LIBRARY_TENANT_ID), eq(organisations.active, true))).orderBy(asc(organisations.canonicalName))
       // Only the operators the admin opened to this person.
       .then((list) => list.filter((o) => scopeHasOperator(scope, o.id))),
@@ -61,7 +61,13 @@ export default async function Library({ searchParams }: { searchParams: SP }) {
     db.select({ t: aircraftRegistrations.normalizedRegistration }).from(aircraftRegistrations)
       .innerJoin(aircraftTable, eq(aircraftTable.id, aircraftRegistrations.aircraftId))
       .where(and(eq(aircraftTable.tenantId, session.actor.tenantId), eq(aircraftTable.active, true), eq(aircraftRegistrations.isCurrent, true))),
+    db.select().from(organisations).where(and(eq(organisations.tenantId, LIBRARY_TENANT_ID), eq(organisations.active, true))),
   ]);
+  // The library proper: aircraft with photos, open to this person. The directory: aircraft known only by their
+  // details (e.g. the FAA's US Part 135 fleets), found by searching and open to everyone the library is shared with.
+  const rows = allLib.filter((r) => readySet.has(r.aircraftId) && scopeHasAircraft(scope, r.aircraftId));
+  const dirAll = allLib.filter((r) => !readySet.has(r.aircraftId));
+  const orgName = new Map(allOrgs.map((o) => [o.id, o]));
   const haveTail = new Set(myTails.map((x) => x.t));
   // Last change to an aircraft: its details or its newest approved photo.
   const updated = new Map<string, number>();
@@ -92,8 +98,16 @@ export default async function Library({ searchParams }: { searchParams: SP }) {
     // Operators with aircraft still to add go to the top.
     .sort((a, b) => Number(b.left > 0) - Number(a.left > 0));
   const totalAircraft = rows.filter((r) => scopeHasOperator(scope, r.operatorId)).length;
-  const ready = isAdmin ? await readyLibraryAircraft(db) : null;
-  const notReady = ready ? rows.filter((r) => !ready.has(r.aircraftId)).length : 0;
+  // The directory's matches for this search: an operator found by name shows its fleet, otherwise matching aircraft.
+  const DIR_MAX = 60;
+  const dirFound = !words.length ? [] : dirAll.filter((r) => {
+    const o = r.operatorId ? orgName.get(r.operatorId) : undefined;
+    return matchesWords(`${o?.canonicalName ?? ""} ${o?.region ?? ""}`, words) || matchesWords(`${r.aircraft} ${r.tail ?? ""} ${o?.canonicalName ?? ""}`, words);
+  });
+  const dirShown = dirFound.slice(0, DIR_MAX);
+  const dirGroups = [...dirShown.reduce((m, r) => m.set(r.operatorId ?? "", [...(m.get(r.operatorId ?? "") ?? []), r]), new Map<string, typeof dirShown>())]
+    .map(([id, list]) => ({ o: orgName.get(id), list: list.sort((a, b) => a.aircraft.localeCompare(b.aircraft) || (a.tail ?? "").localeCompare(b.tail ?? "")) }))
+    .sort((a, b) => (a.o?.canonicalName ?? "").localeCompare(b.o?.canonicalName ?? ""));
   const shownCount = shown.reduce((n, s) => n + s.aircraft.length, 0);
 
   // Details and photos only for what is shown, a few aircraft at a time.
@@ -131,7 +145,7 @@ export default async function Library({ searchParams }: { searchParams: SP }) {
       <div className="people-head" style={{ marginBottom: 10 }}>
         <p className="muted small" style={{ margin: 0 }}>
           {orgs.length === 1 ? t("The Aircraft Media library: {n} operator, {total} aircraft. Library aircraft can be quoted straight away (Quote page and Toy). Add one to your workspace to edit it or add your own photos.", { n: orgs.length, total: totalAircraft }) : t("The Aircraft Media library: {n} operators, {total} aircraft. Library aircraft can be quoted straight away (Quote page and Toy). Add one to your workspace to edit it or add your own photos.", { n: orgs.length, total: totalAircraft })}
-          {notReady > 0 && <> {t("{n} aircraft without an approved photo yet are shown only to you.", { n: notReady })}</>}
+          {dirAll.length > 0 && <> {t("Plus a directory of {n} aircraft known by their details only (no photos yet): search by operator, type or tail to find them.", { n: dirAll.length })}</>}
         </p>
         {isAdmin && (
           <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
@@ -154,7 +168,7 @@ export default async function Library({ searchParams }: { searchParams: SP }) {
       {shown.length === 0 && (
         <div className="card muted">
           {orgs.length === 0 ? (isAdmin ? t("The library is empty. Photos arrive in Library review once people who share with the library approve them.") : t("The library is empty for now."))
-            : words.length ? t("Nothing matches that search.") : t("Everything in the library is in your workspace and nothing changed in the last {n} days.", { n: RECENT_DAYS })}
+            : words.length ? (dirFound.length ? t("No library aircraft with photos match; see the directory below.") : t("Nothing matches that search.")) : t("Everything in the library is in your workspace and nothing changed in the last {n} days.", { n: RECENT_DAYS })}
         </div>
       )}
       {shown.map(({ o, aircraft, left }) => (
@@ -217,6 +231,41 @@ export default async function Library({ searchParams }: { searchParams: SP }) {
           })}
         </div>
       ))}
+      {dirFound.length > 0 && (
+        <div className="card">
+          <h3 style={{ marginTop: 0 }}>{t("Directory: {n} aircraft known by their details only", { n: dirFound.length })}</h3>
+          <p className="small muted" style={{ marginTop: 0 }}>
+            {t("From public registers (the FAA's list of US Part 135 operators): operator, type and tail. No photos yet: add one to your workspace, then add its photos and details there to quote it.")}
+            {dirFound.length > DIR_MAX && <> {t("Showing the first {n}; search more precisely to see others.", { n: DIR_MAX })}</>}
+          </p>
+          {dirGroups.map(({ o, list }) => (
+            <div key={o?.id ?? "none"} className="lib-ac">
+              <div className="person-head">
+                <div><b>{o?.canonicalName ?? t("No operator")}</b> <span className="pill wait">{t("{n} aircraft", { n: list.length })}</span></div>
+                {canAdd && o && list.some((r) => !copied.has(r.aircraftId) && !adding.has(r.aircraftId)) && list.length > 1 && (
+                  <form action={addFromLibraryAction}>
+                    <input type="hidden" name="libraryOperatorId" value={o.id} /><input type="hidden" name="q" value={one(sp.q) ?? ""} />
+                    <PendingButton className="secondary small-btn" pending={t("Adding…")}>{t("Add this operator's fleet to my workspace")}</PendingButton>
+                  </form>
+                )}
+              </div>
+              {list.map((r) => (
+                <div key={r.aircraftId} className="person-head small" style={{ padding: "4px 0" }}>
+                  <span>{r.aircraft}{r.tail ? ` · ${r.tail}` : ""}</span>
+                  {copied.has(r.aircraftId) ? <span className="pill ok">{t("In your workspace")}</span>
+                    : adding.has(r.aircraftId) ? <span className="pill wait">{t("Adding…")}</span>
+                    : canAdd && (
+                    <form action={addFromLibraryAction}>
+                      <input type="hidden" name="libraryAircraftId" value={r.aircraftId} /><input type="hidden" name="q" value={one(sp.q) ?? ""} />
+                      <PendingButton className="secondary small-btn" pending={t("Adding…")}>{t("Add to my workspace")}</PendingButton>
+                    </form>
+                  )}
+                </div>
+              ))}
+            </div>
+          ))}
+        </div>
+      )}
     </>
   );
 }

@@ -7,7 +7,7 @@ import { aircraft, aircraftMedia, announcements, organisations, users } from "@/
 import { requireAdmin } from "@/lib/session";
 import { serverT } from "@/lib/uiLang";
 import { TRIAL_DAYS, accessFor } from "@/domain/accounts";
-import { LIBRARY_TENANT_ID } from "@/domain/library";
+import { LIBRARY_TENANT_ID, readyLibraryOperators } from "@/domain/library";
 import { quoteShareStats, type QuoteShareStats } from "@/domain/quoteShares";
 import {
   extendTrialAction, inviteUserAction, setBlockedAction, setLibraryAccessAction, setLibraryOperatorsAction, setPlanAction, viewAsAction, withdrawInviteAction,
@@ -49,8 +49,11 @@ export default async function Admin({ searchParams }: { searchParams: SP }) {
   const ops = toMap(await db.select({ t: organisations.tenantId, n: count() }).from(organisations).where(eq(organisations.active, true)).groupBy(organisations.tenantId));
   const shares = await quoteShareStats(db);
   // The library's operators, to choose which ones each person may see.
-  const libOps = await db.select({ id: organisations.id, name: organisations.canonicalName }).from(organisations)
-    .where(and(eq(organisations.tenantId, LIBRARY_TENANT_ID), eq(organisations.active, true))).orderBy(asc(organisations.canonicalName));
+  // Only library operators with aircraft that have photos: the directory's (details only) are open to everyone anyway.
+  const readyOps = await readyLibraryOperators(db);
+  const libOps = (await db.select({ id: organisations.id, name: organisations.canonicalName }).from(organisations)
+    .where(and(eq(organisations.tenantId, LIBRARY_TENANT_ID), eq(organisations.active, true))).orderBy(asc(organisations.canonicalName)))
+    .filter((o) => readyOps.has(o.id));
   const mine = me.viewingAs ? undefined : shares.get(me.actor.tenantId);
   const activity = await activityByTenant(db);
   const overview = await userOverview(db, me.email);
