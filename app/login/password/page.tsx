@@ -2,7 +2,8 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { devBypassEnabled } from "@/lib/owner";
 import { getDb } from "@/db/client";
-import { LINK_MINUTES, createSignInLink } from "@/domain/signInLinks";
+import { LINK_MINUTES, createSignInLink, looksLikeEmail, mayUseApp } from "@/domain/signInLinks";
+import { startTrialWithNotice } from "@/lib/signupNotice";
 import { sendMail } from "@/lib/mail";
 import { siteAddress } from "@/lib/site";
 import { serverT } from "@/lib/uiLang";
@@ -11,7 +12,12 @@ import SignInShell from "../SignInShell";
 async function sendPasswordLinkAction(fd: FormData) {
   "use server";
   const email = String(fd.get("email") ?? "").trim();
-  const token = await createSignInLink(await getDb(), email, "password");
+  const db = await getDb();
+  // Someone new (not on the list): this sends their application for a free trial, as the trial page does.
+  if (looksLikeEmail(email.toLowerCase()) && (await mayUseApp(db, email)) === "not_invited") await startTrialWithNotice(db, email, null, "the sign-in page");
+  // An application waiting for approval gets no link yet: say so.
+  if ((await mayUseApp(db, email)) === "pending") redirect(`/login/password?applied=${encodeURIComponent(email.toLowerCase())}`);
+  const token = await createSignInLink(db, email, "password");
   if (token) {
     const site = await siteAddress();
     if (!site) { console.error("Set APP_URL to send password links"); redirect("/login/password?error=mail"); }
@@ -28,13 +34,13 @@ async function sendPasswordLinkAction(fd: FormData) {
       redirect("/login/password?error=mail");
     }
   }
-  // The same answer whether or not the email was invited, so the form doesn't tell strangers who is.
+  // The same answer for everyone (a link is on its way), so the form doesn't tell strangers who has an account.
   redirect(`/login/password?sent=${encodeURIComponent(email.toLowerCase())}`);
 }
 
-export default async function PasswordLinkPage({ searchParams }: { searchParams: Promise<{ email?: string; sent?: string; error?: string }> }) {
+export default async function PasswordLinkPage({ searchParams }: { searchParams: Promise<{ email?: string; sent?: string; error?: string; applied?: string }> }) {
   if (devBypassEnabled()) redirect("/");
-  const { email, sent, error } = await searchParams;
+  const { email, sent, error, applied } = await searchParams;
   const t = await serverT();
   return (
     <SignInShell
@@ -42,8 +48,9 @@ export default async function PasswordLinkPage({ searchParams }: { searchParams:
       intro={t("First time here, or forgot your password? We'll email you a link to set one.")}
       footer={{ privacy: t("Privacy"), terms: t("Terms") }}
     >
+      {applied && <div className="flash ok">{t("Thanks for signing up! Your application is being reviewed; we'll email {email} as soon as it's approved.", { email: applied })}</div>}
       {error === "mail" && <div className="flash err">{t("The email couldn't be sent just now. Try again in a minute.")}</div>}
-      {sent && <div className="flash ok">{t("If {email} has been invited, the email is on its way. Check your inbox (and junk folder). The link works for {n} minutes.", { email: sent, n: LINK_MINUTES })}</div>}
+      {sent && <div className="flash ok">{t("The email to {email} is on its way. Check your inbox (and junk folder). The link works for {n} minutes.", { email: sent, n: LINK_MINUTES })}</div>}
       <form action={sendPasswordLinkAction} className="signin-form login-email">
         <label htmlFor="email">{t("Your email")}</label>
         <input id="email" name="email" type="email" required autoComplete="email" placeholder="name@company.com" defaultValue={sent ?? email ?? ""} />

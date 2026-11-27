@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { devBypassEnabled, isOwnerEmail, normalizePhone } from "../src/lib/owner";
+import { devBypassEnabled, isOwnerEmail, normalizePhone, supportEmail } from "../src/lib/owner";
 import { setup, key } from "./helpers";
 import { addVerifiedNumber } from "../src/domain/settings";
 import { createOrganisation, resolveOrganisations } from "../src/domain/directory";
@@ -12,6 +12,12 @@ describe("Test 14 (single-user form) — only the owner can use the app", () => 
     expect(isOwnerEmail("someone.else@example.com", "owner@example.com")).toBe(false);
     expect(isOwnerEmail(null, "owner@example.com")).toBe(false);
     expect(isOwnerEmail("owner@example.com", undefined)).toBe(false); // unset owner locks everyone out
+    // More admins in ADMIN_EMAILS (comma-separated), e.g. the platform's own address.
+    expect(isOwnerEmail("Toy@AircraftMedia.my", "owner@example.com", "toy@aircraftmedia.my, ops@aircraftmedia.my")).toBe(true);
+    expect(isOwnerEmail("ops@aircraftmedia.my", "owner@example.com", "toy@aircraftmedia.my, ops@aircraftmedia.my")).toBe(true);
+    expect(isOwnerEmail("someone@example.com", "owner@example.com", "toy@aircraftmedia.my")).toBe(false);
+    expect(supportEmail({ SUPPORT_EMAIL: "toy@aircraftmedia.my", OWNER_EMAIL: "o@x.com" } as unknown as NodeJS.ProcessEnv)).toBe("toy@aircraftmedia.my");
+    expect(supportEmail({ OWNER_EMAIL: "o@x.com" } as unknown as NodeJS.ProcessEnv)).toBe("o@x.com");
   });
 
   it("never enables the dev bypass in production", () => {

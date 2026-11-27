@@ -16,6 +16,8 @@ import { Flash, Key, one, type SP } from "../../_components/ui";
 import Choice from "../../_components/Choice";
 import { activityByTenant, userOverview } from "@/domain/adminStats";
 import { sendAnnouncementAction } from "../../adminMailActions";
+import { approveApplicationAction, declineApplicationAction } from "../../applicationActions";
+import { isOwnerEmail } from "@/lib/owner";
 import { PendingButton } from "../../_components/PendingButton";
 import LocalTime from "../../_components/LocalTime";
 
@@ -37,7 +39,10 @@ export default async function Admin({ searchParams }: { searchParams: SP }) {
   const h = await headers();
   const appLink = `${h.get("x-forwarded-proto") ?? "https"}://${h.get("x-forwarded-host") ?? h.get("host") ?? "aircraft-media.onrender.com"}`;
   const db = await getDb();
-  const people = (await db.select().from(users).orderBy(asc(users.createdAt))).filter((u) => u.id !== me.actor.id && u.email !== me.email);
+  // Everyone but the platform admins; applications waiting for approval are listed on their own, newest first.
+  const everyone = (await db.select().from(users).orderBy(asc(users.createdAt))).filter((u) => u.id !== me.actor.id && u.email !== me.email && !isOwnerEmail(u.email));
+  const applications = everyone.filter((u) => u.status === "applied").reverse();
+  const people = everyone.filter((u) => u.status !== "applied");
   const toMap = (rows: { t: string; n: number }[]) => new Map(rows.map((r) => [r.t, Number(r.n)]));
   const photos = toMap(await db.select({ t: aircraftMedia.tenantId, n: count() }).from(aircraftMedia).where(eq(aircraftMedia.lifecycleState, "active")).groupBy(aircraftMedia.tenantId));
   const planes = toMap(await db.select({ t: aircraft.tenantId, n: count() }).from(aircraft).where(eq(aircraft.active, true)).groupBy(aircraft.tenantId));
@@ -55,6 +60,23 @@ export default async function Admin({ searchParams }: { searchParams: SP }) {
     <>
       <div className="people-head"><h1 style={{ margin: 0 }}>{t("Users")}</h1><Link href="/admin/speed" className="btn secondary small-btn">{t("Speed")}</Link></div>
       <Flash error={one(sp.error)} ok={one(sp.ok)} />
+      <div className="card" id="applications">
+        <h3 style={{ marginTop: 0 }}>{t("Applications ({n})", { n: applications.length })}</h3>
+        {applications.length === 0 ? <p className="small muted" style={{ margin: 0 }}>{t("No one is waiting. New sign-ups appear here, and toy@aircraftmedia.my gets an email for each.")}</p> : applications.map((u) => (
+          <div key={u.id} className="person">
+            <div className="person-head">
+              <div style={{ minWidth: 0 }}>
+                <b>{u.displayName}</b> <span className="pill warn">{u.signupVia === "google" ? t("with Google") : t("with email")}</span>
+                <div className="small muted">{u.email} · {t("applied {date}", { date: day(u.signedUpAt ?? u.createdAt) })}</div>
+              </div>
+              <div style={{ display: "flex", gap: 6 }}>
+                <form action={approveApplicationAction}><input type="hidden" name="userId" value={u.id} /><PendingButton pending={t("Approving…")} className="small-btn">{t("Approve")}</PendingButton></form>
+                <form action={declineApplicationAction}><input type="hidden" name="userId" value={u.id} /><button type="submit" className="secondary small-btn">{t("Decline")}</button></form>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
       <div className="card">
         <div className="stats">
           <div className="stat"><span className="stat-n">{overview.people}</span><span className="stat-l">{t("people")}</span></div>

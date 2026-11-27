@@ -5,6 +5,7 @@ import { headers } from "next/headers";
 import { requireUser } from "@/lib/session";
 import { serverT } from "@/lib/uiLang";
 import { sendMail } from "@/lib/mail";
+import { supportEmail } from "@/lib/owner";
 
 /** What a broker can write to us about; the English name goes into the email subject. */
 const SUPPORT_TOPICS = ["Problem", "Question", "Idea or feedback", "Billing"] as const;
@@ -12,7 +13,7 @@ const MAX = 5000;
 
 const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]!);
 
-/** Support page: emails the broker's message to the admin (OWNER_EMAIL), with a reply-to of the broker's email. Nothing is stored. */
+/** Support page: emails the broker's message to the platform's address (SUPPORT_EMAIL, toy@aircraftmedia.my), with a reply-to of the broker's email. Nothing is stored. */
 export async function sendSupportAction(fd: FormData) {
   const s = await requireUser();
   const t = await serverT();
@@ -23,7 +24,7 @@ export async function sendSupportAction(fd: FormData) {
   const back = (q: string) => redirect(`/support?${q}`);
   if (!message) back(`error=${encodeURIComponent(t("Write your message first."))}`);
   if (message.length > MAX) back(`error=${encodeURIComponent(t("That message is too long (at most {n} characters).", { n: MAX }))}`);
-  const to = process.env.OWNER_EMAIL;
+  const to = supportEmail();
   if (!to) back(`error=${encodeURIComponent(t("Support email is not set up yet. Please try again later."))}`);
   const from = s.viewingAs ? `${s.email} (viewing ${s.viewingAs.email})` : s.email;
   const agent = (await headers()).get("user-agent") ?? "";

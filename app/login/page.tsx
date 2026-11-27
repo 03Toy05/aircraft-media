@@ -9,6 +9,7 @@ import SignInShell from "./SignInShell";
 const ERRORS: Record<string, string> = {
   not_invited: "That account hasn't been invited yet. Ask the admin to add your email.",
   blocked: "Access for this account has been turned off. Contact the admin.",
+  pending: "Thanks for signing up! Your application is being reviewed; we'll email you as soon as it's approved.",
   wrong: "That email and password don't match. Check them, or set a new password below.",
   locked: "Too many wrong tries. Wait 15 minutes, or set a new password below.",
   link: "That link has expired or was already used. Ask for a new one.",

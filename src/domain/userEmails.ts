@@ -4,6 +4,7 @@ import type { Db } from "../db/client";
 import { announcements, users } from "../db/schema";
 import { TRIAL_DAYS, accessFor } from "./accounts";
 import type { Mail } from "../lib/mail";
+import { supportEmail } from "../lib/owner";
 
 /**
  * Emails from Aircraft Media to its users: a welcome when someone starts their own trial, a reminder 3 days before the
@@ -27,7 +28,7 @@ function mail(to: string, subject: string, paras: string[], button?: { label: st
     (button ? `<p style="margin:20px 0"><a href="${esc(button.href)}" style="background:#1f3a5f;color:#fff;padding:10px 18px;border-radius:6px;text-decoration:none;display:inline-block">${esc(button.label)}</a></p>` : "") +
     (footer ? `<p style="margin:24px 0 0;font-size:12px;color:#6b7280;white-space:pre-wrap">${esc(footer)}</p>` : "") +
     `</div>`;
-  return { to, subject, text, html, replyTo: process.env.OWNER_EMAIL || undefined };
+  return { to, subject, text, html, replyTo: supportEmail() || undefined };
 }
 
 const hello = (name: string) => `Hi ${name.trim() || "there"},`;
@@ -60,6 +61,19 @@ export function trialEndedMail(site: string, u: { email: string; displayName: st
     "Your free trial has ended. Your aircraft, photos and quotes are kept, and you can still look at them and share them.",
     pay ? "To add and change things again, choose a plan." : "To add and change things again, reply to this email and we'll set you up.",
   ], pay ? { label: "Choose a plan", href: pay } : { label: "Open Aircraft Media", href: site });
+}
+
+/** An approved application: how to sign in (with Google, or by setting a password first). */
+export function approvedMail(site: string, u: { email: string; displayName: string; signupVia: string | null }): Mail {
+  const google = u.signupVia === "google";
+  return mail(u.email, "You're in: your Aircraft Media trial is ready", [
+    hello(u.displayName),
+    `Your application has been approved. Your ${TRIAL_DAYS}-day free trial starts when you first sign in.`,
+    google
+      ? `Sign in with Google, using ${u.email}.`
+      : "First, set your password with the link below (enter this email address and we'll send you a link), then sign in.",
+    "Questions? Just reply to this email.",
+  ], google ? { label: "Sign in", href: `${site}/login` } : { label: "Set my password", href: `${site}/login/password?email=${encodeURIComponent(u.email)}` });
 }
 
 // ---------------------------------------------------------------- unsubscribing from announcements

@@ -4,7 +4,7 @@ import Credentials from "next-auth/providers/credentials";
 import { getDb } from "./db/client";
 import { mayUseApp } from "./domain/signInLinks";
 import { checkPassword } from "./domain/passwords";
-import { startTrial } from "./domain/signup";
+import { startTrialWithNotice } from "./lib/signupNotice";
 
 /** Too many wrong passwords: the sign-in page says to wait (or reset it). */
 class LockedSignin extends CredentialsSignin { code = "locked"; }
@@ -38,7 +38,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       const db = await getDb();
       let ok = await mayUseApp(db, email);
       if (ok === "not_invited" && account?.provider === "google") {
-        await startTrial(db, email, typeof profile?.name === "string" ? profile.name : null);
+        await startTrialWithNotice(db, email, typeof profile?.name === "string" ? profile.name : null, "Google"); // an application, until approved
         ok = await mayUseApp(db, email);
       }
       return ok === "ok" ? true : `/login?error=${ok}`;

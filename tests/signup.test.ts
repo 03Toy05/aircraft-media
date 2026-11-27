@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { eq } from "drizzle-orm";
 import { setup } from "./helpers";
-import { TRIAL_DAYS, accessFor, recordSignIn } from "../src/domain/accounts";
+import { TRIAL_DAYS, accessFor, approveApplication, declineApplication, recordSignIn } from "../src/domain/accounts";
 import { startTrial } from "../src/domain/signup";
 import { mayUseApp } from "../src/domain/signInLinks";
 import { audienceOf, checkUnsubscribe, sendAnnouncement, sendDueEmails, setEmailOptOut, unsubscribeSig } from "../src/domain/userEmails";
@@ -22,14 +22,18 @@ beforeEach(async () => {
 });
 
 describe("Free trial sign-up", () => {
-  it("makes a trial account with the library, and the clock starts at first sign-in", async () => {
+  it("makes an application, which can sign in once approved; the clock starts at first sign-in", async () => {
     const now = new Date("2026-12-01T00:00:00Z");
     const r = await startTrial(t.db, "  New.Broker@Example.com ", "New Broker", now);
     expect(r?.created).toBe(true);
-    expect(r?.user).toMatchObject({ email: "new.broker@example.com", plan: "trial", status: "invited", libraryAccess: true, displayName: "New Broker" });
+    expect(r?.user).toMatchObject({ email: "new.broker@example.com", plan: "trial", status: "applied", libraryAccess: true, displayName: "New Broker", signupVia: "email" });
     expect(r?.user.trialEndsAt).toBeNull();
+    expect(await mayUseApp(t.db, "new.broker@example.com")).toBe("pending"); // waiting for approval
+    const approved = await approveApplication(t.db, "owner@example.test", r!.user.id);
+    expect(approved.status).toBe("invited");
     expect(await mayUseApp(t.db, "new.broker@example.com")).toBe("ok");
-    const signedIn = await recordSignIn(t.db, r!.user, now);
+    await expect(approveApplication(t.db, "owner@example.test", r!.user.id)).rejects.toThrow(/already handled/);
+    const signedIn = await recordSignIn(t.db, approved, now);
     expect(signedIn.trialEndsAt?.getTime()).toBe(now.getTime() + TRIAL_DAYS * DAY);
     expect(accessFor(signedIn, new Date(now.getTime() + 15 * DAY)).readOnly).toBe(true); // look-only after day 14
   });
@@ -39,6 +43,16 @@ describe("Free trial sign-up", () => {
     expect((await startTrial(t.db, "A@example.com"))?.created).toBe(false);
     expect(await startTrial(t.db, "not an email")).toBeNull();
     expect((await t.db.select().from(users).where(eq(users.email, "a@example.com"))).length).toBe(1);
+  });
+});
+
+describe("Declining an application", () => {
+  it("removes it, so they can apply again", async () => {
+    const r = await startTrial(t.db, "no@example.com", null, new Date(), "google");
+    expect(r?.user.signupVia).toBe("google");
+    await declineApplication(t.db, "owner@example.test", r!.user.id);
+    expect(await mayUseApp(t.db, "no@example.com")).toBe("not_invited");
+    expect((await startTrial(t.db, "no@example.com"))?.created).toBe(true);
   });
 });
 
@@ -112,7 +126,8 @@ describe("Announcements", () => {
 describe("The admin's numbers", () => {
   it("counts people by state and new sign-ups", async () => {
     const now = new Date();
-    const a = (await startTrial(t.db, "a@example.com", "A", now))!.user;
+    await startTrial(t.db, "waiting@example.com", "W", now); // an application: not counted yet
+    const a = await approveApplication(t.db, "owner@example.test", (await startTrial(t.db, "a@example.com", "A", now))!.user.id);
     await recordSignIn(t.db, a, now);
     const o = await userOverview(t.db, "owner@example.test", now);
     expect(o).toMatchObject({ trial: 1, signups7: 1, active30: 1 });

@@ -93,6 +93,22 @@ export async function setBlocked(db: Db, adminEmail: string, userId: string, blo
   await db.update(users).set({ status, updatedAt: new Date() }).where(eq(users.id, u.id));
 }
 
+/** Admin: approve a free-trial application. They can sign in from now on; their trial starts at their first sign-in. */
+export async function approveApplication(db: Db, adminEmail: string, userId: string): Promise<AccountRow> {
+  const u = await otherUser(db, userId, adminEmail);
+  if (u.status !== "applied") throw new DomainError("NOT_APPLIED", "That application was already handled.");
+  const [row] = await db.update(users).set({ status: "invited", updatedAt: new Date() }).where(eq(users.id, u.id)).returning();
+  return row;
+}
+
+/** Admin: decline a free-trial application. It is removed; they can apply again later. */
+export async function declineApplication(db: Db, adminEmail: string, userId: string): Promise<AccountRow> {
+  const u = await otherUser(db, userId, adminEmail);
+  if (u.status !== "applied") throw new DomainError("NOT_APPLIED", "That application was already handled.");
+  await db.delete(users).where(and(eq(users.id, u.id), eq(users.status, "applied")));
+  return u;
+}
+
 /** Admin: withdraw an invitation nobody has used yet (a user who signed in is blocked instead, so their work is kept). */
 export async function withdrawInvite(db: Db, adminEmail: string, userId: string) {
   const u = await otherUser(db, userId, adminEmail);

@@ -56,7 +56,7 @@ export const users = pgTable(
     displayName: text("display_name").notNull(),
     role: text("role").notNull().default("owner"), // each user owns their own workspace (tenant)
     preferredLanguage: text("preferred_language").notNull().default("en"),
-    /** invited (not signed in yet) | active | blocked */
+    /** applied (signed up, waiting for the admin's approval) | invited (not signed in yet) | active | blocked */
     status: text("status").notNull().default("active"),
     /** trial: may add and change things until trialEndsAt, read-only after | full: no time limit */
     plan: text("plan").notNull().default("full"),
@@ -77,6 +77,8 @@ export const users = pgTable(
     passwordLockedUntil: timestamp("password_locked_until", { withTimezone: true }),
     /** Started their own trial from the website (not invited by the admin). */
     signedUpAt: timestamp("signed_up_at", { withTimezone: true }),
+    /** How they signed up: google | email (to tell them how to sign in once approved). */
+    signupVia: text("signup_via"),
     /** When each automatic email went out (welcome, trial ending soon, trial ended), so each is sent once. */
     welcomedAt: timestamp("welcomed_at", { withTimezone: true }),
     trialReminderAt: timestamp("trial_reminder_at", { withTimezone: true }),

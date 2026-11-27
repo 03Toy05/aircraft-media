@@ -20,12 +20,12 @@ export const cleanEmail = (email: string) => email.trim().toLowerCase();
 export const looksLikeEmail = (email: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) && email.length <= 254;
 
 /** Whether this email may sign in at all: the admin, or someone invited and not turned off. */
-export async function mayUseApp(db: Db, email: string): Promise<"ok" | "not_invited" | "blocked"> {
+export async function mayUseApp(db: Db, email: string): Promise<"ok" | "not_invited" | "blocked" | "pending"> {
   const e = cleanEmail(email);
   if (isOwnerEmail(e)) return "ok";
   const [u] = await db.select({ status: users.status }).from(users).where(eq(users.email, e));
   if (!u) return "not_invited";
-  return u.status === "blocked" ? "blocked" : "ok";
+  return u.status === "blocked" ? "blocked" : u.status === "applied" ? "pending" : "ok";
 }
 
 /**

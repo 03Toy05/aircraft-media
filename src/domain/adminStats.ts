@@ -30,7 +30,7 @@ export async function activityByTenant(db: Db, now = new Date()): Promise<Map<st
 
 /** The numbers at the top of the Users page. */
 export async function userOverview(db: Db, adminEmail: string, now = new Date()) {
-  const all = (await db.select().from(users)).filter((u) => u.email.toLowerCase() !== adminEmail.toLowerCase());
+  const all = (await db.select().from(users)).filter((u) => u.email.toLowerCase() !== adminEmail.toLowerCase() && u.status !== "applied");
   const week = now.getTime() - 7 * 864e5, month = now.getTime() - 30 * 864e5;
   let trial = 0, ended = 0, full = 0, off = 0;
   for (const u of all) {

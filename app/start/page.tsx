@@ -4,7 +4,7 @@ import { signIn } from "@/auth";
 import { devBypassEnabled } from "@/lib/owner";
 import { getDb } from "@/db/client";
 import { TRIAL_DAYS } from "@/domain/accounts";
-import { startTrial } from "@/domain/signup";
+import { startTrialWithNotice } from "@/lib/signupNotice";
 import { LINK_MINUTES, createSignInLink } from "@/domain/signInLinks";
 import { sendMail } from "@/lib/mail";
 import { siteAddress } from "@/lib/site";
@@ -17,8 +17,10 @@ async function startWithEmailAction(fd: FormData) {
   if (String(fd.get("website") ?? "")) redirect("/start?sent=1"); // a bot filled the hidden field
   const email = String(fd.get("email") ?? "").trim().toLowerCase();
   const db = await getDb();
-  const r = await startTrial(db, email, String(fd.get("name") ?? ""));
+  const r = await startTrialWithNotice(db, email, String(fd.get("name") ?? ""), "the free trial page");
   if (!r) redirect("/start?error=email");
+  // A new application (or one still waiting): nothing to sign in with until an admin approves it.
+  if (r.user.status === "applied") redirect(`/start?applied=${encodeURIComponent(email)}`);
   const token = r.user.status === "blocked" ? null : await createSignInLink(db, email, "password");
   if (token) {
     const site = await siteAddress();
@@ -46,9 +48,9 @@ async function startWithGoogleAction() {
 }
 
 /** "Start your 14-day free trial": open to anyone, no card. */
-export default async function StartPage({ searchParams }: { searchParams: Promise<{ sent?: string; error?: string }> }) {
+export default async function StartPage({ searchParams }: { searchParams: Promise<{ sent?: string; error?: string; applied?: string }> }) {
   if (devBypassEnabled()) redirect("/");
-  const { sent, error } = await searchParams;
+  const { sent, error, applied } = await searchParams;
   const t = await serverT();
   return (
     <main style={{ maxWidth: 440, margin: "10vh auto", padding: 16 }}>
@@ -58,6 +60,7 @@ export default async function StartPage({ searchParams }: { searchParams: Promis
         <img src="/logo.svg" alt="" width={48} height={48} />
         <h1>{t("Start your {n}-day free trial", { n: TRIAL_DAYS })}</h1>
         <p className="muted">{t("Your own workspace and the shared aircraft library, free for {n} days. No card needed. Afterwards you can still look at and share everything you made.", { n: TRIAL_DAYS })}</p>
+        {applied && <div className="flash ok">{t("Thanks for signing up! Your application is being reviewed; we'll email {email} as soon as it's approved.", { email: applied })}</div>}
         {error === "email" && <div className="flash err">{t("That doesn't look like an email address.")}</div>}
         {error === "mail" && <div className="flash err">{t("The email couldn't be sent just now. Try again in a minute.")}</div>}
         {sent && sent !== "1" && <div className="flash ok">{t("Check {email} for a link to set your password (and your junk folder). It works for {n} minutes.", { email: sent, n: LINK_MINUTES })}</div>}

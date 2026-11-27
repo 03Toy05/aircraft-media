@@ -62,6 +62,7 @@ export const requireUser = cache(async (): Promise<Session> => {
   }
   if (!u) redirect("/login?error=not_invited");
   if (u.status === "blocked" && !isAdmin) redirect("/login?error=blocked");
+  if (u.status === "applied" && !isAdmin) redirect("/login?error=pending"); // signed up, not approved yet
   if (u.status === "invited" || !u.lastSignInAt || Date.now() - u.lastSignInAt.getTime() > 3_600_000) u = await recordSignIn(db, u);
 
   const access = isAdmin ? { readOnly: false, daysLeft: null, expired: false } : accessFor(u);
