@@ -7,7 +7,7 @@ import { normalizeRegistration } from "@/domain/constants";
 import { requireOwner } from "@/lib/session";
 import { getCatalogue } from "@/domain/catalogue";
 import { matchesWords, searchWords } from "@/domain/searchMatch";
-import { getAircraftCard } from "@/domain/directory";
+import { getAircraftCard, orgAliasesFor } from "@/domain/directory";
 import { getLineup } from "@/domain/media";
 import { LIBRARY_TENANT_ID, addingNow, copiedLibraryAircraft, libraryScope, pendingCount, readyLibraryAircraft, scopeHasAircraft, scopeHasOperator } from "@/domain/library";
 import { addFromLibraryAction } from "../../actions";
@@ -68,6 +68,11 @@ export default async function Library({ searchParams }: { searchParams: SP }) {
   const rows = allLib.filter((r) => readySet.has(r.aircraftId) && scopeHasAircraft(scope, r.aircraftId));
   const dirAll = allLib.filter((r) => !readySet.has(r.aircraftId));
   const orgName = new Map(allOrgs.map((o) => [o.id, o]));
+  // Trading names (kept as the operator's aliases): brokers know most operators by these, so they lead.
+  const brands = new Map<string, string[]>();
+  for (const a of await orgAliasesFor(db, LIBRARY_TENANT_ID)) brands.set(a.organisationId, [...(brands.get(a.organisationId) ?? []), a.alias]);
+  const brandOf = (id: string | null | undefined) => (id ? brands.get(id)?.[0] ?? null : null);
+  const namesOf = (id: string | null | undefined, legal: string) => `${legal} ${(id && brands.get(id)?.join(" ")) || ""}`;
   const haveTail = new Set(myTails.map((x) => x.t));
   // Last change to an aircraft: its details or its newest approved photo.
   const updated = new Map<string, number>();
@@ -86,8 +91,8 @@ export default async function Library({ searchParams }: { searchParams: SP }) {
   const shown = orgs
     .map((o) => {
       const all = rows.filter((r) => r.operatorId === o.id);
-      const byName = !words.length || matchesWords(`${o.canonicalName} ${o.region ?? ""} ${o.base ?? ""}`, words);
-      const found = byName ? all : all.filter((a) => matchesWords(`${a.aircraft} ${a.tail ?? ""} ${o.canonicalName}`, words));
+      const byName = !words.length || matchesWords(`${namesOf(o.id, o.canonicalName)} ${o.region ?? ""} ${o.base ?? ""}`, words);
+      const found = byName ? all : all.filter((a) => matchesWords(`${a.aircraft} ${a.tail ?? ""} ${namesOf(o.id, o.canonicalName)}`, words));
       const aircraft = everything ? found : found.filter((a) => toAdd(a.aircraftId) || recent(a.aircraftId));
       hidden += found.length - aircraft.length;
       // Still to add first, then the newest changes.
@@ -102,7 +107,8 @@ export default async function Library({ searchParams }: { searchParams: SP }) {
   const DIR_MAX = 60;
   const dirFound = !words.length ? [] : dirAll.filter((r) => {
     const o = r.operatorId ? orgName.get(r.operatorId) : undefined;
-    return matchesWords(`${o?.canonicalName ?? ""} ${o?.region ?? ""}`, words) || matchesWords(`${r.aircraft} ${r.tail ?? ""} ${o?.canonicalName ?? ""}`, words);
+    const names = o ? namesOf(o.id, o.canonicalName) : "";
+    return matchesWords(`${names} ${o?.region ?? ""}`, words) || matchesWords(`${r.aircraft} ${r.tail ?? ""} ${names}`, words);
   });
   // One operator picked (e.g. from the A–Z list): its whole fleet, however large; otherwise the first DIR_MAX matches.
   const oneOperator = dirFound.length > 0 && dirFound.every((r) => r.operatorId === dirFound[0].operatorId);
@@ -110,15 +116,16 @@ export default async function Library({ searchParams }: { searchParams: SP }) {
   const dirShown = dirFound.slice(0, dirLimit);
   const dirGroups = [...dirShown.reduce((m, r) => m.set(r.operatorId ?? "", [...(m.get(r.operatorId ?? "") ?? []), r]), new Map<string, typeof dirShown>())]
     .map(([id, list]) => ({ o: orgName.get(id), list: list.sort((a, b) => a.aircraft.localeCompare(b.aircraft) || (a.tail ?? "").localeCompare(b.tail ?? "")) }))
-    .sort((a, b) => (a.o?.canonicalName ?? "").localeCompare(b.o?.canonicalName ?? ""));
+    .sort((a, b) => (brandOf(a.o?.id) ?? a.o?.canonicalName ?? "").localeCompare(brandOf(b.o?.id) ?? b.o?.canonicalName ?? ""));
   const shownCount = shown.reduce((n, s) => n + s.aircraft.length, 0);
   // Operators with photos (the library proper), and the directory's operators A–Z with their fleet sizes.
   const photoOps = new Set(rows.filter((r) => scopeHasOperator(scope, r.operatorId)).map((r) => r.operatorId));
   const dirCount = dirAll.reduce((m, r) => (r.operatorId ? m.set(r.operatorId, (m.get(r.operatorId) ?? 0) + 1) : m), new Map<string, number>());
   const dirOps = [...dirCount].map(([id, n]) => ({ o: orgName.get(id), n })).filter((x): x is { o: NonNullable<typeof x.o>; n: number } => !!x.o)
-    .sort((a, b) => a.o.canonicalName.localeCompare(b.o.canonicalName, "en", { sensitivity: "base" }));
+    .map((x) => ({ ...x, shown: brandOf(x.o.id) ?? x.o.canonicalName }))
+    .sort((a, b) => a.shown.localeCompare(b.shown, "en", { sensitivity: "base" }));
   const letterOf = (name: string) => { const c = name.trim()[0]?.toUpperCase() ?? "#"; return c >= "A" && c <= "Z" ? c : "#"; };
-  const dirLetters = [...dirOps.reduce((m, x) => m.set(letterOf(x.o.canonicalName), [...(m.get(letterOf(x.o.canonicalName)) ?? []), x]), new Map<string, typeof dirOps>())];
+  const dirLetters = [...dirOps.reduce((m, x) => m.set(letterOf(x.shown), [...(m.get(letterOf(x.shown)) ?? []), x]), new Map<string, typeof dirOps>())];
 
   // Details and photos only for what is shown, a few aircraft at a time.
   const details = new Map<string, { facts: string; photos: Awaited<ReturnType<typeof getLineup>> }>();
@@ -185,8 +192,9 @@ export default async function Library({ searchParams }: { searchParams: SP }) {
         <div key={o.id} className="card">
           <div className="person-head">
             <div style={{ minWidth: 0 }}>
-              <b>{o.canonicalName}</b>{" "}
+              <b>{brandOf(o.id) ?? o.canonicalName}</b>{" "}
               <span className="pill wait">{t("{n} aircraft", { n: aircraft.length })}</span>
+              {brandOf(o.id) && <div className="small muted">{o.canonicalName}</div>}
               <div className="small muted">{[o.region && t("Region: {region}", { region: o.region }), o.base && t("Base: {base}", { base: o.base })].filter(Boolean).join(" · ") || t("No region or base yet")}</div>
               <OperatorContacts o={o} />
             </div>
@@ -251,7 +259,7 @@ export default async function Library({ searchParams }: { searchParams: SP }) {
           {dirGroups.map(({ o, list }) => (
             <div key={o?.id ?? "none"} className="lib-ac">
               <div className="person-head">
-                <div><b>{o?.canonicalName ?? t("No operator")}</b> <span className="pill wait">{t("{n} aircraft", { n: list.length })}</span></div>
+                <div><b>{brandOf(o?.id) ?? o?.canonicalName ?? t("No operator")}</b> <span className="pill wait">{t("{n} aircraft", { n: list.length })}</span>{o && brandOf(o.id) && <div className="small muted">{o.canonicalName}</div>}</div>
                 {canAdd && o && list.some((r) => !copied.has(r.aircraftId) && !adding.has(r.aircraftId)) && list.length > 1 && (
                   <form action={addFromLibraryAction}>
                     <input type="hidden" name="libraryOperatorId" value={o.id} /><input type="hidden" name="q" value={one(sp.q) ?? ""} />
@@ -285,7 +293,7 @@ export default async function Library({ searchParams }: { searchParams: SP }) {
             <div key={l} id={`dir-${l}`} className="dir-letter">
               <h4>{l}</h4>
               <ul className="dir-ops">
-                {list.map(({ o, n }) => <li key={o.id}><Link href={`/library?q=${encodeURIComponent(o.canonicalName)}#dir`}>{o.canonicalName}</Link> <span className="small muted">{n}</span></li>)}
+                {list.map(({ o, n, shown }) => <li key={o.id}><Link href={`/library?q=${encodeURIComponent(o.canonicalName)}#dir`}>{shown}</Link> <span className="small muted">{n}</span>{shown !== o.canonicalName && <div className="small muted">{o.canonicalName}</div>}</li>)}
               </ul>
             </div>
           ))}

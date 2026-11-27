@@ -10,8 +10,7 @@ import type { Actor } from "./action";
 import { normalizeKey, normalizeRegistration, type Classification } from "./constants";
 import {
   addInformationVersion, changeRegistration, cleanContacts, createAircraft, createAircraftType, createOrganisation, findAircraftByTail, findAircraftWithoutTail, getAircraftCard,
-  loadStandardAircraftTypes, resolveAircraftTypesExact, resolveOrganisationsExact,
-} from "./directory";
+  loadStandardAircraftTypes, resolveAircraftTypesExact, resolveOrganisationsExact, addOrganisationAlias } from "./directory";
 import { approveMedia, getLineup, ingestUpload, readContentBytes, retireMedia, setMediaAssociation, updateMediaMetadata } from "./media";
 import { makeCombinedPhoto } from "./combinedPhoto";
 import { STANDARD_LIST_VERSION } from "./standardTypes";
@@ -785,6 +784,8 @@ export interface LibraryPack {
   operator: string; region?: string | null; base?: string | null;
   /** How to reach the operator, shown with it in the library (and copied with it into workspaces). */
   website?: string | null; email?: string | null; salesContact?: string | null;
+  /** The brand(s) the operator trades under (e.g. "Hop-A-Jet Worldwide"): kept as the operator's aliases, so a search finds either name. */
+  tradingAs?: string | string[] | null;
   aircraft: PackAircraft[];
 }
 
@@ -860,6 +861,9 @@ export async function importLibraryPack(
     const [cur] = await db.select().from(organisations).where(eq(organisations.id, operatorId));
     const c = cleanContacts({ website: pack.website ?? cur.website, email: pack.email ?? cur.email, salesContact: pack.salesContact ?? cur.salesContact });
     await db.update(organisations).set({ ...c, updatedAt: new Date() }).where(eq(organisations.id, operatorId));
+  }
+  for (const brand of (Array.isArray(pack.tradingAs) ? pack.tradingAs : pack.tradingAs ? [pack.tradingAs] : []).map((b) => b.trim()).filter(Boolean)) {
+    await addOrganisationAlias(db, lib, randomUUID(), { organisationId: operatorId, alias: brand });
   }
   // An operator the library already had (e.g. from the FAA list) gets the pack's region and base when it has none yet;
   // one already set is kept.

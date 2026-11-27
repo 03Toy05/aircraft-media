@@ -3,7 +3,7 @@ import { eq } from "drizzle-orm";
 import { setup } from "./helpers";
 import { LIBRARY_TENANT_ID, addToWorkspace, directoryLibraryAircraft, importLibraryPack, readyLibraryAircraft, readyLibraryOperators } from "../src/domain/library";
 import { aircraft, organisations } from "../src/db/schema";
-import { createAircraftType } from "../src/domain/directory";
+import { createAircraftType, orgAliasesFor, resolveOrganisations } from "../src/domain/directory";
 
 describe("The library's directory (aircraft known by their details only)", () => {
   it("imports aircraft without photos, with their serial numbers, and keeps them apart from the ready library", async () => {
@@ -44,5 +44,13 @@ describe("The library's directory (aircraft known by their details only)", () =>
     await importLibraryPack(t.db, t.store, t.actor, { operator: "AB Jets, LLC", base: "Somewhere Else", aircraft: [{ type: "Pilatus PC-12 NGX", tail: "N1AB", photos: {} }] }, new Map());
     const [o2] = await t.db.select().from(organisations).where(eq(organisations.id, o.id));
     expect(o2.base).toBe("Memphis, TN");
+  });
+  it("keeps an operator's trading name, so a search finds it by either name", async () => {
+    const t = await setup();
+    await importLibraryPack(t.db, t.store, t.actor, { operator: "ACE AVIATION SERVICES CORPORATION", tradingAs: "Hop-A-Jet Worldwide", aircraft: [{ type: "Pilatus PC-12 NGX", tail: "N1HJ", photos: {} }] }, new Map());
+    await importLibraryPack(t.db, t.store, t.actor, { operator: "ACE AVIATION SERVICES CORPORATION", tradingAs: ["Hop-A-Jet Worldwide"], aircraft: [{ type: "Pilatus PC-12 NGX", tail: "N1HJ", photos: {} }] }, new Map());
+    const aliases = await orgAliasesFor(t.db, LIBRARY_TENANT_ID);
+    expect(aliases.map((a) => a.alias)).toEqual(["Hop-A-Jet Worldwide"]); // once, however often it's loaded
+    expect((await resolveOrganisations(t.db, LIBRARY_TENANT_ID, "Hop-A-Jet"))[0]?.canonicalName ?? (await resolveOrganisations(t.db, LIBRARY_TENANT_ID, "Hop-A-Jet Worldwide"))[0]?.canonicalName).toBe("ACE AVIATION SERVICES CORPORATION");
   });
 });
