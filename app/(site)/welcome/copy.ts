@@ -95,7 +95,6 @@ export const COPY: Record<SiteLang, Copy> = {
       title: "Before you ask",
       items: [
         { q: "Can other brokers see my aircraft library?", a: "No. Your operators, aircraft, photos, contacts and quotes stay in your own workspace. Aircraft Media also keeps a shared photo library: your photos join it only if you switch on sharing in Settings and we approve each one. It never includes prices, quotes, contacts or notes. Our platform admin can view any workspace, read-only." },
-        { q: "Who can see my client information?", a: "Your quotes, saved requests and contacts are private to your workspace. Contacts are optional: if you save the people you send aircraft to (name and messenger), only you see them. The client link you share shows the quote: aircraft, routing, prices and photos, never your contacts. Anyone who has the link can open it. It is a long random code, and you can switch it off or give it an end date. Our platform admin can view any workspace, read-only." },
         { q: "Can I use my existing aircraft photos?", a: "Yes. Upload JPG, PNG or WebP photos, or operator brochures as PDFs, and I take the photos out of them. Choose many files at once. You decide what each photo shows (exterior, cabin, floor plan), and nothing is used until you approve it. Your originals are kept. HEIC photos are not supported." },
         { q: "Can I use Toy on my phone?", a: "Yes, in your phone's browser. There is no app to install. Talk or type to me, build quotes, review photos and send through WhatsApp or any app on your phone. Our conversation carries over between your phone and your computer." },
         { q: "Can I cancel?", a: "Yes, you can cancel or delete your account yourself in Settings. Cancelling makes your workspace view-only and keeps everything, and you can reopen it anytime. Deleting removes your workspace for good. Your free trial lasts 14 days from your first sign-in, with no payment and no card, and we email you 3 days before it ends." },
@@ -208,7 +207,6 @@ export const COPY: Record<SiteLang, Copy> = {
       title: "你可能想問",
       items: [
         { q: "其他代理看得到我的飛機資料庫嗎？", a: "看不到。你的營運商、飛機、相片、聯絡人和報價都留在你自己的工作空間。Aircraft Media 另有一個共享相片庫：只有你在設定中開啟分享，並由我們逐張批准，你的相片才會加入。共享庫永不包括價格、報價、聯絡人或備註。平台管理員可以唯讀方式查看任何工作空間。" },
-        { q: "誰可以看到我的客戶資料？", a: "你的報價、已儲存的請求和聯絡人只屬於你的工作空間。聯絡人是可選的：如果你儲存了收件人（名字和通訊工具），只有你看得到。你分享的客戶連結只會顯示報價：飛機、航線、價格和相片，永不顯示你的聯絡人。任何持有連結的人都能打開；連結是一串很長的隨機碼，你可以隨時關閉，或設定到期日。平台管理員可以唯讀方式查看任何工作空間。" },
         { q: "可以用我現有的飛機相片嗎？", a: "可以。上載 JPG、PNG 或 WebP 相片，或營運商的 PDF 小冊子，我會把裡面的相片取出來。可以一次選擇多個檔案。每張相片拍的是甚麼（外觀、機艙、平面圖）由你決定，經你批准後才會使用。原檔會保留。暫不支援 HEIC 相片。" },
         { q: "可以在手機上用 Toy 嗎？", a: "可以，用手機瀏覽器就行，不用安裝應用程式。跟我說話或打字、製作報價、審閱相片，再經 WhatsApp 或手機上任何應用程式發送。我們的對話在手機和電腦之間同步。" },
         { q: "可以取消嗎？", a: "可以，你可以在設定中自行取消或刪除帳戶。取消後工作空間會變成只供查看，所有資料都會保留，你隨時可以重新開啟。刪除會永久移除你的工作空間。免費試用由你首次登入起計 14 天，不用付款，也不用信用卡，結束前 3 天我們會電郵通知你。" },
@@ -321,7 +319,6 @@ export const COPY: Record<SiteLang, Copy> = {
       title: "你可能想问",
       items: [
         { q: "其他代理看得到我的飞机资料库吗？", a: "看不到。你的运营商、飞机、照片、联系人和报价都留在你自己的工作空间。Aircraft Media 另有一个共享照片库：只有你在设置中开启分享，并由我们逐张批准，你的照片才会加入。共享库永不包括价格、报价、联系人或备注。平台管理员可以只读方式查看任何工作空间。" },
-        { q: "谁可以看到我的客户资料？", a: "你的报价、已保存的请求和联系人只属于你的工作空间。联系人是可选的：如果你保存了收件人（名字和通讯工具），只有你看得到。你分享的客户链接只会显示报价：飞机、航线、价格和照片，永不显示你的联系人。任何持有链接的人都能打开；链接是一串很长的随机码，你可以随时关闭，或设置到期日。平台管理员可以只读方式查看任何工作空间。" },
         { q: "可以用我现有的飞机照片吗？", a: "可以。上传 JPG、PNG 或 WebP 照片，或运营商的 PDF 宣传册，我会把里面的照片取出来。可以一次选择多个文件。每张照片拍的是什么（外观、机舱、平面图）由你决定，经你批准后才会使用。原文件会保留。暂不支持 HEIC 照片。" },
         { q: "可以在手机上用 Toy 吗？", a: "可以，用手机浏览器就行，不用安装应用。跟我说话或打字、制作报价、审阅照片，再经 WhatsApp 或手机上任何应用发送。我们的对话在手机和电脑之间同步。" },
         { q: "可以取消吗？", a: "可以，你可以在设置中自行取消或删除账户。取消后工作空间会变成只能查看，所有资料都会保留，你随时可以重新开启。删除会永久移除你的工作空间。免费试用由你首次登录起计 14 天，不用付款，也不用信用卡，结束前 3 天我们会发邮件通知你。" },
