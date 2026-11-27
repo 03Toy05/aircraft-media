@@ -104,11 +104,21 @@ export default async function Library({ searchParams }: { searchParams: SP }) {
     const o = r.operatorId ? orgName.get(r.operatorId) : undefined;
     return matchesWords(`${o?.canonicalName ?? ""} ${o?.region ?? ""}`, words) || matchesWords(`${r.aircraft} ${r.tail ?? ""} ${o?.canonicalName ?? ""}`, words);
   });
-  const dirShown = dirFound.slice(0, DIR_MAX);
+  // One operator picked (e.g. from the A–Z list): its whole fleet, however large; otherwise the first DIR_MAX matches.
+  const oneOperator = dirFound.length > 0 && dirFound.every((r) => r.operatorId === dirFound[0].operatorId);
+  const dirLimit = oneOperator ? dirFound.length : DIR_MAX;
+  const dirShown = dirFound.slice(0, dirLimit);
   const dirGroups = [...dirShown.reduce((m, r) => m.set(r.operatorId ?? "", [...(m.get(r.operatorId ?? "") ?? []), r]), new Map<string, typeof dirShown>())]
     .map(([id, list]) => ({ o: orgName.get(id), list: list.sort((a, b) => a.aircraft.localeCompare(b.aircraft) || (a.tail ?? "").localeCompare(b.tail ?? "")) }))
     .sort((a, b) => (a.o?.canonicalName ?? "").localeCompare(b.o?.canonicalName ?? ""));
   const shownCount = shown.reduce((n, s) => n + s.aircraft.length, 0);
+  // Operators with photos (the library proper), and the directory's operators A–Z with their fleet sizes.
+  const photoOps = new Set(rows.filter((r) => scopeHasOperator(scope, r.operatorId)).map((r) => r.operatorId));
+  const dirCount = dirAll.reduce((m, r) => (r.operatorId ? m.set(r.operatorId, (m.get(r.operatorId) ?? 0) + 1) : m), new Map<string, number>());
+  const dirOps = [...dirCount].map(([id, n]) => ({ o: orgName.get(id), n })).filter((x): x is { o: NonNullable<typeof x.o>; n: number } => !!x.o)
+    .sort((a, b) => a.o.canonicalName.localeCompare(b.o.canonicalName, "en", { sensitivity: "base" }));
+  const letterOf = (name: string) => { const c = name.trim()[0]?.toUpperCase() ?? "#"; return c >= "A" && c <= "Z" ? c : "#"; };
+  const dirLetters = [...dirOps.reduce((m, x) => m.set(letterOf(x.o.canonicalName), [...(m.get(letterOf(x.o.canonicalName)) ?? []), x]), new Map<string, typeof dirOps>())];
 
   // Details and photos only for what is shown, a few aircraft at a time.
   const details = new Map<string, { facts: string; photos: Awaited<ReturnType<typeof getLineup>> }>();
@@ -144,8 +154,8 @@ export default async function Library({ searchParams }: { searchParams: SP }) {
       )}
       <div className="people-head" style={{ marginBottom: 10 }}>
         <p className="muted small" style={{ margin: 0 }}>
-          {orgs.length === 1 ? t("The Aircraft Media library: {n} operator, {total} aircraft. Library aircraft can be quoted straight away (Quote page and Toy). Add one to your workspace to edit it or add your own photos.", { n: orgs.length, total: totalAircraft }) : t("The Aircraft Media library: {n} operators, {total} aircraft. Library aircraft can be quoted straight away (Quote page and Toy). Add one to your workspace to edit it or add your own photos.", { n: orgs.length, total: totalAircraft })}
-          {dirAll.length > 0 && <> {t("Plus a directory of {n} aircraft known by their details only (no photos yet): search by operator, type or tail to find them.", { n: dirAll.length })}</>}
+          {photoOps.size === 1 ? t("The Aircraft Media library: {n} operator with photos ({total} aircraft), ready to quote straight away (Quote page and Toy). Add one to your workspace to edit it or add your own photos.", { n: photoOps.size, total: totalAircraft }) : t("The Aircraft Media library: {n} operators with photos ({total} aircraft), ready to quote straight away (Quote page and Toy). Add one to your workspace to edit it or add your own photos.", { n: photoOps.size, total: totalAircraft })}
+          {dirAll.length > 0 && <> {t("Plus a directory of {ops} US operators ({n} aircraft) known by their details only: search, or pick one from the list at the bottom of this page.", { ops: dirOps.length, n: dirAll.length })}</>}
         </p>
         {isAdmin && (
           <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
@@ -232,11 +242,11 @@ export default async function Library({ searchParams }: { searchParams: SP }) {
         </div>
       ))}
       {dirFound.length > 0 && (
-        <div className="card">
+        <div className="card" id="dir">
           <h3 style={{ marginTop: 0 }}>{t("Directory: {n} aircraft known by their details only", { n: dirFound.length })}</h3>
           <p className="small muted" style={{ marginTop: 0 }}>
             {t("From public registers (the FAA's list of US Part 135 operators): operator, type and tail. No photos yet: add one to your workspace, then add its photos and details there to quote it.")}
-            {dirFound.length > DIR_MAX && <> {t("Showing the first {n}; search more precisely to see others.", { n: DIR_MAX })}</>}
+            {dirFound.length > dirLimit && <> {t("Showing the first {n}; search more precisely to see others.", { n: DIR_MAX })}</>}
           </p>
           {dirGroups.map(({ o, list }) => (
             <div key={o?.id ?? "none"} className="lib-ac">
@@ -265,6 +275,21 @@ export default async function Library({ searchParams }: { searchParams: SP }) {
             </div>
           ))}
         </div>
+      )}
+      {!words.length && dirOps.length > 0 && (
+        <details className="card collapse" id="directory">
+          <summary><b>{t("US operators in the directory ({n})", { n: dirOps.length })}</b></summary>
+          <p className="small muted">{t("From the FAA's list of US Part 135 operators, A–Z. Pick one to see its fleet and add aircraft to your workspace.")}</p>
+          <div className="dir-letters">{dirLetters.map(([l]) => <a key={l} href={`#dir-${l}`}>{l}</a>)}</div>
+          {dirLetters.map(([l, list]) => (
+            <div key={l} id={`dir-${l}`} className="dir-letter">
+              <h4>{l}</h4>
+              <ul className="dir-ops">
+                {list.map(({ o, n }) => <li key={o.id}><Link href={`/library?q=${encodeURIComponent(o.canonicalName)}#dir`}>{o.canonicalName}</Link> <span className="small muted">{n}</span></li>)}
+              </ul>
+            </div>
+          ))}
+        </details>
       )}
     </>
   );

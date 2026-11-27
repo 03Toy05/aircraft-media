@@ -603,3 +603,7 @@ nav.top .nav-lang { margin-left: 8px; }
 .nav-menu-note { padding: 6px 12px 10px; color: var(--warn); font-size: 13px; font-weight: 600; border-bottom: 1px solid var(--line); margin-bottom: 4px; }
 /* Tablet widths: no room for the trial badge beside the five links; it stays in the account menu. */
 @media (min-width: 721px) and (max-width: 960px) { nav.top .nav-trial { display: none; } }
+.dir-letters { display: flex; flex-wrap: wrap; gap: 4px 10px; margin: 6px 0 10px; font-weight: 600; }
+.dir-letter h4 { margin: 12px 0 4px; }
+.dir-ops { list-style: none; margin: 0; padding: 0; columns: 3 220px; column-gap: 18px; }
+.dir-ops li { break-inside: avoid; padding: 2px 0; font-size: 14px; }
