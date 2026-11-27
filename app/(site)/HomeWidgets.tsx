@@ -4,10 +4,10 @@ import Toy from "../_components/Toy";
 import type { TrySample } from "./siteMedia";
 import { track } from "./track";
 
-/** The hero's "Watch me at work" button: opens the phone's demo player (PhoneDemo listens for "toy:watch-demo"). */
+/** The hero's "Watch me at work" button: opens the phone's player with the short demo, if there is one (PhoneDemo listens for "toy:watch-demo"). */
 export function WatchDemoButton({ label, sub }: { label: string; sub: string }) {
   return (
-    <button type="button" className="hero-watch" onClick={() => window.dispatchEvent(new Event("toy:watch-demo"))}>
+    <button type="button" className="hero-watch" onClick={() => window.dispatchEvent(new CustomEvent("toy:watch-demo", { detail: "short" }))}>
       <span className="hero-watch-icon" aria-hidden="true">
         <svg width="14" height="14" viewBox="0 0 14 14"><path d="M3 1.5 L12 7 L3 12.5 Z" fill="currentColor" /></svg>
       </span>

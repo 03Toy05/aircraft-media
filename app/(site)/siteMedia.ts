@@ -38,6 +38,16 @@ export function demoTranscript(lang: SiteLang): string | null {
   return file ? fs.readFileSync(path.join(PUBLIC, file), "utf8").trim() : null;
 }
 
+/**
+ * The short demo (about 30 s, vertical): public/demo/toy-short-demo.mp4, -zh-hant, -zh-hans, captions burned in.
+ * Git-ignored while it is a draft, so it plays in the local preview only. Without it, "Watch me at work" plays the full film.
+ */
+export function shortDemoVideo(lang: SiteLang = "en") {
+  if (!has("demo/toy-short-demo.mp4")) return null;
+  const own = lang !== "en" && has(`demo/toy-short-demo-${lang}.mp4`);
+  return { src: own ? `/demo/toy-short-demo-${lang}.mp4` : "/demo/toy-short-demo.mp4", captions: [] as { lang: string; srclang: string; label: string }[] };
+}
+
 export const founderPhoto = () => (has("brand/founder.jpg") ? "/brand/founder.jpg" : null);
 
 /** The founder's own video for "How it begins"; with it, the photo becomes its cover instead of a portrait. */

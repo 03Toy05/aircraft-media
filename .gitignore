@@ -12,3 +12,6 @@ library-packs/
 
 # "Let me try" sample photos: local preview only until their rights are cleared
 public/try-sample/
+
+# Short demo films: draft, local preview only until the owner clears the photos in them
+public/demo/toy-short-demo*
