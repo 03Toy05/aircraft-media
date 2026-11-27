@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { eq } from "drizzle-orm";
 import { setup } from "./helpers";
 import { LIBRARY_TENANT_ID, addToWorkspace, directoryLibraryAircraft, importLibraryPack, readyLibraryAircraft, readyLibraryOperators } from "../src/domain/library";
-import { aircraft } from "../src/db/schema";
+import { aircraft, organisations } from "../src/db/schema";
 import { createAircraftType } from "../src/domain/directory";
 
 describe("The library's directory (aircraft known by their details only)", () => {
@@ -33,5 +33,16 @@ describe("The library's directory (aircraft known by their details only)", () =>
     expect(copy.tenantId).toBe(t.actor.tenantId);
     expect(copy.serialNumber).toBe("680A-0022");
     expect(added.photos).toBe(0);
+  });
+  it("fills in an existing operator's base from a later pack, but never replaces one already set", async () => {
+    const t = await setup();
+    await importLibraryPack(t.db, t.store, t.actor, { operator: "AB Jets, LLC", region: "North America", aircraft: [{ type: "Pilatus PC-12 NGX", tail: "N1AB", photos: {} }] }, new Map());
+    await importLibraryPack(t.db, t.store, t.actor, { operator: "AB Jets, LLC", base: "Memphis, TN", website: "https://www.abjets.com/", aircraft: [{ type: "Pilatus PC-12 NGX", tail: "N1AB", photos: {} }] }, new Map());
+    const [o] = await t.db.select().from(organisations).where(eq(organisations.canonicalName, "AB Jets, LLC"));
+    expect(o.base).toBe("Memphis, TN");
+    expect(o.website).toContain("abjets.com");
+    await importLibraryPack(t.db, t.store, t.actor, { operator: "AB Jets, LLC", base: "Somewhere Else", aircraft: [{ type: "Pilatus PC-12 NGX", tail: "N1AB", photos: {} }] }, new Map());
+    const [o2] = await t.db.select().from(organisations).where(eq(organisations.id, o.id));
+    expect(o2.base).toBe("Memphis, TN");
   });
 });

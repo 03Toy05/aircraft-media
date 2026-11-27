@@ -861,6 +861,15 @@ export async function importLibraryPack(
     const c = cleanContacts({ website: pack.website ?? cur.website, email: pack.email ?? cur.email, salesContact: pack.salesContact ?? cur.salesContact });
     await db.update(organisations).set({ ...c, updatedAt: new Date() }).where(eq(organisations.id, operatorId));
   }
+  // An operator the library already had (e.g. from the FAA list) gets the pack's region and base when it has none yet;
+  // one already set is kept.
+  if (pack.region || pack.base) {
+    const [cur] = await db.select().from(organisations).where(eq(organisations.id, operatorId));
+    const set: { region?: string; base?: string } = {};
+    if (pack.region?.trim() && !cur.region) set.region = pack.region.trim();
+    if (pack.base?.trim() && !cur.base) set.base = pack.base.trim();
+    if (Object.keys(set).length) await db.update(organisations).set({ ...set, updatedAt: new Date() }).where(eq(organisations.id, operatorId));
+  }
 
   const realTails = new Set(pack.aircraft.filter((x) => x.realTail && x.tail).map((x) => x.tail!.trim().toUpperCase()));
   const hidden = (t: string | null | undefined) => isMaskedTail(t) && !realTails.has((t ?? "").trim().toUpperCase());
