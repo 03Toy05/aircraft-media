@@ -52,6 +52,8 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           <span>{t("Looking at the workspace of")} <b>{s.viewingAs.email}</b> {t("(read-only)")}</span>
           <form action={stopViewingAction}><button type="submit" className="small-btn">{t("Back to my workspace")}</button></form>
         </div>
+      ) : s.cancelled ? (
+        <div className="account-bar ended">{t("Your account is cancelled, so your workspace is read-only.")} <a href="/settings#account">{t("Reopen it")}</a></div>
       ) : s.trialEnded ? (
         <div className="account-bar ended">{t("Your 14-day trial has ended. You can still look and share, but not add or change anything. Ask the admin to extend it.")}</div>
       ) : null}

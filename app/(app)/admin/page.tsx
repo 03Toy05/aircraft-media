@@ -20,8 +20,21 @@ import { approveApplicationAction, declineApplicationAction } from "../../applic
 import { isOwnerEmail } from "@/lib/owner";
 import { PendingButton } from "../../_components/PendingButton";
 import LocalTime from "../../_components/LocalTime";
+import { siteFunnel } from "@/domain/siteEvents";
 
 type T = Awaited<ReturnType<typeof serverT>>;
+
+/** The website's steps, in the order a visitor goes through them. */
+const FUNNEL_LABEL = {
+  front_interaction: "Used the front page",
+  demo_play: "Played the demo film",
+  demo_complete: "Watched the demo to the end",
+  letmetry_complete: "Finished “Let me try”",
+  pricing_view: "Looked at pricing",
+  make_toy_yours_click: "Clicked “Make Toy yours”",
+  signup_complete: "Signed up",
+  first_quote: "Shared their first quote",
+} as const;
 
 const day = (d: Date | null) => (d ? d.toISOString().slice(0, 10) : "–");
 const quotesLine = (t: T, q: QuoteShareStats | undefined) => {
@@ -56,6 +69,7 @@ export default async function Admin({ searchParams }: { searchParams: SP }) {
     .filter((o) => readyOps.has(o.id));
   const mine = me.viewingAs ? undefined : shares.get(me.actor.tenantId);
   const activity = await activityByTenant(db);
+  const funnel = await siteFunnel(db, me.email);
   const overview = await userOverview(db, me.email);
   const sentMails = await db.select().from(announcements).orderBy(desc(announcements.createdAt)).limit(5);
 
@@ -90,6 +104,23 @@ export default async function Admin({ searchParams }: { searchParams: SP }) {
           <div className="stat"><span className="stat-n">{overview.active30}</span><span className="stat-l">{t("active in 30 days")}</span></div>
         </div>
       </div>
+      <div className="card" id="website">
+        <h3 style={{ marginTop: 0 }}>{t("The website")}</h3>
+        <p className="small muted" style={{ margin: "0 0 6px" }}>{t("How far visitors get. Counts only: no cookies, and nothing that tells one visitor from another.")}</p>
+        <table className="funnel">
+          <thead><tr><th></th><th>{t("7 days")}</th><th>{t("30 days")}</th><th className="small muted">EN · 繁 · 简</th></tr></thead>
+          <tbody>
+            {funnel.map((r) => (
+              <tr key={r.event}>
+                <td>{t(FUNNEL_LABEL[r.event])}</td>
+                <td><b>{r.d7}</b></td>
+                <td>{r.d30}</td>
+                <td className="small muted">{r.byLang30 ? `${r.byLang30.en} · ${r.byLang30["zh-hant"]} · ${r.byLang30["zh-hans"]}` : ""}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
       <div className="card">
         <div className="people-head">
           <h3 style={{ margin: 0 }}>{t("People ({n})", { n: people.length })}</h3>
@@ -102,6 +133,7 @@ export default async function Admin({ searchParams }: { searchParams: SP }) {
           const a = accessFor(u);
           const status =
             u.status === "blocked" ? { label: t("Turned off"), tone: "off" }
+            : u.status === "cancelled" ? { label: t("Cancelled by them (read-only)"), tone: "off" }
             : !u.firstSignInAt ? { label: t("Invited, not signed in yet"), tone: "wait" }
             : u.plan === "full" ? { label: t("Full access"), tone: "ok" }
             : a.expired ? { label: t("Trial ended (read-only)"), tone: "off" }
@@ -155,8 +187,8 @@ export default async function Admin({ searchParams }: { searchParams: SP }) {
                   <button className="secondary small-btn" type="submit">{u.plan === "full" ? t("Make trial") : t("Make full")}</button></form>
                 <span className="spacer" />
                 {u.firstSignInAt ? (
-                  <form action={setBlockedAction}><Key /><input type="hidden" name="userId" value={u.id} /><input type="hidden" name="blocked" value={u.status === "blocked" ? "0" : "1"} />
-                    <button className={`${u.status === "blocked" ? "secondary" : "danger"} small-btn`} type="submit">{u.status === "blocked" ? t("Turn on") : t("Turn off")}</button></form>
+                  <form action={setBlockedAction}><Key /><input type="hidden" name="userId" value={u.id} /><input type="hidden" name="blocked" value={u.status === "blocked" || u.status === "cancelled" ? "0" : "1"} />
+                    <button className={`${u.status === "blocked" || u.status === "cancelled" ? "secondary" : "danger"} small-btn`} type="submit">{u.status === "blocked" || u.status === "cancelled" ? t("Turn on") : t("Turn off")}</button></form>
                 ) : (
                   <form action={withdrawInviteAction}><Key /><input type="hidden" name="userId" value={u.id} /><button className="danger small-btn" type="submit">{t("Withdraw invite")}</button></form>
                 )}

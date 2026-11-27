@@ -367,6 +367,9 @@ code.ref { font-size: 12px; padding: 1px 6px; border: 1px solid var(--line); bor
 .pill.warn { background: #fff4dc; color: #8a5a00; }
 .pill.wait { background: #eef2f7; color: #4b5563; }
 .pill.off { background: #fde8e8; color: #9b1c1c; }
+.funnel { width: 100%; border-collapse: collapse; font-size: 14px; }
+.funnel th, .funnel td { text-align: left; padding: 4px 6px; border-top: 1px solid var(--line); }
+.funnel thead th { border-top: 0; font-weight: 600; }
 .stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
 .stat { background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px; display: flex; flex-direction: column; min-width: 0; }
 .stat-n { font-size: 18px; font-weight: 700; line-height: 1.2; }

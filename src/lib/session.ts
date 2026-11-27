@@ -26,6 +26,8 @@ export interface Session {
   /** Days left in a trial, else null. */
   daysLeft: number | null;
   trialEnded: boolean;
+  /** They cancelled their account themselves: read-only until they reopen it. */
+  cancelled: boolean;
   /** Set while the admin looks at another user's workspace. */
   viewingAs: { userId: string; email: string } | null;
 }
@@ -73,6 +75,7 @@ export const requireUser = cache(async (): Promise<Session> => {
     readOnly: access.readOnly,
     daysLeft: access.daysLeft,
     trialEnded: access.expired,
+    cancelled: !isAdmin && u.status === "cancelled",
     viewingAs: null,
   };
   if (isAdmin) {
